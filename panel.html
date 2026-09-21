@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Changgeon Kang</title>
+<meta name="description" content="Changgeon Kang is a Ph.D. student in the CyPhy Lab, School of Computing, KAIST, working on cyber-physical system security and sensing systems.">
+<meta name="author" content="Changgeon Kang">
+<link rel="canonical" href="https://changgeonkang.github.io/">
+
+<meta property="og:type" content="profile">
+<meta property="og:title" content="Changgeon Kang">
+<meta property="og:description" content="Ph.D. Student, CyPhy Lab, School of Computing, KAIST. Cyber-Physical System (CPS) Security and Sensing Systems.">
+<meta property="og:url" content="https://changgeonkang.github.io/">
+<meta property="og:image" content="https://changgeonkang.github.io/photo.jpg">
+<meta name="twitter:card" content="summary">
+
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%238a3324'/><text x='16' y='23' font-family='Georgia,serif' font-size='19' fill='%23fff' text-anchor='middle'>C</text></svg>">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,500;0,600;1,400&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+
+<style>
+:root{color-scheme:light}
+*,*::before,*::after{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:#ffffff;font-family:Inter,system-ui,-apple-system,sans-serif}
+img{max-width:100%}
+a:focus-visible,button:focus-visible{outline:2px solid currentColor;outline-offset:2px}
+
+/* ---- publication record language ---- */
+.bdg{display:inline-flex;align-items:center;font-family:Inter,sans-serif;font-size:10.5px;
+  font-weight:600;letter-spacing:.04em;border-radius:4px;padding:3px 8px;white-space:nowrap}
+.bdg-v{background:#e5e9f7;color:#3a4a8f}
+.bdg-s{background:#eef0f3;color:#6a7482}
+.bdg-row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:9px}
+.doi{font-family:Inter,sans-serif;font-size:12px;text-decoration:none;
+  color:#6a7482;border-bottom:1px solid currentColor;padding-bottom:1px}
+.doi:hover{color:#3a4a8f}
+
+/* ---- teaching experience ---- */
+.eB{display:flex;flex-direction:column}
+.eB .crow{display:flex;gap:16px;padding:13px 0;border-top:1px solid var(--rule)}
+.eB .crow:first-child{border-top:0;padding-top:0}
+.eB .ccode{font-family:"JetBrains Mono",monospace;font-size:12px;font-weight:500;flex:none;
+  width:60px;color:var(--accent);padding-top:3px}
+.eB .cname{font-size:14.5px;font-weight:600;color:var(--head);margin-bottom:5px}
+.eB .croles{display:flex;flex-direction:column;gap:3px}
+.eB .crole{font-size:13px;color:var(--body);display:flex;gap:9px}
+.eB .crole em{font-style:normal;color:var(--dim);font-variant-numeric:tabular-nums;
+  flex:none;width:92px}
+
+.enote{font-size:12.5px;color:var(--dim);margin:14px 0 0}
+
+/* ---- page ---- */
+.v3{display:flex;background:#fff;color:#16181d;line-height:1.6;font-family:Inter,sans-serif;
+  --accent:#3a4a8f;--rule:#f0f1f4;--dim:#8b93a1;--body:#454d5a;--head:#1d2530;--chip:#eef0f5}
+.v3 .rail{width:284px;flex:none;background:#f7f8fa;border-right:1px solid #e8eaee;
+  padding-block:40px;padding-inline:26px;position:sticky;top:0;align-self:flex-start}
+.v3 .rail img{width:112px;aspect-ratio:390/567;height:auto;border-radius:8px;object-fit:cover;
+  border:1px solid #e1e5ea;background:#fff;margin-bottom:16px;display:block}
+.v3 .rail h1{font-size:21px;font-weight:650;letter-spacing:-.02em;margin:0 0 2px}
+.v3 .rail .kr{font-size:13px;color:#8b93a1;margin:0 0 14px}
+.v3 .rail p{font-size:13px;color:#4d5563;margin:0 0 4px;line-height:1.5}
+.v3 .rail p b{color:#16181d;font-weight:600}
+.v3 .rail a{color:#3a4a8f;text-decoration:none}
+.v3 .rail a:hover{text-decoration:underline}
+.v3 .soc{border-top:1px solid #e8eaee;margin-top:18px;padding-top:16px;
+  display:flex;flex-wrap:wrap;gap:6px}
+.v3 .soc a{font-size:12px;color:#5d6673;text-decoration:none;background:#fff;
+  border:1px solid #e1e4ea;border-radius:6px;padding:5px 10px}
+.v3 .soc a:hover{border-color:#3a4a8f;color:#3a4a8f}
+.v3 .main{flex:1;min-width:0;padding-block:40px 58px;padding-inline:clamp(20px,4vw,46px)}
+.v3 h2{font-family:Lora,Georgia,serif;font-size:21px;font-weight:500;color:#1d2530;margin:34px 0 14px}
+.v3 h2:first-child{margin-top:0}
+.v3 .stmt{font-size:15.5px;color:#454d5a;margin:0;max-width:64ch}
+.v3 .kw{font-size:13.5px;font-weight:600;color:#3a4a8f;margin:0 0 9px}
+.v3 .pub{border:1px solid #e6e8ec;border-radius:10px;padding:17px 19px;margin-bottom:10px;
+  transition:border-color .16s,box-shadow .16s}
+.v3 .pub:hover{border-color:#c6cfe6;box-shadow:0 3px 14px rgba(58,74,143,.07)}
+.v3 .pub .t{font-size:16px;font-weight:600;line-height:1.38;color:#1d2530;margin-bottom:6px}
+.v3 .pub .au{font-size:13px;color:#5b6472;line-height:1.5}
+.v3 .pub .au b{color:#1d2530;font-weight:600}
+.v3 .pub .doi{display:inline-block;margin-top:8px}
+.v3 .rec{display:flex;gap:18px;padding:11px 0;border-top:1px solid #f0f1f4}
+.v3 h2 + .rec{border-top:0;padding-top:0}
+.v3 .rec .yr{font-size:12.5px;color:#8b93a1;flex:none;width:166px;padding-top:2px;
+  font-variant-numeric:tabular-nums}
+.v3 .rec .ti{font-size:14.5px;font-weight:600;color:#1d2530}
+.v3 .rec .su{font-size:13.5px;color:#5b6472;margin-top:1px}
+@media(max-width:880px){
+  .v3{flex-direction:column}
+  .v3 .rail{width:auto;position:static;border-right:0;border-bottom:1px solid #e8eaee;
+    padding-block:30px;padding-inline:20px}
+  .v3 .main{padding-block:30px 46px}
+}
+@media(max-width:560px){.v3 .rec{flex-direction:column;gap:2px}.v3 .rec .yr{width:auto}}
+
+@media (prefers-reduced-motion: reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<section class="v3"><aside class="rail"><img src="photo.jpg" alt="Portrait of Changgeon Kang"><h1>Changgeon Kang</h1><p class="kr">강창건</p><p><b>Ph.D. Student</b></p><p><a href="https://www.cyphy.kaist.ac.kr/home">Sensing Intelligence and Cyber-Physical Security (CyPhy)&nbsp;Lab</a></p><p><a href="https://cs.kaist.ac.kr/">School of Computing, KAIST</a></p><p>Daejeon, Republic of Korea</p><div class="soc"><a href="mailto:kangha02@kaist.ac.kr">Email</a><a href="https://scholar.google.com/citations?user=AHf7iZIAAAAJ">Google Scholar</a><a href="https://www.linkedin.com/in/changgeon-kang/">LinkedIn</a><a href="CV_ChanggeonKang.pdf">CV (PDF)</a></div></aside><main class="main"><h2>Interests</h2><p class="kw">Cyber-Physical System (CPS) Security, Sensing System</p><p class="stmt">My research focuses on discovering novel security vulnerabilities, with a particular interest in unintentional sensor data leakage and extracting privacy-sensitive information.</p><h2>Publications</h2><article class="pub"><div class="bdg-row"><span class="bdg bdg-v">IEEE S&P 2027</span><span class="bdg bdg-s">To appear</span></div><div class="t">ScatterPIN: PIN Inference Attack on Touch Keypad Door Locks via RF Backscatter Side Channel</div><div class="au"><b>Changgeon Kang</b>, Dongjin Seo, Jonghyuk Yun, Seungbeom Park, Junyong Kim, and Jun Han</div></article><article class="pub"><div class="bdg-row"><span class="bdg bdg-v">ACM MobiSys 2024</span><span class="bdg bdg-s">Poster</span></div><div class="t">Poster: Exploiting Keystroke Dynamics via mmWave Radar for Application Profiling</div><div class="au"><b>Changgeon Kang</b>, Dongjin Seo, Sihun Yang, and Jun Han</div><a class="doi" href="#">DOI ↗</a></article><h2>Education</h2><div class="rec"><div class="yr">Sep. 2026 – Now</div><div><div class="ti">Ph.D. in School of Computing, KAIST</div></div></div><div class="rec"><div class="yr">Sep. 2024 – Oct. 2026</div><div><div class="ti">M.S. in School of Computing, KAIST</div></div></div><div class="rec"><div class="yr">Mar. 2018 – Feb. 2024</div><div><div class="ti">B.S. in School of Electrical &amp; Electronic Engineering, Yonsei University</div></div></div><h2>Teaching Experience</h2><div class="eB"><div class="crow"><div class="ccode">CS442</div><div><div class="cname">Mobile Computing and Applications</div><div class="croles"><div class="crole"><em>Spring 2024</em><span>Project Mentor</span></div></div></div></div><div class="crow"><div class="ccode">IS593</div><div><div class="cname">Internet-of-Things Security</div><div class="croles"><div class="crole"><em>Fall 2024</em><span>Project Mentor</span></div></div></div></div><div class="crow"><div class="ccode">CS492</div><div><div class="cname">Special Topics – Introduction to Sensing Security</div><div class="croles"><div class="crole"><em>Spring 2025</em><span>Project Mentor</span></div><div class="crole"><em>Spring 2026</em><span>Teaching Assistant</span></div></div></div></div></div><p class="enote">All courses at KAIST.</p><h2>Honor and Awards</h2><div class="rec"><div class="yr">2018 – 2023</div><div><div class="ti">National Science and Technology Scholarship</div></div></div><div class="rec"><div class="yr">Fall 2019, Spring 2020</div><div><div class="ti">Semester Honor, Yonsei University</div></div></div><div class="rec"><div class="yr">Fall 2020</div><div><div class="ti">Semester High Honor, Yonsei University</div></div></div></main></section>
+</body>
+</html>
