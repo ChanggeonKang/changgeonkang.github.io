@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Changgeon Kang</title>
+<meta name="description" content="Changgeon Kang is a Ph.D. student in the CyPhy Lab, School of Computing, KAIST, working on cyber-physical system security and sensing systems.">
+<meta name="author" content="Changgeon Kang">
+<link rel="canonical" href="https://changgeonkang.github.io/">
+
+<meta property="og:type" content="profile">
+<meta property="og:title" content="Changgeon Kang">
+<meta property="og:description" content="Ph.D. Student, CyPhy Lab, School of Computing, KAIST. Cyber-Physical System (CPS) Security and Sensing Systems.">
+<meta property="og:url" content="https://changgeonkang.github.io/">
+<meta property="og:image" content="https://changgeonkang.github.io/photo.jpg">
+<meta name="twitter:card" content="summary">
+
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%238a3324'/><text x='16' y='23' font-family='Georgia,serif' font-size='19' fill='%23fff' text-anchor='middle'>C</text></svg>">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,500;0,600;1,400&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+
+<style>
+:root{color-scheme:light}
+*,*::before,*::after{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:#fcfcfb;font-family:Inter,system-ui,-apple-system,sans-serif}
+img{max-width:100%}
+a:focus-visible,button:focus-visible{outline:2px solid currentColor;outline-offset:2px}
+
+/* ---- publication record language ---- */
+.bdg{display:inline-flex;align-items:center;font-family:Inter,sans-serif;font-size:10.5px;
+  font-weight:600;letter-spacing:.04em;border-radius:4px;padding:3px 8px;white-space:nowrap}
+.bdg-v{background:#e5e9f7;color:#3a4a8f}
+.bdg-s{background:#eef0f3;color:#6a7482}
+.bdg-row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:9px}
+.doi{font-family:Inter,sans-serif;font-size:12px;text-decoration:none;
+  color:#6a7482;border-bottom:1px solid currentColor;padding-bottom:1px}
+.doi:hover{color:#3a4a8f}
+
+/* ---- teaching experience ---- */
+.eB{display:flex;flex-direction:column}
+.eB .crow{display:flex;gap:16px;padding:13px 0;border-top:1px solid var(--rule)}
+.eB .crow:first-child{border-top:0;padding-top:0}
+.eB .ccode{font-family:"JetBrains Mono",monospace;font-size:12px;font-weight:500;flex:none;
+  width:60px;color:var(--accent);padding-top:3px}
+.eB .cname{font-size:14.5px;font-weight:600;color:var(--head);margin-bottom:5px}
+.eB .croles{display:flex;flex-direction:column;gap:3px}
+.eB .crole{font-size:13px;color:var(--body);display:flex;gap:9px}
+.eB .crole em{font-style:normal;color:var(--dim);font-variant-numeric:tabular-nums;
+  flex:none;width:92px}
+
+.enote{font-size:12.5px;color:var(--dim);margin:14px 0 0}
+
+/* ---- page ---- */
+.v5{background:#fcfcfb;color:#1c1f24;line-height:1.6;font-family:Inter,sans-serif;
+  --accent:#8a3324;--rule:#e9e7e4;--dim:#a9a29c;--body:#4b525c;--head:#15181d;--chip:#f6ece9}
+.v5 .strip{display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap;
+  padding-block:28px;padding-inline:clamp(20px,4vw,48px);
+  border-bottom:2px solid #1c1f24;background:#fff}
+/* Photo sits beside the identity lines, ending on "School of Computing,
+   KAIST", at the original 390:567 with no cropping.
+   Do NOT try to derive the photo's size from the text height. That is
+   circular — photo width <- row height <- text height <- text width <-
+   photo width — and nothing resolves it reliably:
+     * flex + align-self:stretch  -> height right, width collapses to 1px
+     * grid `auto 1fr`            -> row settles a pass short (148 vs 169),
+                                     so the links ride up over the last line
+     * grid `auto minmax(0,380px)`-> converges at some widths only; at 820px
+                                     the photo drove the row instead and blew
+                                     up to 304x442
+   Both tracks are therefore fixed, so neither depends on the other. The
+   text column is capped at a width where the lab name always takes two
+   lines, which pins the block at 169px — the same height 116px of photo
+   resolves to through the aspect ratio. Alignment falls out, statically. */
+.v5 .idrow{display:grid;grid-template-columns:116px minmax(0,380px);gap:22px;
+  align-items:start}
+.v5 .photo{position:relative;aspect-ratio:390/567;
+  border:1px solid #e6e2dd;border-radius:3px;background:#f7f5f2;overflow:hidden}
+.v5 .photo img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+.v5 .idtext{min-width:0}
+.v5 .strip h1{font-family:Lora,Georgia,serif;font-size:27px;font-weight:500;margin:0 0 2px;
+  letter-spacing:-.01em}
+.v5 .strip .kr{font-size:13px;color:#8d939c;margin:0 0 8px}
+.v5 .strip p{font-size:13.5px;color:#4b525c;margin:0 0 3px}
+.v5 .strip a{color:#8a3324;text-decoration:none;border-bottom:1px solid #e0c4be}
+.v5 .strip a:hover{border-color:#8a3324}
+.v5 .strip .who{flex:1 1 430px;min-width:0}
+.v5 .strip .what{flex:1 1 290px;min-width:0;font-size:14px;color:#4b525c;
+  border-left:2px solid #f0e3e0;padding-left:20px}
+.v5 .strip .what b{display:block;color:#8a3324;font-size:12.5px;letter-spacing:.04em;
+  text-transform:uppercase;margin-bottom:6px;font-weight:600}
+.v5 .links{margin-top:9px;display:flex;gap:6px;flex-wrap:wrap}
+.v5 .links a{font-size:12px;color:#5b6270;text-decoration:none;border:1px solid #e6e2dd;
+  border-radius:6px;padding:4px 10px;background:#fff}
+.v5 .links a:hover{border-color:#8a3324;color:#8a3324}
+.v5 .lead{padding-block:30px 8px;padding-inline:clamp(20px,4vw,48px)}
+.v5 .lead h2{font-family:Lora,Georgia,serif;font-size:25px;font-weight:500;margin:0}
+.v5 .pubs{padding-inline:clamp(20px,4vw,48px);padding-bottom:10px}
+.v5 .pub{display:grid;grid-template-columns:34px 1fr;gap:16px;padding:18px 0;
+  border-top:1px solid #e9e7e4}
+.v5 .pub .n{font-family:"JetBrains Mono",monospace;font-size:12px;color:#b4a9a4;padding-top:4px}
+.v5 .pub .t{font-size:18px;font-weight:600;line-height:1.34;color:#15181d;margin-bottom:7px;
+  letter-spacing:-.011em}
+.v5 .pub .au{font-size:13.5px;color:#5b6270;line-height:1.5}
+.v5 .pub .au b{color:#15181d;font-weight:600}
+.v5 .pub .doi{display:inline-block;margin-top:9px}
+.v5 .bdg-v{background:#f6e7e3;color:#8a3324}
+.v5 .rest{display:grid;grid-template-columns:1fr 1fr;gap:0 44px;
+  padding-inline:clamp(20px,4vw,48px);padding-block:24px 56px;border-top:2px solid #1c1f24;
+  margin-top:12px}
+.v5 .rest h3{font-size:10.5px;font-weight:600;letter-spacing:.16em;text-transform:uppercase;
+  color:#a9a29c;margin:22px 0 11px}
+.v5 .rest section > h3:first-child{margin-top:0}
+.v5 .rec{display:flex;gap:14px;padding:7px 0;font-size:14px}
+.v5 .rec .yr{font-size:12px;color:#a9a29c;flex:none;width:158px;font-variant-numeric:tabular-nums;
+  padding-top:2px}
+.v5 .rec .ti{color:#20252d;font-weight:600}
+.v5 .rec .su{color:#5b6270;font-size:13px;margin-top:1px}
+@media(max-width:860px){.v5 .rest{grid-template-columns:1fr;gap:0}}
+@media(max-width:560px){
+  .v5 .rec{flex-direction:column;gap:1px}.v5 .rec .yr{width:auto}
+  /* on a phone the lines wrap past two, so the heights no longer match;
+     shrink the photo and let it sit at the top of the block */
+  .v5 .idrow{grid-template-columns:88px minmax(0,1fr);gap:16px}
+}
+
+@media (prefers-reduced-motion: reduce){*{transition:none!important;animation:none!important}}
+
+@media (prefers-reduced-motion: reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<section class="v5"><div class="strip"><div class="who"><div class="idrow"><div class="photo"><img src="photo.jpg" alt="Portrait of Changgeon Kang"></div><div class="idtext"><h1>Changgeon Kang</h1><p class="kr">강창건</p><p>Ph.D. Student</p><p><a href="https://www.cyphy.kaist.ac.kr/home">Sensing Intelligence and Cyber-Physical Security (CyPhy)&nbsp;Lab</a></p><p><a href="https://cs.kaist.ac.kr/">School of Computing, KAIST</a></p></div></div><div class="links"><a href="mailto:kangha02@kaist.ac.kr">Email</a><a href="https://scholar.google.com/citations?user=AHf7iZIAAAAJ">Google Scholar</a><a href="https://www.linkedin.com/in/changgeon-kang/">LinkedIn</a><a href="CV_ChanggeonKang.pdf">CV (PDF)</a></div></div><div class="what"><b>Research Interests</b>My research focuses on discovering novel security vulnerabilities, with a particular interest in unintentional sensor data leakage and extracting privacy-sensitive information.</div></div><div class="lead"><h2>Publications</h2></div><div class="pubs"><article class="pub"><div class="n">02</div><div><div class="bdg-row"><span class="bdg bdg-v">IEEE S&P 2027</span><span class="bdg bdg-s">To appear</span></div><div class="t">ScatterPIN: PIN Inference Attack on Touch Keypad Door Locks via RF Backscatter Side Channel</div><div class="au"><b>Changgeon Kang</b>, Dongjin Seo, Jonghyuk Yun, Seungbeom Park, Junyong Kim, and Jun Han</div></div></article><article class="pub"><div class="n">01</div><div><div class="bdg-row"><span class="bdg bdg-v">ACM MobiSys 2024</span><span class="bdg bdg-s">Poster</span></div><div class="t">Poster: Exploiting Keystroke Dynamics via mmWave Radar for Application Profiling</div><div class="au"><b>Changgeon Kang</b>, Dongjin Seo, Sihun Yang, and Jun Han</div><a class="doi" href="#">DOI ↗</a></div></article></div><div class="rest"><section><h3>Education</h3><div class="rec"><div class="yr">Sep. 2026 – Now</div><div><div class="ti">Ph.D. in School of Computing, KAIST</div></div></div><div class="rec"><div class="yr">Sep. 2024 – Oct. 2026</div><div><div class="ti">M.S. in School of Computing, KAIST</div></div></div><div class="rec"><div class="yr">Mar. 2018 – Feb. 2024</div><div><div class="ti">B.S. in School of Electrical &amp; Electronic Engineering, Yonsei University</div></div></div><h3>Honor and Awards</h3><div class="rec"><div class="yr">2018 – 2023</div><div><div class="ti">National Science and Technology Scholarship</div></div></div><div class="rec"><div class="yr">Fall 2019, Spring 2020</div><div><div class="ti">Semester Honor, Yonsei University</div></div></div><div class="rec"><div class="yr">Fall 2020</div><div><div class="ti">Semester High Honor, Yonsei University</div></div></div></section><section><h3>Teaching Experience</h3><div class="eB"><div class="crow"><div class="ccode">CS442</div><div><div class="cname">Mobile Computing and Applications</div><div class="croles"><div class="crole"><em>Spring 2024</em><span>Project Mentor</span></div></div></div></div><div class="crow"><div class="ccode">IS593</div><div><div class="cname">Internet-of-Things Security</div><div class="croles"><div class="crole"><em>Fall 2024</em><span>Project Mentor</span></div></div></div></div><div class="crow"><div class="ccode">CS492</div><div><div class="cname">Special Topics – Introduction to Sensing Security</div><div class="croles"><div class="crole"><em>Spring 2025</em><span>Project Mentor</span></div><div class="crole"><em>Spring 2026</em><span>Teaching Assistant</span></div></div></div></div></div><p class="enote">All courses at KAIST.</p></section></div></section>
+</body>
+</html>
