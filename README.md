@@ -19,8 +19,13 @@ change up within a minute or so.
 
 ## Editing notes
 
-Sections, in page order: identity strip · Publications · Education · Teaching Experience ·
-Honor and Awards.
+The page has two layouts, switched at 900px. Above it, identity (portrait, affiliation,
+links, research interests) is a sticky rail on the left and the content scrolls beside it.
+Below it the rail becomes a full-width header, with the portrait beside the identity lines
+rather than stacked above them.
+
+Sections, in order: identity · Publications · Education · Honors and Awards ·
+Teaching Experience.
 
 **Adding a publication.** Copy an existing `<article class="pub">` block. The two pills are
 `bdg-v` (venue) and `bdg-s` (status); the running number in `.n` counts down, so the newest
@@ -30,11 +35,13 @@ paper carries the highest number. Your own name is wrapped in `<b>` in the autho
 once, with each term and role listed beneath it. Keep that shape when adding a term, rather
 than repeating the course title.
 
-**The portrait.** The identity strip pins both grid tracks (`116px minmax(0,380px)`) so the
-photo's bottom edge lands on the "School of Computing, KAIST" line. Those two numbers are
-load-bearing and depend on each other: 380px is a width at which the lab name always takes
-two lines, which fixes the text block at 169px, which is exactly the height 116px of photo
-resolves to through the 390:567 aspect ratio.
+**The portrait.** In the narrow (header) layout the identity block pins both grid tracks
+(`116px minmax(0,380px)`) so the photo's bottom edge lands on the "School of Computing,
+KAIST" line. Those two numbers are load-bearing and depend on each other: 380px is a width
+at which the lab name always takes two lines, which fixes the text block at 169px, which is
+exactly the height 116px of photo resolves to through the 390:567 aspect ratio. In the wide
+(rail) layout the portrait stacks above the text at a plain 130px, where no alignment is
+being held and the numbers do not interact.
 
 Do **not** switch either track to `auto` or `1fr` to "let it size itself". That reintroduces
 a circular dependency — photo width ← row height ← text height ← text width ← photo width —
