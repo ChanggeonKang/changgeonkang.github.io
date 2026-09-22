@@ -20,9 +20,15 @@ change up within a minute or so.
 ## Editing notes
 
 The page has two layouts, switched at 900px. Above it, identity (portrait, affiliation,
-links, research interests) is a sticky rail on the left and the content scrolls beside it.
-Below it the rail becomes a full-width header, with the portrait beside the identity lines
-rather than stacked above them.
+links, research interests) is a sticky rail on the left and the content scrolls beside it,
+with the identity centred in the rail. Below it the rail becomes a full-width header, with
+the portrait beside the identity lines rather than stacked above them, left-aligned.
+
+The shell is capped at 1560px. That leaves about 180px of margin each side on a 1920px
+monitor, down from 340px, at the cost of publication titles running nearer 93 characters
+to the line — wider than the 60–80 that reads comfortably. Splitting the content column in
+two (publications beside the record lists) was the alternative that would have used the
+width without stretching the line; it is worth revisiting if the publication list grows.
 
 Sections, in order: identity · Publications · Education · Honors and Awards ·
 Teaching Experience.
