@@ -91,12 +91,16 @@ a:focus-visible{outline:2px solid #8a3324;outline-offset:2px}
 .pg a.id{color:#8a3324;text-decoration:none;border-bottom:1px solid #e0c4be}
 .pg a.id:hover{border-color:#8a3324}
 .pg .links{margin-top:11px;display:flex;gap:6px;flex-wrap:wrap}
-.pg .links a{font-size:12px;color:#5b6270;text-decoration:none;border:1px solid #e6e2dd;
-  border-radius:6px;padding:4px 10px;background:#fff}
-.pg .links a:hover{border-color:#8a3324;color:#8a3324}
-/* the address is shown in full and copies on click */
-.pg .links a.copy-mail{cursor:copy}
-.pg .links a.copied{border-color:#2f6f4e;color:#2f6f4e;background:#f2f8f4}
+.pg .links a,.pg .links button{font-size:12px;color:#5b6270;text-decoration:none;
+  border:1px solid #e6e2dd;border-radius:6px;padding:4px 10px;background:#fff;
+  font-family:inherit;line-height:inherit}
+.pg .links a:hover,.pg .links button:hover{border-color:#8a3324;color:#8a3324}
+.pg .links button:focus-visible{outline:2px solid #8a3324;outline-offset:2px}
+/* The address is shown in full and copies on click. It is a button, not a
+   mailto link, so nothing ever hands the visitor off to a mail client. If
+   the copy fails the address is still on screen to select by hand. */
+.pg .links button.copy-mail{cursor:copy}
+.pg .links button.copied{border-color:#2f6f4e;color:#2f6f4e;background:#f2f8f4}
 .pg .what b{display:block;color:#8a3324;font-size:12.5px;letter-spacing:.04em;text-transform:uppercase;
   margin-bottom:6px;font-weight:600}
 .pg .what{font-size:14px;color:#4b525c}
@@ -186,18 +190,18 @@ a:focus-visible{outline:2px solid #8a3324;outline-offset:2px}
 </style>
 </head>
 <body>
-<div class="pg optD"><div class="shell"><aside class="rail"><div class="railinner"><div class="railid"><div class="idrow"><div class="photo"><img src="photo.jpg" alt="Portrait of Changgeon Kang"></div><div class="idtext"><h1>Changgeon Kang</h1><p class="kr">강창건</p><p>Ph.D. Student</p><p><a class="id" href="https://www.cyphy.kaist.ac.kr/home" target="_blank" rel="noopener noreferrer">Sensing Intelligence and Cyber-Physical Security (CyPhy)&nbsp;Lab</a></p><p><a class="id" href="https://cs.kaist.ac.kr/" target="_blank" rel="noopener noreferrer">School of Computing, KAIST</a></p></div></div><div class="links"><a class="id copy-mail" href="mailto:kangha02@kaist.ac.kr" data-mail="kangha02@kaist.ac.kr" title="Click to copy"><span class="lbl-text">kangha02@kaist.ac.kr</span></a><a class="id" href="https://scholar.google.com/citations?user=AHf7iZIAAAAJ" target="_blank" rel="noopener noreferrer">Google Scholar</a><a class="id" href="https://www.linkedin.com/in/changgeon-kang/" target="_blank" rel="noopener noreferrer">LinkedIn</a><a class="id" href="CV_ChanggeonKang.pdf" target="_blank" rel="noopener noreferrer">CV (PDF)</a></div></div><div class="what"><b>Research Interests</b>My research focuses on discovering novel security vulnerabilities, with a particular interest in unintentional sensor data leakage and extracting privacy-sensitive information.</div></div></aside><main class="main"><section><h2 class="sec">Publications</h2><div class="measure"><p class="grouphead">Conference Papers</p><article class="pub"><div class="n">C1</div><div><div class="bdg-row"><span class="bdg bdg-v">IEEE S&P 2027</span><span class="bdg bdg-s">To appear</span></div><div class="t">ScatterPIN: PIN Inference Attack on Touch Keypad Door Locks via RF Backscatter Side Channel</div><div class="au"><b>Changgeon Kang</b>, Dongjin Seo, Jonghyuk Yun, Seungbeom Park, Junyong Kim, and Jun Han</div></div></article><p class="grouphead">Posters</p><article class="pub poster"><div class="n">P1</div><div><div class="bdg-row"><span class="bdg bdg-v">ACM MobiSys 2024</span><span class="bdg bdg-s">Poster</span></div><div class="t">Poster: Exploiting Keystroke Dynamics via mmWave Radar for Application Profiling</div><div class="au"><b>Changgeon Kang</b>, Dongjin Seo, Sihun Yang, and Jun Han</div><a class="doi" href="https://dl.acm.org/doi/10.1145/3643832.3661443" target="_blank" rel="noopener noreferrer">DOI ↗</a></div></article></div></section><section><div class="measure"><h3>Education</h3><div class="rec"><div class="yr">Sep. 2026 – Now</div><div class="ti">Ph.D. in School of Computing, KAIST</div></div><div class="rec"><div class="yr">Sep. 2024 – Oct. 2026</div><div class="ti">M.S. in School of Computing, KAIST</div></div><div class="rec"><div class="yr">Mar. 2018 – Feb. 2024</div><div class="ti">B.S. in School of Electrical &amp; Electronic Engineering, Yonsei University</div></div><h3>Honors and Awards</h3><div class="rec"><div class="yr">2018 – 2023</div><div class="ti">National Science and Technology Scholarship</div></div><div class="rec"><div class="yr">Fall 2019, Spring 2020</div><div class="ti">Semester Honor, Yonsei University</div></div><div class="rec"><div class="yr">Fall 2020</div><div class="ti">Semester High Honor, Yonsei University</div></div><h3>Teaching Experience</h3><div class="eB"><div class="crow"><div class="ccode">CS442</div><div><div class="cname">Mobile Computing and Applications</div><div class="croles"><div class="crole"><em>Spring 2024</em><span>Project Mentor</span></div></div></div></div><div class="crow"><div class="ccode">IS593</div><div><div class="cname">Internet-of-Things Security</div><div class="croles"><div class="crole"><em>Fall 2024</em><span>Project Mentor</span></div></div></div></div><div class="crow"><div class="ccode">CS492</div><div><div class="cname">Special Topics – Introduction to Sensing Security</div><div class="croles"><div class="crole"><em>Spring 2025</em><span>Project Mentor</span></div><div class="crole"><em>Spring 2026</em><span>Teaching Assistant</span></div></div></div></div></div><p class="enote">All courses at KAIST.</p></div></section></main></div></div>
+<div class="pg optD"><div class="shell"><aside class="rail"><div class="railinner"><div class="railid"><div class="idrow"><div class="photo"><img src="photo.jpg" alt="Portrait of Changgeon Kang"></div><div class="idtext"><h1>Changgeon Kang</h1><p class="kr">강창건</p><p>Ph.D. Student</p><p><a class="id" href="https://www.cyphy.kaist.ac.kr/home" target="_blank" rel="noopener noreferrer">Sensing Intelligence and Cyber-Physical Security (CyPhy)&nbsp;Lab</a></p><p><a class="id" href="https://cs.kaist.ac.kr/" target="_blank" rel="noopener noreferrer">School of Computing, KAIST</a></p></div></div><div class="links"><button type="button" class="copy-mail" data-mail="kangha02@kaist.ac.kr" title="Click to copy"><span class="lbl-text">kangha02@kaist.ac.kr</span></button><a class="id" href="https://scholar.google.com/citations?user=AHf7iZIAAAAJ" target="_blank" rel="noopener noreferrer">Google Scholar</a><a class="id" href="https://www.linkedin.com/in/changgeon-kang/" target="_blank" rel="noopener noreferrer">LinkedIn</a><a class="id" href="CV_ChanggeonKang.pdf" target="_blank" rel="noopener noreferrer">CV (PDF)</a></div></div><div class="what"><b>Research Interests</b>My research focuses on discovering novel security vulnerabilities, with a particular interest in unintentional sensor data leakage and extracting privacy-sensitive information.</div></div></aside><main class="main"><section><h2 class="sec">Publications</h2><div class="measure"><p class="grouphead">Conference Papers</p><article class="pub"><div class="n">C1</div><div><div class="bdg-row"><span class="bdg bdg-v">IEEE S&P 2027</span><span class="bdg bdg-s">To appear</span></div><div class="t">ScatterPIN: PIN Inference Attack on Touch Keypad Door Locks via RF Backscatter Side Channel</div><div class="au"><b>Changgeon Kang</b>, Dongjin Seo, Jonghyuk Yun, Seungbeom Park, Junyong Kim, and Jun Han</div></div></article><p class="grouphead">Posters</p><article class="pub poster"><div class="n">P1</div><div><div class="bdg-row"><span class="bdg bdg-v">ACM MobiSys 2024</span><span class="bdg bdg-s">Poster</span></div><div class="t">Poster: Exploiting Keystroke Dynamics via mmWave Radar for Application Profiling</div><div class="au"><b>Changgeon Kang</b>, Dongjin Seo, Sihun Yang, and Jun Han</div><a class="doi" href="https://dl.acm.org/doi/10.1145/3643832.3661443" target="_blank" rel="noopener noreferrer">DOI ↗</a></div></article></div></section><section><div class="measure"><h3>Education</h3><div class="rec"><div class="yr">Sep. 2026 – Now</div><div class="ti">Ph.D. in School of Computing, KAIST</div></div><div class="rec"><div class="yr">Sep. 2024 – Oct. 2026</div><div class="ti">M.S. in School of Computing, KAIST</div></div><div class="rec"><div class="yr">Mar. 2018 – Feb. 2024</div><div class="ti">B.S. in School of Electrical &amp; Electronic Engineering, Yonsei University</div></div><h3>Honors and Awards</h3><div class="rec"><div class="yr">2018 – 2023</div><div class="ti">National Science and Technology Scholarship</div></div><div class="rec"><div class="yr">Fall 2019, Spring 2020</div><div class="ti">Semester Honor, Yonsei University</div></div><div class="rec"><div class="yr">Fall 2020</div><div class="ti">Semester High Honor, Yonsei University</div></div><h3>Teaching Experience</h3><div class="eB"><div class="crow"><div class="ccode">CS442</div><div><div class="cname">Mobile Computing and Applications</div><div class="croles"><div class="crole"><em>Spring 2024</em><span>Project Mentor</span></div></div></div></div><div class="crow"><div class="ccode">IS593</div><div><div class="cname">Internet-of-Things Security</div><div class="croles"><div class="crole"><em>Fall 2024</em><span>Project Mentor</span></div></div></div></div><div class="crow"><div class="ccode">CS492</div><div><div class="cname">Special Topics – Introduction to Sensing Security</div><div class="croles"><div class="crole"><em>Spring 2025</em><span>Project Mentor</span></div><div class="crole"><em>Spring 2026</em><span>Teaching Assistant</span></div></div></div></div></div><p class="enote">All courses at KAIST.</p></div></section></main></div></div>
 <script>
-/* The address is a real mailto link, so with scripting off — or if the
-   clipboard is unavailable — the click still does something useful. When a
-   copy succeeds we take the click instead and confirm it in the label.
-   Two copy paths: some browsers expose navigator.clipboard but refuse the
-   write, and the older execCommand still succeeds there. */
+/* Copies the address and nothing else — no mail client, ever. Two copy
+   paths, because some browsers expose navigator.clipboard but refuse the
+   write, and the older execCommand still succeeds there. If both fail we
+   select the address on the page so it can be copied by hand; the address
+   is rendered in full either way, so it is never hidden behind the click. */
 document.addEventListener('click', async function (ev) {
-  var a = ev.target.closest && ev.target.closest('.copy-mail');
-  if (!a || a.dataset.busy) return;
-  var addr = a.dataset.mail;
-  var label = a.querySelector('.lbl-text');
+  var btn = ev.target.closest && ev.target.closest('.copy-mail');
+  if (!btn || btn.dataset.busy) return;
+  var addr = btn.dataset.mail;
+  var label = btn.querySelector('.lbl-text');
   var copied = false;
 
   try {
@@ -205,7 +209,7 @@ document.addEventListener('click', async function (ev) {
       await navigator.clipboard.writeText(addr);
       copied = true;
     }
-  } catch (e) { /* fall through */ }
+  } catch (e) { /* fall through to execCommand */ }
 
   if (!copied) {
     try {
@@ -221,17 +225,27 @@ document.addEventListener('click', async function (ev) {
     } catch (e) { copied = false; }
   }
 
-  if (!copied) return;          // leave the click alone; the mailto runs
-
-  ev.preventDefault();
-  a.dataset.busy = '1';
+  btn.dataset.busy = '1';
   var prev = label.textContent;
-  label.textContent = 'Copied ✓';
-  a.classList.add('copied');
+
+  if (copied) {
+    label.textContent = 'Copied ✓';
+    btn.classList.add('copied');
+  } else {
+    // leave the address selected so Ctrl+C finishes the job
+    try {
+      var sel = window.getSelection();
+      var range = document.createRange();
+      range.selectNodeContents(label);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    } catch (e) { /* nothing more to offer */ }
+  }
+
   setTimeout(function () {
     label.textContent = prev;
-    a.classList.remove('copied');
-    delete a.dataset.busy;
+    btn.classList.remove('copied');
+    delete btn.dataset.busy;
   }, 1400);
 });
 </script>
