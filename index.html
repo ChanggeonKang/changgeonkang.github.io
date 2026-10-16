@@ -80,7 +80,8 @@ a:focus-visible{outline:2px solid #8a3324;outline-offset:2px}
   --accent:#8a3324;--rule:#e9e7e4;--dim:#a9a29c;--body:#4b525c;--head:#15181d;--chip:#f6ece9}
 .bdg{display:inline-flex;align-items:center;font-size:10.5px;font-weight:600;letter-spacing:.04em;
   border-radius:4px;padding:3px 8px;white-space:nowrap}
-.bdg-v{background:#f6e7e3;color:#8a3324}
+/* venue badge: white fill, so the border is what keeps it reading as a badge */
+.bdg-v{background:#fff;color:#d0021b;border:1px solid #d0021b;padding:2px 7px}
 .bdg-s{background:#eef0f3;color:#6a7482}
 .bdg-row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:9px}
 .doi{font-size:12px;text-decoration:none;color:#6a7482;border-bottom:1px solid currentColor;
