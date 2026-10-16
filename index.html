@@ -15,7 +15,10 @@
 <meta property="og:image" content="https://changgeonkang.github.io/photo.jpg">
 <meta name="twitter:card" content="summary">
 
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%238a3324'/><text x='16' y='23' font-family='Georgia,serif' font-size='19' fill='%23fff' text-anchor='middle'>C</text></svg>">
+<!-- An empty icon rather than no icon at all: with the tag removed the
+     browser falls back to requesting /favicon.ico and draws its own
+     generic glyph, which is the thing being removed here. -->
+<link rel="icon" href="data:,">
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -68,12 +71,12 @@
 :root{color-scheme:light}
 *,*::before,*::after{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
-body{margin:0;background:#fcfcfb;font-family:Inter,system-ui,-apple-system,sans-serif}
+body{margin:0;background:#fff;font-family:Inter,system-ui,-apple-system,sans-serif}
 img{max-width:100%}
 a:focus-visible{outline:2px solid #8a3324;outline-offset:2px}
 
 /* ---------- page ---------- */
-.pg{background:#fcfcfb;color:#1c1f24;line-height:1.6;font-family:Inter,sans-serif;
+.pg{background:#fff;color:#1c1f24;line-height:1.6;font-family:Inter,sans-serif;
   --accent:#8a3324;--rule:#e9e7e4;--dim:#a9a29c;--body:#4b525c;--head:#15181d;--chip:#f6ece9}
 .bdg{display:inline-flex;align-items:center;font-size:10.5px;font-weight:600;letter-spacing:.04em;
   border-radius:4px;padding:3px 8px;white-space:nowrap}
