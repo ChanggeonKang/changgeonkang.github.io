@@ -71,13 +71,13 @@
 :root{color-scheme:light}
 *,*::before,*::after{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
-body{margin:0;background:#fff;font-family:Inter,system-ui,-apple-system,sans-serif}
+body{margin:0;background:#fff;border-top:4px solid #40b3e6;font-family:Inter,system-ui,-apple-system,sans-serif}
 img{max-width:100%}
-a:focus-visible{outline:2px solid #8a3324;outline-offset:2px}
+a:focus-visible{outline:2px solid #204396;outline-offset:2px}
 
 /* ---------- page ---------- */
 .pg{background:#fff;color:#1c1f24;line-height:1.6;font-family:Inter,sans-serif;
-  --accent:#8a3324;--rule:#e9e7e4;--dim:#a9a29c;--body:#4b525c;--head:#15181d;--chip:#f6ece9}
+  --accent:#204396;--rule:#e5e9ef;--dim:#97a1ae;--body:#4b525c;--head:#15181d;--chip:#e8f6fc}
 .bdg{display:inline-flex;align-items:center;font-size:10.5px;font-weight:600;letter-spacing:.04em;
   border-radius:4px;padding:3px 8px;white-space:nowrap}
 /* venue badge: white fill, so the border is what keeps it reading as a badge */
@@ -86,41 +86,41 @@ a:focus-visible{outline:2px solid #8a3324;outline-offset:2px}
 .bdg-row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:9px}
 .doi{font-size:12px;text-decoration:none;color:#6a7482;border-bottom:1px solid currentColor;
   padding-bottom:1px}
-.doi:hover{color:#8a3324}
+.doi:hover{color:#204396}
 
 .pg h1{font-family:Lora,Georgia,serif;font-size:27px;font-weight:500;margin:0 0 2px;
   letter-spacing:-.01em}
 .pg .kr{font-size:13px;color:#8d939c;margin:0 0 8px}
 .pg .idtext p,.pg .who p{font-size:13.5px;color:#4b525c;margin:0 0 3px}
-.pg a.id{color:#8a3324;text-decoration:none;border-bottom:1px solid #e0c4be}
-.pg a.id:hover{border-color:#8a3324}
+.pg a.id{color:#204396;text-decoration:none;border-bottom:1px solid #b9c7e6}
+.pg a.id:hover{border-color:#204396}
 .pg .links{margin-top:11px;display:flex;gap:6px;flex-wrap:wrap}
 .pg .links a,.pg .links button{font-size:12px;color:#5b6270;text-decoration:none;
-  border:1px solid #e6e2dd;border-radius:6px;padding:4px 10px;background:#fff;
+  border:1px solid #dde3eb;border-radius:6px;padding:4px 10px;background:#fff;
   font-family:inherit;line-height:inherit}
-.pg .links a:hover,.pg .links button:hover{border-color:#8a3324;color:#8a3324}
-.pg .links button:focus-visible{outline:2px solid #8a3324;outline-offset:2px}
+.pg .links a:hover,.pg .links button:hover{border-color:#204396;color:#204396}
+.pg .links button:focus-visible{outline:2px solid #204396;outline-offset:2px}
 /* The address is shown in full and copies on click. It is a button, not a
    mailto link, so nothing ever hands the visitor off to a mail client. If
    the copy fails the address is still on screen to select by hand. */
 .pg .links button.copy-mail{cursor:copy}
 .pg .links button.copied{border-color:#2f6f4e;color:#2f6f4e;background:#f2f8f4}
-.pg .what b{display:block;color:#8a3324;font-size:12.5px;letter-spacing:.04em;text-transform:uppercase;
+.pg .what b{display:block;color:#204396;font-size:12.5px;letter-spacing:.04em;text-transform:uppercase;
   margin-bottom:6px;font-weight:600}
 .pg .what{font-size:14px;color:#4b525c}
 
 .pg .idrow{display:grid;grid-template-columns:116px minmax(0,380px);gap:22px;align-items:start}
-.pg .photo{position:relative;aspect-ratio:390/567;border:1px solid #e6e2dd;border-radius:3px;
-  background:#f7f5f2;overflow:hidden}
+.pg .photo{position:relative;aspect-ratio:390/567;border:1px solid #dde3eb;border-radius:3px;
+  background:#f3f5f8;overflow:hidden}
 .pg .photo img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
 .pg .idtext{min-width:0}
 
 .pg h2.sec{font-family:Lora,Georgia,serif;font-size:25px;font-weight:500;margin:0 0 6px}
 .pg h3{font-size:10.5px;font-weight:600;letter-spacing:.16em;text-transform:uppercase;
-  color:#a9a29c;margin:22px 0 11px}
+  color:#97a1ae;margin:22px 0 11px}
 .pg .pub{display:grid;grid-template-columns:34px 1fr;gap:16px;padding:18px 0;
-  border-top:1px solid #e9e7e4}
-.pg .pub .n{font-family:"JetBrains Mono",monospace;font-size:12px;color:#b4a9a4;padding-top:4px}
+  border-top:1px solid #e5e9ef}
+.pg .pub .n{font-family:"JetBrains Mono",monospace;font-size:12px;color:#a6b0bd;padding-top:4px}
 .pg .pub .t{font-size:18px;font-weight:600;line-height:1.34;color:#15181d;margin-bottom:7px;
   letter-spacing:-.011em}
 .pg .pub .au{font-size:13.5px;color:#5b6270;line-height:1.5}
@@ -129,10 +129,10 @@ a:focus-visible{outline:2px solid #8a3324;outline-offset:2px}
 /* publications are split by type, so a poster is never mistaken for a
    full paper; the heading carries the distinction, not the entry styling */
 .pg .grouphead{font-size:10.5px;font-weight:600;letter-spacing:.16em;text-transform:uppercase;
-  color:#a9a29c;margin:20px 0 2px}
+  color:#97a1ae;margin:20px 0 2px}
 .pg .grouphead:first-child{margin-top:8px}
 .pg .rec{display:flex;gap:14px;padding:7px 0;font-size:14px}
-.pg .rec .yr{font-size:12px;color:#a9a29c;flex:none;width:158px;font-variant-numeric:tabular-nums;
+.pg .rec .yr{font-size:12px;color:#97a1ae;flex:none;width:158px;font-variant-numeric:tabular-nums;
   padding-top:2px}
 .pg .rec .ti{color:#20252d;font-weight:600}
 .eB{display:flex;flex-direction:column}
@@ -152,13 +152,13 @@ a:focus-visible{outline:2px solid #8a3324;outline-offset:2px}
    portrait beside the identity lines rather than stacked above them. */
 .optD .shell{max-width:1560px;margin-inline:auto;display:grid;
   grid-template-columns:344px minmax(0,1fr);gap:0}
-.optD .rail{background:#fff;border-right:1px solid #e9e7e4;padding:32px 26px;
+.optD .rail{background:#fff;border-right:1px solid #e5e9ef;padding:32px 26px;
   position:sticky;top:0;align-self:start}
 .optD .rail .idrow{grid-template-columns:1fr;gap:16px}
 .optD .rail .photo{width:130px}
-.optD .rail .what{margin-top:20px;padding-top:18px;border-top:1px solid #e9e7e4}
+.optD .rail .what{margin-top:20px;padding-top:18px;border-top:1px solid #e5e9ef}
 .optD .main{padding:32px clamp(20px,3vw,40px) 52px;min-width:0}
-.optD .main > section + section{margin-top:30px;padding-top:26px;border-top:2px solid #1c1f24}
+.optD .main > section + section{margin-top:30px;padding-top:26px;border-top:2px solid #40b3e6}
 .optD .measure{max-width:940px}
 .optD h3{margin-top:24px}
 .optD section > h3:first-of-type{margin-top:14px}
@@ -176,14 +176,14 @@ a:focus-visible{outline:2px solid #8a3324;outline-offset:2px}
 
 @media(max-width:900px){
   .optD .shell{grid-template-columns:1fr}
-  .optD .rail{position:static;border-right:0;border-bottom:2px solid #1c1f24;
+  .optD .rail{position:static;border-right:0;border-bottom:2px solid #40b3e6;
     padding-block:28px;padding-inline:clamp(20px,4vw,40px)}
   .optD .railinner{display:flex;gap:26px;align-items:flex-start;flex-wrap:wrap}
   .optD .railid{flex:1 1 430px;min-width:0}
   .optD .rail .idrow{grid-template-columns:116px minmax(0,380px);gap:22px}
   .optD .rail .photo{width:auto}
   .optD .rail .what{flex:1 1 300px;min-width:0;margin-top:0;padding-top:0;border-top:0;
-    border-left:2px solid #f0e3e0;padding-left:20px}
+    border-left:2px solid #40b3e6;padding-left:20px}
   .optD .main{padding-inline:clamp(20px,4vw,40px)}
 }
 @media(max-width:560px){
