@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Nubzuki Kart — KAIST Campus Drive</title>
+<style>
+  :root{--blue:#2f95e8;--sky:#7fd0ff;--gold:#ffd23f;--ink:#0b1730;--glass:rgba(9,20,44,.55)}
+  html,body{margin:0;height:100%;overflow:hidden;background:#0b1730;color:#fff;user-select:none;-webkit-user-select:none;touch-action:none;
+    font-family:"Segoe UI","Helvetica Neue",Arial,system-ui,sans-serif}
+  canvas#gl{position:fixed;inset:0;width:100%;height:100%;display:block}
+  .hidden{display:none!important}
+  .hud{position:fixed;pointer-events:none}
+  .glass{background:var(--glass);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);border:1px solid rgba(255,255,255,.14);border-radius:14px}
+  .lbl{font-size:10px;font-weight:700;letter-spacing:.16em;opacity:.7}
+  /* position + time */
+  #pos{left:18px;top:16px;padding:10px 18px 12px 16px;min-width:150px}
+  #rank{font:italic 900 64px/1 "Segoe UI",Arial,sans-serif;letter-spacing:-.03em;text-shadow:0 3px 0 rgba(0,0,0,.35)}
+  #rank sup{font-size:26px;margin-left:2px;color:var(--gold)}
+  #rank small{font-size:20px;font-weight:700;opacity:.6;margin-left:6px}
+  #time{font:700 26px/1.1 "Segoe UI",Arial,sans-serif;font-variant-numeric:tabular-nums}
+  #left{font-size:13px;opacity:.85;font-variant-numeric:tabular-nums}
+  /* next landmark + progress */
+  #next{left:50%;top:16px;transform:translateX(-50%);padding:8px 18px;text-align:center;white-space:nowrap;border-radius:22px}
+  #nextName{font-weight:700;font-size:15px;color:var(--gold)}
+  #nextDist{font-size:13px;opacity:.85;margin-left:8px;font-variant-numeric:tabular-nums}
+  #prog{left:50%;top:64px;transform:translateX(-50%);width:min(46vw,460px);height:6px;background:rgba(255,255,255,.25);border-radius:3px}
+  #prog i{position:absolute;top:50%;width:10px;height:10px;margin:-5px 0 0 -5px;border-radius:50%;border:2px solid #fff;box-sizing:border-box}
+  #prog i.me{width:16px;height:16px;margin:-8px 0 0 -8px;background:var(--blue);z-index:2}
+  /* minimap */
+  #mini{right:16px;top:16px;width:190px;height:190px}
+  /* speedometer */
+  #speedo{right:22px;bottom:20px;width:190px;height:190px}
+  #speedo svg{position:absolute;inset:0}
+  #spd{position:absolute;left:0;right:0;top:56px;text-align:center;font:italic 900 58px/1 "Segoe UI",Arial,sans-serif;font-variant-numeric:tabular-nums;text-shadow:0 3px 0 rgba(0,0,0,.35)}
+  #speedo .unit{position:absolute;left:0;right:0;top:116px;text-align:center;font-size:12px;letter-spacing:.2em;opacity:.75}
+  #unusedBoost{position:absolute;left:44px;right:44px;bottom:26px;height:7px;background:rgba(255,255,255,.2);border-radius:4px;overflow:hidden}
+  #unusedBoost i{display:block;height:100%;width:0;background:var(--sky);border-radius:4px}
+  /* centre */
+  #msg{left:50%;top:27%;transform:translate(-50%,-50%);font:italic 900 34px "Segoe UI",Arial,sans-serif;letter-spacing:.04em;color:#ff5a4f;text-shadow:0 3px 0 rgba(0,0,0,.4);white-space:nowrap}
+  #count{left:50%;top:40%;transform:translate(-50%,-50%);text-align:center}
+  #lights{display:flex;gap:12px;justify-content:center;margin-bottom:10px}
+  #lights b{width:26px;height:26px;border-radius:50%;background:#2a2f3a;border:2px solid rgba(255,255,255,.3)}
+  #lights b.on{background:#ff3b30;box-shadow:0 0 18px #ff3b30}
+  #lights.go b{background:#34e36a;box-shadow:0 0 18px #34e36a}
+  #countN{font:italic 900 130px/1 "Segoe UI",Arial,sans-serif;text-shadow:0 6px 0 rgba(0,0,0,.35)}
+  #countN.pop{animation:pop .5s ease-out}
+  @keyframes pop{0%{transform:scale(1.9);opacity:0}40%{opacity:1}100%{transform:scale(1)}}
+  #help{left:18px;bottom:16px;padding:9px 14px;font-size:12px;line-height:1.7;transition:opacity 1s}
+  #help kbd,.card kbd{display:inline-block;min-width:18px;text-align:center;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.25);border-radius:5px;padding:0 6px;font:700 11px/18px inherit}
+  /* panels */
+  .panel{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:radial-gradient(ellipse at 50% 35%,rgba(9,20,44,.25),rgba(9,20,44,.82))}
+  .card{width:min(92vw,560px);padding:30px 34px 26px;text-align:center;box-shadow:0 30px 80px rgba(0,0,0,.5)}
+  .logo{font:italic 900 62px/1 "Segoe UI",Arial,sans-serif;letter-spacing:-.02em;background:linear-gradient(180deg,#fff 20%,var(--sky) 60%,var(--blue));-webkit-background-clip:text;background-clip:text;color:transparent;filter:drop-shadow(0 4px 0 rgba(0,0,0,.35))}
+  .tag{margin:6px 0 16px;font-size:13px;font-weight:700;letter-spacing:.32em;color:var(--gold)}
+  .chips{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin:0 0 16px}
+  .chips span{font-size:12px;padding:5px 12px;border-radius:14px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.18)}
+  .card p{margin:8px 0;font-size:14px;line-height:1.6;opacity:.9}
+  .keys{display:grid;grid-template-columns:1fr 1fr;gap:6px 18px;text-align:left;font-size:13px;margin:14px auto 4px;max-width:420px}
+  .card kbd{font-size:12px;line-height:20px}
+  button.go{margin-top:18px;font:italic 900 22px "Segoe UI",Arial,sans-serif;letter-spacing:.06em;color:#fff;background:linear-gradient(180deg,#3aa6ff,#1767d6);border:0;border-radius:14px;padding:14px 46px;cursor:pointer;box-shadow:0 6px 0 #0c3f8f,0 12px 24px rgba(0,0,0,.35);transition:transform .08s}
+  button.go:hover{transform:translateY(-2px)} button.go:active{transform:translateY(3px);box-shadow:0 2px 0 #0c3f8f}
+  button.go:disabled{background:#42506b;box-shadow:0 6px 0 #2a344a;cursor:default;transform:none}
+  button.alt{margin:18px 0 0 10px;font:700 15px inherit;color:#fff;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.3);border-radius:12px;padding:13px 22px;cursor:pointer}
+  #loadBar{height:5px;margin:16px auto 0;width:70%;background:rgba(255,255,255,.15);border-radius:3px;overflow:hidden}
+  #loadBar i{display:block;height:100%;width:0;background:var(--sky);transition:width .25s}
+  #loadMsg{font-size:12px;opacity:.7;margin-top:8px;min-height:16px}
+  .fine{margin-top:14px;font-size:10.5px;opacity:.5;line-height:1.5}
+  table.res{width:100%;border-collapse:collapse;margin:12px 0 2px;font-size:15px;font-variant-numeric:tabular-nums}
+  table.res td{padding:7px 10px;text-align:left;border-bottom:1px solid rgba(255,255,255,.1)}
+  table.res td:last-child{text-align:right} table.res td:first-child{width:34px;font-weight:800;opacity:.8}
+  table.res tr.me td{color:var(--gold);font-weight:800}
+  table.res i{display:inline-block;width:11px;height:11px;border-radius:50%;margin-right:9px;vertical-align:-1px}
+  .big{font:italic 900 54px/1.1 "Segoe UI",Arial,sans-serif;font-variant-numeric:tabular-nums}
+  /* touch */
+  #touch{position:fixed;inset:0;display:none;pointer-events:none}
+  #touch button{position:absolute;bottom:24px;width:80px;height:80px;border-radius:50%;background:rgba(255,255,255,.2);border:2px solid rgba(255,255,255,.55);display:flex;align-items:center;justify-content:center;font-size:26px;font-weight:800;pointer-events:auto}
+  #tL{left:18px}#tR{left:104px}#tA{right:18px;font-size:11px!important}#tB{right:104px;font-size:11px!important}#tD{right:62px;bottom:112px!important;width:74px!important;height:54px!important;font-size:9px!important}
+  @media (max-width:760px){#help{display:none}#mini{width:120px;height:120px}#next{top:auto;bottom:118px;font-size:12px}#prog{top:auto;bottom:108px}
+    #rank{font-size:44px}#speedo{transform:scale(.72);transform-origin:100% 100%;bottom:112px;right:10px}.logo{font-size:44px}}
+
+  :root{--glass:rgba(13,24,34,.76);--gold:#cbe5d1;--sky:#b1dcff}
+  .glass{border-radius:10px;border-color:rgba(208,228,240,.18)}
+  .panel{background:linear-gradient(90deg,rgba(4,12,19,.78),rgba(4,12,19,.25))}
+  .card{max-height:90dvh;overflow:auto;box-sizing:border-box;padding:30px;text-align:left}
+  .logo{font-style:normal;font-size:46px;letter-spacing:-.045em;color:#f1f6f8;background:none;filter:none;-webkit-text-fill-color:initial}
+  .tag{font-size:11px;letter-spacing:.23em;color:#a7c8d6;margin:10px 0 22px}
+  .chips{justify-content:flex-start;gap:6px}.chips span{border:0;border-radius:3px;background:rgba(172,205,222,.09);color:#c4d8e2}
+  .card p{color:#c4d8e2;font-size:14px;line-height:1.8}.keys{max-width:none;gap:10px 16px;margin:20px 0;color:#c4d8e2;font-size:12px}
+  button.go{font-style:normal;font-size:16px;border-radius:5px;padding:15px 30px;background:#d8edf7;color:#132a38;box-shadow:none;letter-spacing:.06em}
+  button.go:hover{background:#fff;transform:none}button.go:active{box-shadow:none;transform:translateY(1px)}
+  button.alt{border-radius:5px;font:14px inherit}.settings{display:flex;align-items:center;gap:16px;margin:18px 0;color:#bfd1dc;font-size:12px}
+  select{font:inherit;color:#e5eff4;background:#1c3443;border:1px solid #435c6b;padding:8px 10px;border-radius:5px}
+  .fine{opacity:1;color:#839ba9;font-size:11px;line-height:1.6;margin-top:22px}
+  #contactLabel{position:absolute;top:143px;width:100%;text-align:center;font-size:10px;letter-spacing:.02em;color:#c4d8e2}
+  #contactLoad{position:absolute;left:42px;right:42px;top:163px;height:3px;background:rgba(255,255,255,.15)}#loadIbar{display:block;height:100%;width:50%;background:#b1dcff;transition:width .08s}
+  #telemetry{left:18px;bottom:98px;padding:10px 14px;font-size:12px;line-height:1.8;max-width:calc(100vw - 64px)}
+  #touch button{color:#fff;font-family:inherit;padding:0;touch-action:none;-webkit-user-select:none;user-select:none}
+  #next{max-width:48vw;overflow:hidden;text-overflow:ellipsis}#rank{font-size:56px;font-style:normal}#spd{font-style:normal}
+  #msg{font:600 15px/1.5 "Segoe UI",Arial,sans-serif;letter-spacing:0;white-space:normal;text-align:center;max-width:76vw;padding:9px 16px;border-radius:6px;background:rgba(13,24,34,.8);color:#ffc5b9;text-shadow:none;top:23%}
+  #msg:empty{display:none}#msg.tour{color:#d4e8f1;font-size:12px;background:rgba(13,24,34,.65)}
+  :focus-visible{outline:2px solid #cbe5d1;outline-offset:4px}
+  @media(max-width:760px){.card{width:94vw;padding:22px}.logo{font-size:34px}.keys{grid-template-columns:1fr 1fr;font-size:11px}.tag{margin-bottom:14px}#next{max-width:85vw}#telemetry{bottom:195px}#touch button{width:72px;height:72px}#mini{width:110px;height:110px}#pos{min-width:100px;padding:10px}#rank{font-size:38px}#time{font-size:21px}}
+  @media(max-width:390px){#tL{left:8px}#tR{left:84px}#tA{right:8px}#tB{right:84px}.keys{grid-template-columns:1fr}.card{padding:18px}.fine{font-size:10px}}
+#raceActions{position:fixed;right:20px;top:218px;display:flex;gap:8px}#raceActions button{background:rgba(13,24,34,.76);color:#d8edf7;border:1px solid rgba(208,228,240,.2);border-radius:5px;min-width:44px;min-height:38px;font:13px inherit;cursor:pointer}@media(max-width:760px){#raceActions{top:136px;right:16px}}
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+
+<div id="hud" class="hidden">
+  <div class="hud glass" id="pos">
+    <div id="rank">1<sup>st</sup><small>/ 6</small></div>
+    <div class="lbl" style="margin-top:8px">TIME</div><div id="time">0:00.00</div>
+    <div id="left">4.44 km to go</div>
+  </div>
+  <div class="hud glass" id="next"><span class="lbl">NEXT</span>&nbsp; <span id="nextName">-</span><span id="nextDist"></span></div>
+  <div class="hud" id="prog"></div>
+  <canvas class="hud glass" id="mini" width="380" height="380"></canvas>
+  <div class="hud" id="speedo">
+    <svg viewBox="0 0 190 190">
+      <circle cx="95" cy="95" r="78" fill="rgba(9,20,44,.55)" stroke="rgba(255,255,255,.14)"/>
+      <circle cx="95" cy="95" r="66" fill="none" stroke="rgba(255,255,255,.16)" stroke-width="9" stroke-linecap="round" stroke-dasharray="311 415" transform="rotate(135 95 95)"/>
+      <circle id="arc" cx="95" cy="95" r="66" fill="none" stroke="#7fd0ff" stroke-width="9" stroke-linecap="round" stroke-dasharray="0 415" transform="rotate(135 95 95)"/>
+    </svg>
+    <div id="spd">0</div><div class="unit">KM/H</div>
+    <div id="contactLabel">접지</div><div id="contactLoad"><i id="loadIbar"></i></div>
+  </div>
+  <div class="hud" id="msg"></div>
+  <div class="hud" id="count"><div id="lights"><b></b><b></b><b></b></div><div id="countN"></div></div>
+  <div class="hud glass" id="help"><kbd>W</kbd>/<kbd>↑</kbd> accelerate &nbsp; <kbd>S</kbd>/<kbd>↓</kbd> brake &nbsp; <kbd>A</kbd><kbd>D</kbd>/<kbd>←</kbd><kbd>→</kbd> steer<br>
+    <kbd>Space</kbd> 핸드브레이크 &nbsp; <kbd>R</kbd> 코스 복귀 &nbsp; <kbd>Esc</kbd> 일시정지 &nbsp; <kbd>T</kbd> 차량 정보 &nbsp; <kbd>M</kbd> 음소거</div>
+  <div id="telemetry" class="hud glass hidden"><span class="lbl">VEHICLE</span><div id="telemetryText"></div></div>
+  <div id="raceActions"><button id="resetBtn" aria-label="코스로 복귀">복귀</button><button id="pauseBtn" aria-label="일시정지">Ⅱ</button></div>
+</div>
+
+<div id="touch"><button id="tL" aria-label="왼쪽 조향">◀</button><button id="tR" aria-label="오른쪽 조향">▶</button><button id="tD">HANDBRAKE</button><button id="tB">BRAKE</button><button id="tA">THROTTLE</button></div>
+
+<div class="panel" id="title">
+  <div class="card glass">
+    <div class="logo">NUBZUKI KART</div>
+    <div class="tag">DAEJEON · CAMPUS DRIVE</div>
+    <div class="chips"><span id="chipLen">4.4 km lap</span><span id="chipBump">speed bumps</span><span>6 racers</span><span>Daejeon main campus</span></div>
+    <p>넙죽이와 달리는 KAIST 캠퍼스.<br>코너를 읽고, 제동하고, 노면의 변화를 느껴보세요.</p>
+    <div class="keys">
+      <div><kbd>W</kbd> / <kbd>↑</kbd> &nbsp;가속</div><div><kbd>S</kbd> / <kbd>↓</kbd> &nbsp;제동 · 정지 후 유지하면 후진</div>
+      <div><kbd>A</kbd> <kbd>D</kbd> / <kbd>←</kbd> <kbd>→</kbd> &nbsp;조향</div><div><kbd>Space</kbd> &nbsp;핸드브레이크</div>
+      <div><kbd>R</kbd> &nbsp;코스 복귀</div><div><kbd>Esc</kbd> &nbsp;일시정지 &nbsp; <kbd>M</kbd> &nbsp;음소거</div>
+    </div>
+    <div class="settings"><label for="qualitySelect">그래픽 품질</label><select id="qualitySelect"><option value="auto">자동</option><option value="0">높음</option><option value="1">균형</option><option value="2">성능 우선</option></select></div>
+    <p id="bestLine"></p>
+    <button class="go" id="startBtn" disabled>LOADING</button>
+    <button class="alt" id="tourBtn" disabled>자동 시승</button>
+    <div id="loadBar"><i id="loadI"></i></div><div id="loadMsg"></div>
+    <div class="fine">© OpenStreetMap contributors · SRTM elevation<br>KAIST 건강달리기 경로를 차도로 재구성한 비공식 팬 프로젝트. 넙죽이는 KAIST의 마스코트입니다.</div>
+  </div>
+</div>
+
+<div class="panel hidden" id="pause">
+  <div class="card glass" style="width:min(88vw,380px)">
+    <div class="logo" style="font-size:44px">PAUSED</div>
+    <button class="go" id="resumeBtn">RESUME</button><br>
+    <button class="alt" id="restartBtn" style="margin-left:0">Restart race</button><button class="alt" id="quitBtn">Quit to title</button>
+  </div>
+</div>
+
+<div class="panel hidden" id="results">
+  <div class="card glass">
+    <div class="logo" id="resTitle" style="font-size:50px">FINISH!</div>
+    <div class="tag" id="resSub"></div>
+    <div class="big" id="resTime"></div>
+    <p id="resBest"></p>
+    <table class="res" id="resTable"></table>
+    <button class="go" id="againBtn">RACE AGAIN</button><button class="alt" id="titleBtn">Title</button>
+  </div>
+</div>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
