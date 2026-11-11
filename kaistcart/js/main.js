@@ -3,7 +3,10 @@ import * as THREE from '../lib/three.module.min.js';
 import { W, loadWorld, updateWorld, hAt, gAt, surfAt, coursePos, clamp, mod, lerp, rng, DS } from './world.js';
 import { makeNubzuki, poseKart } from './kart.js';
 import { Vehicle, RIDE } from './vehicle-physics.js';
-import { FixedStepper, syncRacer, updateProgress, aiControls, resolveWalls, resolveRacerContacts } from './race-sim.js';
+import { FixedStepper, syncRacer, updateProgress, resolveWalls } from './race-sim.js';
+import { resolveCourseBarrier } from './course-barriers.js';
+import { LapTracker, normalizeName } from './time-attack.js';
+import { createRecordsClient } from './leaderboard.js';
 import { Particles, Skids, Post } from './fx.js';
 import { Sfx } from './audio.js';
 
@@ -11,7 +14,6 @@ const $ = id => document.getElementById(id);
 const Q = new URLSearchParams(location.search);
 const rnd = rng(99);
 const angDiff = (a, b) => { let d = a - b; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return d; };
-const ORD = ['st', 'nd', 'rd', 'th', 'th', 'th'];
 const fmt = t => { const m = Math.floor(t / 60), s = t - m * 60; return m + ':' + (s < 10 ? '0' : '') + s.toFixed(2); };
 
 // ───────────────────────── renderer ─────────────────────────
@@ -48,44 +50,30 @@ function resize() {
 addEventListener('resize', resize);
 
 // ───────────────────────── state ─────────────────────────
-const keys = { up: false, down: false, left: false, right: false, drift: false };
-const KEYMAP = { ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down', ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right', Space: 'drift' };
-let touchMode = false;
+const keys = { up: false, down: false, left: false, right: false };
+const KEYMAP = { ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down', ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right' };
+let touchMode = matchMedia('(pointer:coarse)').matches;
 let state = 'load'; // load → title → count → race → finish (+ pause)
-let T = 0, raceT = 0, countT = 0, finT = 0, finishOrder = 0, helpT = 0;
+let T = 0, raceT = 0, countT = 0, finT = 0, helpT = 0;
 const sfx = new Sfx();
 const P = { name: 'You', color: 0x2f95e8, x: 0, z: 0, th: 0, vx: 0, vz: 0, vf: 0, vl: 0, wy: 0, steer: 0, drift: false, grip: 1,
   prog: 0, lost: false, off: false, wrong: 0, shake: 0, flipT: 0, done: 0, time: 0, body: new Vehicle({ groundAt: gAt, surfaceAt: surfAt }), mesh: null };
-const AI = [
-  { name: 'Quark', color: 0x35c2d6, accent: 0xf2c230 }, { name: 'Photon', color: 0x7a82ee, accent: 0xe8483c }, { name: 'Tensor', color: 0x3fbf8f, accent: 0x8a4fd0 },
-  { name: 'Kernel', color: 0xea6fa6, accent: 0x1f2a44 }, { name: 'Byte', color: 0xf2a13a, accent: 0x2f9e58 },
-];
-const ais = [];
 const tmp = { x: 0, z: 0, th: 0 }, v3 = new THREE.Vector3(), v2 = new THREE.Vector2();
 let dust, glow, skids;
 const stepper = new FixedStepper();
-let reverseHold = 0, telemetry = false, autoDrive = false, frameMs = 16.7;
+let reverseHold = 0, telemetry = false, frameMs = 16.7;
+let lap, runSession = null, practice = false, starting = false, saving = false, recordSaved = false;
+const records = createRecordsClient();
+let leaderboardEntries = [];
 
 function placeGrid() {
-  const slots = [];
-  for (let k = 0; k < ais.length + 1; k++) slots.push({ prog: -(3 + 3.2 * Math.floor(k / 2)), off: k % 2 ? -2.3 : 2.3 });
-  ais.forEach((a, i) => {
-    Object.assign(a, { prog: slots[i].prog, off: slots[i].off, speed: 0, done: 0, time: 0, wob: rnd() * 6, steer: 0, vf: 0 });
-    coursePos(a.prog, a.off, tmp); a.body.reset(tmp.x, tmp.z, tmp.th); syncRacer(a);
-  });
-  const s = slots[ais.length];
-  coursePos(s.prog, s.off, tmp);
+  coursePos(0, 0, tmp);
   Object.assign(P, { x: tmp.x, z: tmp.z, th: tmp.th, vx: 0, vz: 0, vf: 0, vl: 0, wy: 0, steer: 0, drift: false, grip: 1,
-    prog: s.prog, lost: false, off: false, wrong: 0, shake: 0, flipT: 0, done: 0, time: 0 });
+    prog: 0, lost: false, off: false, wrong: 0, shake: 0, flipT: 0, done: 0, time: 0 });
   P.body.reset(P.x, P.z, P.th); syncRacer(P); reverseHold = 0; stepper.reset();
-  finishOrder = 0; raceT = 0; cam.snap = true;
+  lap = new LapTracker(W.C.n); raceT = 0; cam.snap = true;
+  for (const key in keys) keys[key] = false;
   if (skids) skids.clear();
-}
-function resetToCourse() {
-  coursePos(Math.floor(P.prog), 0, tmp);
-  Object.assign(P, { x: tmp.x, z: tmp.z, th: tmp.th, vx: 0, vz: 0, vf: 0, vl: 0, wy: 0, steer: 0, drift: false, lost: false, flipT: 0 });
-  P.body.reset(P.x, P.z, P.th); syncRacer(P);
-  cam.snap = true;
 }
 
 // ───────────────────────── driving physics ─────────────────────────
@@ -95,38 +83,24 @@ function stepPlayer(dt, input) {
   P.steer += (st - P.steer) * (1 - Math.exp(-dt * 7));
   reverseHold = input && keys.down && Math.abs(P.body.vf) < .7 ? reverseHold + dt : 0;
   const reversing = reverseHold > .35 || (input && keys.down && P.body.vf < -.3);
-  let controls = {
+  const controls = {
     throttle: input && keys.up ? 1 : reversing ? -.45 : 0,
     brake: input ? (keys.down && !reversing ? 1 : 0) : 1,
     steer: P.steer,
-    handbrake: input && keys.drift,
+    handbrake: false,
   };
-  if (input && autoDrive) {
-    if (keys.up || keys.down || keys.left || keys.right || keys.drift) autoDrive = false;
-    else { controls = aiControls(P, W, coursePos); P.steer = controls.steer; }
-  }
-  const previous = { x: P.body.x, z: P.body.z };
+  const previous = { x: P.body.x, z: P.body.z, q: [...P.body.q] };
   const impulse = P.body.step(dt, controls);
   ev.J += impulse / P.body.parameters.mass;
   ev.hit = Math.max(ev.hit, resolveWalls(P.body, previous, surfAt));
+  ev.hit = Math.max(ev.hit, resolveCourseBarrier(P.body, previous, W.C, P.prog));
   syncRacer(P);
   P.flipT = P.body.up < .25 && P.body.contacts ? P.flipT + dt : 0;
-}
-function stepAI(dt, racing) {
-  for (const a of ais) {
-    const controls = racing && !a.done ? aiControls(a, W, coursePos) : { brake: 1 };
-    const previous = { x: a.body.x, z: a.body.z };
-    a.body.step(dt, controls);
-    resolveWalls(a.body, previous, surfAt);
-    syncRacer(a); a.steer = controls.steer || 0;
-    updateProgress(a, W.C);
-    a.body.landed = 0;
-    if (racing && !a.done && a.prog >= W.C.n) { a.done = ++finishOrder; a.time = raceT; }
-  }
 }
 function trackProgress(dt) {
   const C = W.C;
   updateProgress(P, C);
+  lap.advance(P.prog);
   const k = mod(Math.floor(P.prog), C.n);
   const along = Math.sin(P.th) * C.tx[k] + Math.cos(P.th) * C.tz[k];
   P.wrong = along < -.4 && P.vf > 3 ? P.wrong + dt : 0;
@@ -211,8 +185,7 @@ function buildHud() {
   for (const ci of W.courseBumps) c.fillRect(C.x[ci] * sc + hud.m.ox - 2.5, C.z[ci] * sc + hud.m.oz - 2.5, 5, 5);
   c.fillStyle = '#111'; c.fillRect(C.x[0] * sc + hud.m.ox - 7, C.z[0] * sc + hud.m.oz - 7, 14, 14);
   c.fillStyle = '#fff'; c.fillRect(C.x[0] * sc + hud.m.ox - 7, C.z[0] * sc + hud.m.oz - 7, 7, 7); c.fillRect(C.x[0] * sc + hud.m.ox, C.z[0] * sc + hud.m.oz, 7, 7);
-  const hex = n => '#' + n.toString(16).padStart(6, '0');
-  for (const r of [...ais, P]) { const d = document.createElement('i'); d.style.background = hex(r.color); if (r === P) d.className = 'me'; $('prog').appendChild(d); hud.dots.push(d); }
+  const dot = document.createElement('i'); dot.className = 'me'; $('prog').replaceChildren(dot); hud.dots = [dot];
   $('chipLen').textContent = (C.len / 1000).toFixed(2) + ' km lap';
   $('chipBump').textContent = W.courseBumps.length + ' speed bumps';
 }
@@ -222,25 +195,24 @@ function updateHud(dt) {
   $('arc').setAttribute('stroke-dasharray', (311 * clamp(spd / 130, 0, 1)).toFixed(1) + ' 415');
   $('arc').setAttribute('stroke', P.body.contacts ? '#7fd0ff' : '#ffd23f');
   setText('time', fmt(P.done ? P.time : raceT));
-  const rank = P.done || 1 + ais.filter(a => a.prog > P.prog).length;
-  if (hud.last.rank !== rank) { hud.last.rank = rank; $('rank').innerHTML = rank + '<sup>' + ORD[rank - 1] + '</sup><small>/ ' + (ais.length + 1) + '</small>'; }
+  setText('driverName', P.name);
+  setText('runMode', practice ? 'PRACTICE' : 'TIME ATTACK');
+  setText('checkpointStatus', 'CHECKPOINT ' + lap.checkpoints.length + ' / 32');
   const leftM = Math.max(0, (C.n - P.prog) * (W.C.ds || DS));
   setText('left', leftM >= 1000 ? (leftM / 1000).toFixed(2) + ' km to go' : Math.round(leftM / 10) * 10 + ' m to go');
-  [...ais, P].forEach((r, i) => { hud.dots[i].style.left = clamp(r.prog / C.n * 100, 0, 100) + '%'; });
+  hud.dots[0].style.left = clamp(P.prog / C.n * 100, 0, 100) + '%';
   const k = P.prog < 0 ? 0 : mod(Math.floor(P.prog), C.n);
   const nx = W.landmarks.find(m => m.idx > k + 4 && m.idx > 0) || { name: 'Finish line', idx: C.n };
   setText('nextName', nx.name); setText('nextDist', Math.round((nx.idx - k) * (W.C.ds || DS) / 10) * 10 + ' m');
   $('loadIbar').style.width = clamp(P.body.load / 2, 0, 1) * 100 + '%';
   setText('contactLabel', P.body.contacts ? '접지 ' + P.body.load.toFixed(1) + ' × 정하중' : '공중 · 접촉 없음');
   if (telemetry) setText('telemetryText', '피치 ' + (P.body.p * 180 / Math.PI).toFixed(1) + '° · 롤 ' + (P.body.r * 180 / Math.PI).toFixed(1) + '° · 수직 ' + P.body.vy.toFixed(2) + ' m/s · ' + Math.round(1000 / frameMs) + ' FPS');
-  $('telemetry').dataset.state = JSON.stringify({ x:P.x, z:P.z, speed:spd, progress:P.prog, up:P.body.up, fps:1000/frameMs, calls:renderer.info.render.calls, triangles:renderer.info.render.triangles });
-  setText('msg', state !== 'race' ? '' : P.flipT > 1 ? '전복 · 복귀 버튼 또는 R' : P.lost ? '코스 이탈 · 복귀 버튼 또는 R' : P.wrong > .8 ? 'WRONG WAY' : autoDrive ? '자동 시승 · 조작하면 직접 운전' : '');
-  $('msg').classList.toggle('tour', autoDrive && !P.lost && P.flipT <= 1 && P.wrong <= .8);
+  $('telemetry').dataset.state = JSON.stringify({ x:P.x, z:P.z, heading:P.th, speed:spd, progress:P.prog, up:P.body.up, fps:1000/frameMs, checkpoints:lap.checkpoints.length, valid:lap.valid, mode:practice?'practice':'ranked' });
+  setText('msg', state !== 'race' ? '' : !lap.valid ? '경로 확인 실패 · 일시정지에서 다시 시작' : P.flipT > 1 ? '전복 · 일시정지에서 다시 시작' : P.wrong > .8 ? '역주행 중' : '');
   if (helpT > 0) { helpT -= dt; if (helpT <= 0) $('help').style.opacity = 0; }
   // minimap
   const c = $('mini').getContext('2d'), S = $('mini').width, m = hud.m;
   c.clearRect(0, 0, S, S); c.drawImage(hud.base, 0, 0);
-  for (const a of ais) { c.fillStyle = '#' + a.color.toString(16).padStart(6, '0'); c.strokeStyle = '#fff'; c.lineWidth = 2; c.beginPath(); c.arc(a.x * m.sc + m.ox, a.z * m.sc + m.oz, 7, 0, 7); c.fill(); c.stroke(); }
   c.save(); c.translate(P.x * m.sc + m.ox, P.z * m.sc + m.oz); c.rotate(-P.th + Math.PI);
   c.fillStyle = '#2f95e8'; c.strokeStyle = '#fff'; c.lineWidth = 3.5;
   c.beginPath(); c.moveTo(0, -15); c.lineTo(10, 10); c.lineTo(0, 5); c.lineTo(-10, 10); c.closePath(); c.fill(); c.stroke(); c.restore();
@@ -251,60 +223,110 @@ function showCount(n, go) {
   [...L.children].forEach((b, i) => b.classList.toggle('on', !go && typeof n === 'number' && i <= 3 - n));
   if (N.textContent !== String(n)) { N.textContent = n; N.classList.remove('pop'); void N.offsetWidth; N.classList.add('pop'); }
 }
-const BEST_KEY = 'nubzuki-physical-best-v1';
-const getBest = () => { try { return parseFloat(localStorage.getItem(BEST_KEY)) || 0; } catch { return 0; } };
-const setBest = t => { try { localStorage.setItem(BEST_KEY, String(t)); } catch { /* storage unavailable */ } };
+function renderRecords() {
+  for (const id of ['leaderboardTable', 'resTable']) {
+    const table = $(id); table.replaceChildren();
+    const head = table.createTHead().insertRow();
+    for (const label of ['순위', '닉네임', '완주 기록']) { const cell = document.createElement('th'); cell.textContent = label; head.appendChild(cell); }
+    const body = table.createTBody();
+    for (const entry of leaderboardEntries.slice(0, 10)) {
+      const row = body.insertRow();
+      if (entry.name === P.name) row.className = 'me';
+      for (const value of [entry.rank, entry.name, fmt(entry.timeMs / 1000)]) row.insertCell().textContent = String(value);
+    }
+    if (!leaderboardEntries.length) { const cell = body.insertRow().insertCell(); cell.colSpan = 3; cell.textContent = '첫 완주 기록의 주인공이 되어 보세요.'; }
+  }
+}
+async function refreshRecords() {
+  $('leaderboardStatus').textContent = '온라인 기록을 불러오는 중…';
+  try {
+    const data = await records.list();
+    leaderboardEntries = data.entries;
+    renderRecords();
+    $('leaderboardStatus').textContent = '닉네임별 최고 기록 · 모든 방문자에게 공개';
+  } catch (error) { $('leaderboardStatus').textContent = error.message; }
+}
+async function saveFinishedRun() {
+  if (saving || recordSaved || !P.done || practice || !runSession) return;
+  const session = runSession, completedTime = Math.round(P.time * 1000), checkpoints = lap.checkpoints, name = P.name;
+  saving = true; show('retrySaveBtn', false);
+  $('againBtn').disabled = true; $('titleBtn').disabled = true;
+  $('resBest').textContent = '완주 기록을 온라인에 저장하는 중…';
+  try {
+    await records.finish(session, completedTime, checkpoints);
+    if (runSession !== session) return;
+    recordSaved = true;
+    $('resBest').textContent = '온라인 저장 완료 · ' + name;
+    await refreshRecords();
+  } catch (error) { if (runSession === session) { $('resBest').textContent = '저장되지 않았습니다. ' + error.message; show('retrySaveBtn', true); } }
+  finally { if (runSession === session) { saving = false; $('againBtn').disabled = false; $('titleBtn').disabled = false; } }
+}
 function showResults() {
-  const C = W.C, rows = [P, ...ais].map(r => ({ r, t: r.done ? r.time : raceT + Math.max(0, C.n - r.prog) * (W.C.ds || DS) / (r.base || 20), est: !r.done }));
-  rows.sort((a, b) => a.t - b.t);
-  const rank = rows.findIndex(o => o.r === P) + 1, best = getBest(), isBest = !best || P.time < best;
-  if (isBest) setBest(P.time);
-  $('resTitle').textContent = rank === 1 ? 'YOU WIN!' : 'FINISH!';
-  $('resSub').textContent = rank + ORD[rank - 1].toUpperCase() + ' PLACE · ' + (C.len / 1000).toFixed(2) + ' KM';
+  $('resTitle').textContent = 'FINISH';
+  $('resSub').textContent = P.name + ' · ' + (W.C.len / 1000).toFixed(2) + ' KM';
   $('resTime').textContent = fmt(P.time);
-  $('resBest').textContent = isBest ? 'New personal best!' : 'Personal best ' + fmt(best);
-  $('resTable').innerHTML = rows.map((o, i) => `<tr class="${o.r === P ? 'me' : ''}"><td>${i + 1}</td><td><i style="background:#${o.r.color.toString(16).padStart(6, '0')}"></i>${o.r.name}</td><td>${fmt(o.t)}</td></tr>`).join('');
+  $('resBest').textContent = practice ? '연습 주행 완료 · 온라인 기록에는 등록되지 않습니다.' : '완주 기록을 온라인에 저장하는 중…';
+  renderRecords(); show('retrySaveBtn', false);
   $('results').classList.remove('hidden');
+  void saveFinishedRun();
 }
 
 // ───────────────────────── flow ─────────────────────────
 function show(id, on) { $(id).classList.toggle('hidden', !on); }
-function startRace(tour = false) {
+async function startRace(isPractice = false) {
+  if (starting || saving) return;
+  const name = normalizeName($('playerName').value);
+  if (!name.valid) { $('nameError').textContent = name.error; toTitle(false); $('playerName').focus(); return; }
+  $('nameError').textContent = ''; starting = true;
+  for (const id of ['startBtn', 'practiceBtn', 'againBtn', 'titleBtn', 'restartBtn', 'quitBtn']) $(id).disabled = true;
+  $('startBtn').textContent = '연결 중…';
   sfx.init();
-  placeGrid();
-  autoDrive = tour;
-  show('title', false); show('results', false); show('pause', false); show('hud', true);
-  $('help').style.opacity = 1; helpT = 9;
-  state = 'count'; countT = 4.2; hud.beep = 4;
-  showCount('');
+  try {
+    const session = isPractice ? null : await records.start(name.name);
+    P.name = name.name; $('playerName').value = P.name;
+    try { localStorage.setItem('kaistcart-nickname', P.name); } catch {}
+    runSession = session; practice = isPractice; recordSaved = false; saving = false;
+    placeGrid();
+    $('touch').style.display = touchMode ? 'block' : 'none';
+    show('title', false); show('results', false); show('pause', false); show('hud', true); show('touch', touchMode);
+    $('help').style.opacity = 1; helpT = 9;
+    state = 'count'; countT = 4.2; hud.beep = 4; last = 0;
+    showCount('');
+  } catch (error) { toTitle(false); $('nameError').textContent = error.message; }
+  finally { starting = false; for (const id of ['startBtn', 'practiceBtn', 'againBtn', 'titleBtn', 'restartBtn', 'quitBtn']) $(id).disabled = false; $('startBtn').textContent = '기록 도전'; }
 }
-function toTitle() { placeGrid(); state = 'title'; show('title', true); show('results', false); show('pause', false); show('hud', false); sfx.quiet(); const b = getBest(); $('bestLine').textContent = b ? 'Personal best ' + fmt(b) : ''; }
+function toTitle(refresh = true) { placeGrid(); state = 'title'; show('title', true); show('results', false); show('pause', false); show('hud', false); show('touch', false); sfx.quiet(); if (refresh) void refreshRecords(); }
 let pausedState = 'race';
-function setPause(on) { if (on && (state === 'race' || state === 'count')) { pausedState = state; state = 'pause'; show('pause', true); sfx.quiet(); } else if (!on && state === 'pause') { state = pausedState; last = 0; show('pause', false); } }
-$('startBtn').onclick = () => startRace(); $('againBtn').onclick = () => startRace(); $('restartBtn').onclick = () => startRace();
-$('tourBtn').onclick = () => startRace(true);
-$('resetBtn').onclick = () => { if (state === 'race') resetToCourse(); };
+function setPause(on) { if (on && (state === 'race' || state === 'count')) { for (const key in keys) keys[key] = false; pausedState = state; state = 'pause'; show('pause', true); show('touch', false); sfx.quiet(); } else if (!on && state === 'pause') { state = pausedState; last = 0; show('pause', false); show('touch', touchMode); } }
+$('startBtn').onclick = () => startRace(); $('againBtn').onclick = () => startRace(practice);
+$('restartBtn').onclick = () => { toTitle(false); void startRace(practice); };
+$('practiceBtn').onclick = () => startRace(true);
+$('retrySaveBtn').onclick = saveFinishedRun;
+$('refreshRecordsBtn').onclick = refreshRecords;
 $('pauseBtn').onclick = () => setPause(true);
-$('titleBtn').onclick = toTitle; $('quitBtn').onclick = toTitle; $('resumeBtn').onclick = () => setPause(false);
+$('titleBtn').onclick = () => toTitle(); $('quitBtn').onclick = () => toTitle(); $('resumeBtn').onclick = () => setPause(false);
 addEventListener('keydown', e => {
+  if (e.target instanceof HTMLElement && e.target.matches('input, textarea, select')) {
+    if (e.code === 'Enter' && state === 'title' && !$('startBtn').disabled && !e.isComposing) { e.preventDefault(); void startRace(); }
+    return;
+  }
+  if (state !== 'race' && state !== 'count' && state !== 'pause') return;
   if (KEYMAP[e.code]) { keys[KEYMAP[e.code]] = true; e.preventDefault(); }
   if (e.repeat) return;
-  if (e.code === 'KeyR' && state === 'race') resetToCourse();
   if (e.code === 'KeyM') sfx.setMuted(!sfx.muted);
   if (e.code === 'KeyT') { telemetry = !telemetry; $('telemetry').classList.toggle('hidden', !telemetry); }
   if (e.code === 'Escape' || e.code === 'KeyP') setPause(state !== 'pause');
-  if (e.code === 'Enter') { if (state === 'title' && !$('startBtn').disabled) startRace(); else if (state === 'finish' && !$('results').classList.contains('hidden')) startRace(); }
 });
 addEventListener('keyup', e => { if (KEYMAP[e.code]) { keys[KEYMAP[e.code]] = false; e.preventDefault(); } });
 addEventListener('blur', () => { for (const k in keys) keys[k] = false; setPause(true); });
 document.addEventListener('visibilitychange', () => { if (document.hidden) setPause(true); });
-for (const [id, k] of [['tL', 'left'], ['tR', 'right'], ['tD', 'drift'], ['tB', 'down'], ['tA', 'up']]) {
+for (const [id, k] of [['tL', 'left'], ['tR', 'right'], ['tB', 'down'], ['tA', 'up']]) {
   const el = $(id);
   el.addEventListener('pointerdown', e => { keys[k] = true; el.setPointerCapture(e.pointerId); e.preventDefault(); });
   for (const evn of ['pointerup', 'pointercancel']) el.addEventListener(evn, () => { keys[k] = false; });
 }
 $('qualitySelect').onchange = e => { qual = e.target.value === 'auto' ? 0 : Number(e.target.value); applyQuality(); };
-addEventListener('touchstart', () => { if (!touchMode) { touchMode = true; $('touch').style.display = 'block'; } }, { passive: true });
+addEventListener('touchstart', () => { touchMode = true; if (state === 'race' || state === 'count') { $('touch').style.display = 'block'; show('touch', true); } }, { passive: true });
 
 // ───────────────────────── main loop ─────────────────────────
 function simulate(dt) {
@@ -322,13 +344,11 @@ function simulate(dt) {
     raceT += dt;
   }
   stepPlayer(dt, racing);
-  stepAI(dt, racing || state === 'finish');
-  resolveRacerContacts([P, ...ais], surfAt);
   if (racing) {
     trackProgress(dt);
-    if (P.prog >= W.C.n) { P.done = ++finishOrder; P.time = raceT; state = 'finish'; finT = 0; sfx.fanfare(); }
+    if (lap.completed) { P.done = 1; P.time = raceT; state = 'finish'; finT = 0; show('touch', false); sfx.fanfare(); }
   } else if (state === 'finish') {
-    raceT += dt; finT += dt;
+    finT += dt;
     if (finT > 2.4 && $('results').classList.contains('hidden')) showResults();
   }
 }
@@ -337,7 +357,6 @@ function tick(dt) {
   if (state !== 'pause') {
     stepper.advance(dt, simulate);
     poseKart(P.mesh, P, dt, T);
-    for (const a of ais) poseKart(a.mesh, a, dt, T);
     effects(dt);
   }
   updateCamera(dt);
@@ -372,14 +391,12 @@ async function init() {
   await loadWorld(scene, renderer, msg => { n++; $('loadMsg').textContent = msg + '…'; $('loadI').style.width = Math.min(95, n * 13) + '%'; });
   dust = new Particles(scene, 420, false); glow = new Particles(scene, 320, true); skids = new Skids(scene);
   P.mesh = makeNubzuki(scene, { body: P.color, accent: 0xf4f4f4, helmet: 0xffffff });
-  AI.forEach((d, i) => ais.push({ ...d, mesh: makeNubzuki(scene, { body: d.color, accent: d.accent, helmet: d.accent }), body: new Vehicle({ groundAt: gAt, surfaceAt: surfAt }),
-    base: 17 + i * .55, offTarget: (i % 2 ? -1 : 1) * .85, prog: 0, off: 0, speed: 0, x: 0, z: 0, th: 0, vf: 0, steer: 0, boost: 0, done: 0, time: 0, wob: 0 }));
   placeGrid();
   buildHud();
   $('loadI').style.width = '100%'; $('loadMsg').textContent = ''; show('loadBar', false);
-  $('startBtn').disabled = false; $('tourBtn').disabled = false; $('startBtn').textContent = 'START RACE';
+  $('startBtn').disabled = false; $('practiceBtn').disabled = false; $('startBtn').textContent = '기록 도전';
+  try { $('playerName').value = localStorage.getItem('kaistcart-nickname') || ''; } catch {}
   toTitle();
-  window.__game = { P, W, ais, keys, tick, camera, renderer, scene, start: startRace, reset: resetToCourse, gAt, hAt, surfAt, get state() { return state; }, get raceT() { return raceT; } };
 }
 requestAnimationFrame(frame);
 init().catch(e => { console.error(e); $('loadMsg').textContent = 'Failed to load: ' + e.message; });

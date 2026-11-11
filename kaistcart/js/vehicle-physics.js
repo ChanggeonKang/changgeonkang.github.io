@@ -1,6 +1,8 @@
 // SI-unit, six-degree-of-freedom vehicle prototype. All dimensions and tuning below
 // are explicit engineering assumptions for the fictional character, not a calibrated real vehicle.
-// Coordinates: +Y up, +Z forward, +X right; positive steering turns right.
+// THREE right-handed coordinates: +Y up, character nose +Z. From the rear
+// looking forward, driver/screen right is -local X. Positive steering turns
+// right; mathematical THREE yaw/heading therefore decreases on a right turn.
 export const VEHICLE_DEFAULTS = Object.freeze({
   mass: 220, gravity: 9.81, wheelbase: 1.90, track: 1.24,
   inertia: Object.freeze([125, 160, 95]), // body-axis moments, kg m²
@@ -70,15 +72,15 @@ export class Vehicle {
     this.normalImpulse = 0; this.hardImpulse = 0; this.steer = 0;
   }
 
-  get right() { return rotate(this.q, [1, 0, 0]); }
+  get right() { return rotate(this.q, [-1, 0, 0]); }
   get upward() { return rotate(this.q, [0, 1, 0]); }
   get forward() { return rotate(this.q, [0, 0, 1]); }
   get th() { const f = this.forward; return Math.atan2(f[0], f[2]); }
   get p() { return Math.asin(clamp(this.forward[1], -1, 1)); }
-  get r() { const r = this.right, u = this.upward; return Math.atan2(r[1], u[1]); }
+  get r() { const r = this.right, u = this.upward; return Math.atan2(-r[1], u[1]); }
   get up() { return this.upward[1]; }
   get wy() { return this.angularVelocity[1]; }
-  get wp() { return -dot(this.angularVelocity, this.right); }
+  get wp() { return dot(this.angularVelocity, this.right); }
   get wr() { return dot(this.angularVelocity, this.forward); }
   get vf() { return dot([this.vx, this.vy, this.vz], this.forward); }
   get vl() { return dot([this.vx, this.vy, this.vz], this.right); }
@@ -94,6 +96,8 @@ export class Vehicle {
     const ground = this._ground(x, z), u = ground.normal;
     const horizontal = [Math.sin(heading), 0, Math.cos(heading)];
     const f = norm(add(horizontal, scale(u, -dot(horizontal, u))));
+    // A rotation matrix needs its canonical +X column (driver-left), not the
+    // driver-right vector used for steering and lateral speed.
     this.q = quaternionFromBasis(norm(cross(u, f)), u, f);
     this.x = x; this.z = z; this.y = (groundOverride ?? ground.height) + this.rideHeight / Math.max(0.2, u[1]);
     this.vx = 0; this.vy = 0; this.vz = 0; this.angularVelocity = [0, 0, 0];
@@ -188,7 +192,7 @@ export class Vehicle {
 
         const steered = add(scale(f, Math.cos(steering)), scale(right, Math.sin(steering)));
         const tangentForward = norm(add(steered, scale(n, -dot(steered, n))));
-        const tangentRight = norm(cross(n, tangentForward));
+        const tangentRight = norm(cross(tangentForward, n));
         const longitudinal = dot(velocity, tangentForward), lateral = dot(velocity, tangentRight);
         const treadSpeed = wheel.omega * p.wheelRadius;
         const slipRatio = (treadSpeed - longitudinal) / Math.max(2, Math.abs(treadSpeed), Math.abs(longitudinal));

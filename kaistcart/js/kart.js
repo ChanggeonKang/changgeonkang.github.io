@@ -142,13 +142,13 @@ export function poseKart(g, s, dt, t) {
     m.rotation.y = m.userData.a0 + spread + Math.sin(t * 12 + i * 1.9) * .05 * sp * (1 - u.air);
     m.rotation.x = -u.air * .25 + (i < 2 ? -s.steer * .0 : 0);
   });
-  u.head.rotation.z += (clamp(-b.wr * .05 - s.steer * .07 * sp, -.2, .2) - u.head.rotation.z) * k;
+  u.head.rotation.z += (clamp(-b.wr * .05 + s.steer * .07 * sp, -.2, .2) - u.head.rotation.z) * k;
   u.head.rotation.x += (clamp(b.wp * .03, -.15, .15) - u.head.rotation.x) * k;
-  for (const p of u.eyes) { p.position.x += (s.steer * .055 - p.position.x) * k; p.position.y += ((u.air > .5 ? .04 : 0) - p.position.y) * k; }
+  for (const p of u.eyes) { p.position.x += (-s.steer * .055 - p.position.x) * k; p.position.y += ((u.air > .5 ? .04 : 0) - p.position.y) * k; }
   u.rider.rotation.z += (s.steer * .22 * sp - u.rider.rotation.z) * k;
   u.rider.rotation.x += ((s.boost ? .22 : 0) - u.air * .3 - u.rider.rotation.x) * k;
   for (const a of u.arms) a.rotation.x += (lerp(-1.25, -3.0, u.air) - a.rotation.x) * k;
-  u.hd.rotation.y += (s.steer * .35 - u.hd.rotation.y) * k;
+  u.hd.rotation.y += (-s.steer * .35 - u.hd.rotation.y) * k;
   const hgt = clamp(1 - (b.y - RIDE - gy) / 5, .25, 1);
   u.ao.position.set(s.x, gy + .04, s.z); u.ao.rotation.z = -s.th;
   u.ao.scale.set(1.25 * hgt, 1.7 * hgt, 1); u.ao.material.opacity = .22 * hgt;

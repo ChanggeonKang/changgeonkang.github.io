@@ -1,6 +1,7 @@
 // World: terrain, course, roads, buildings, vegetation, props, sky.
 import * as THREE from '../lib/three.module.min.js';
 import { buildLandmarks } from './landmarks.js';
+import { COURSE_BARRIER, getCourseBarriers } from './course-barriers.js';
 
 export const VS = 1;          // preserve source elevation scale (source resolution remains limited)
 export const DS = 2;          // course sample spacing (m)
@@ -514,6 +515,25 @@ function buildCourseMesh(scene) {
   cm.castShadow = false;
 }
 
+function buildCourseBarriers(scene) {
+  const geometry = getCourseBarriers(W.C), mb = new MB(), topColor = col(0xcbd6dc), backColor = col(0x627785);
+  const colors = [col(0xb4c4cd), col(0x446779)], height = COURSE_BARRIER.height;
+  for (const segment of geometry.segments) {
+    const { a, b, outerA, outerB, nx, nz, index } = segment;
+    const base = p => [p[0], hAt(p[0], p[1]) + ROAD_LIFT - .12, p[1]];
+    const raised = p => [p[0], hAt(p[0], p[1]) + ROAD_LIFT + height, p[1]];
+    const a0 = base(a), b0 = base(b), a1 = raised(a), b1 = raised(b), oa0 = base(outerA), ob0 = base(outerB), oa1 = raised(outerA), ob1 = raised(outerB);
+    const v0 = index * W.C.ds, v1 = (index + 1) * W.C.ds, frontColor = colors[Math.floor(index / 4) % colors.length];
+    mb.quad(a0, b0, b1, a1, [nx, 0, nz], [v0, 0], [v1, 0], [v1, 1], [v0, 1], frontColor);
+    mb.quad(ob0, oa0, oa1, ob1, [-nx, 0, -nz], [v1, 0], [v0, 0], [v0, 1], [v1, 1], backColor);
+    mb.quad(a1, b1, ob1, oa1, UP, [v0, 0], [v1, 0], [v1, .28], [v0, .28], topColor);
+  }
+  const mesh = new THREE.Mesh(mb.geo(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .83, metalness: .08 }));
+  mesh.name = 'Closed temporary race barriers'; mesh.castShadow = true; mesh.receiveShadow = true;
+  mesh.userData = { purpose: 'Temporary race boundary, not surveyed campus infrastructure', continuous: true, collision: 'course-barriers.js shared inner faces' };
+  W.barriers = mesh; scene.add(mesh);
+}
+
 function buildBumps(scene) {
   const D = W.D, C = W.C;
   W.bumps = [];
@@ -887,7 +907,7 @@ export async function loadWorld(scene, renderer, progress) {
   await step('Tracing the Fun Run course', () => { buildCourse(); buildGrid(); makeTextures(); });
   await step('Painting the sky', () => buildSky(scene, renderer));
   await step('Shaping the hills', () => buildTerrain(scene));
-  await step('Paving roads', () => { buildRoads(scene); buildBumps(scene); buildCourseMesh(scene); });
+  await step('Paving roads', () => { buildRoads(scene); buildBumps(scene); buildCourseMesh(scene); buildCourseBarriers(scene); });
   await step('Raising buildings', () => buildBuildings(scene));
   await step('Planting trees', () => { buildNature(scene); buildProps(scene); });
 }

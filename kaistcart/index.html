@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<title>Nubzuki Kart — KAIST Campus Drive</title>
+<title>KAIST Kart — Solo Time Attack</title>
 <style>
   :root{--blue:#2f95e8;--sky:#7fd0ff;--gold:#ffd23f;--ink:#0b1730;--glass:rgba(9,20,44,.55)}
   html,body{margin:0;height:100%;overflow:hidden;background:#0b1730;color:#fff;user-select:none;-webkit-user-select:none;touch-action:none;
@@ -75,7 +75,7 @@
   /* touch */
   #touch{position:fixed;inset:0;display:none;pointer-events:none}
   #touch button{position:absolute;bottom:24px;width:80px;height:80px;border-radius:50%;background:rgba(255,255,255,.2);border:2px solid rgba(255,255,255,.55);display:flex;align-items:center;justify-content:center;font-size:26px;font-weight:800;pointer-events:auto}
-  #tL{left:18px}#tR{left:104px}#tA{right:18px;font-size:11px!important}#tB{right:104px;font-size:11px!important}#tD{right:62px;bottom:112px!important;width:74px!important;height:54px!important;font-size:9px!important}
+  #tL{left:18px}#tR{left:104px}#tA{right:18px;font-size:11px!important}#tB{right:104px;font-size:11px!important}
   @media (max-width:760px){#help{display:none}#mini{width:120px;height:120px}#next{top:auto;bottom:118px;font-size:12px}#prog{top:auto;bottom:108px}
     #rank{font-size:44px}#speedo{transform:scale(.72);transform-origin:100% 100%;bottom:112px;right:10px}.logo{font-size:44px}}
 
@@ -103,6 +103,17 @@
   @media(max-width:760px){.card{width:94vw;padding:22px}.logo{font-size:34px}.keys{grid-template-columns:1fr 1fr;font-size:11px}.tag{margin-bottom:14px}#next{max-width:85vw}#telemetry{bottom:195px}#touch button{width:72px;height:72px}#mini{width:110px;height:110px}#pos{min-width:100px;padding:10px}#rank{font-size:38px}#time{font-size:21px}}
   @media(max-width:390px){#tL{left:8px}#tR{left:84px}#tA{right:8px}#tB{right:84px}.keys{grid-template-columns:1fr}.card{padding:18px}.fine{font-size:10px}}
 #raceActions{position:fixed;right:20px;top:218px;display:flex;gap:8px}#raceActions button{background:rgba(13,24,34,.76);color:#d8edf7;border:1px solid rgba(208,228,240,.2);border-radius:5px;min-width:44px;min-height:38px;font:13px inherit;cursor:pointer}@media(max-width:760px){#raceActions{top:136px;right:16px}}
+  #driverName{font-size:18px;font-weight:700;max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin:5px 0 12px}
+  #checkpointStatus{font-size:10px;letter-spacing:.06em;color:#9fbac8;margin-top:8px}
+  .name-field{display:block;margin:18px 0 6px;font-size:12px;color:#c4d8e2}
+  #playerName{display:block;box-sizing:border-box;width:100%;margin-top:8px;border:1px solid #617b8b;background:rgba(8,19,28,.75);border-radius:5px;padding:12px;color:#fff;font:16px inherit;user-select:text;-webkit-user-select:text;touch-action:auto}
+  #nameError{color:#ffc2b3;font-size:12px;line-height:1.5;min-height:18px;margin:4px 0}
+  .record-section{margin-top:24px;border-top:1px solid #43515c;padding-top:16px}.record-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:12px;letter-spacing:.12em}
+  .record-heading button{margin:0;padding:6px 10px;font-size:11px}.record-note{font-size:11px!important;color:#9fbac8!important;line-height:1.6!important}
+  table.res{table-layout:fixed;font-size:13px}table.res th{padding:8px 10px;text-align:left;color:#91adbc;font-size:11px;font-weight:500}table.res th:first-child{width:36px}table.res th:last-child{width:95px;text-align:right}table.res td{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #retrySaveBtn{margin-left:0}button:disabled{opacity:.5;cursor:wait}.card .keys{margin:16px 0}#title .logo{font-size:36px}#title .tag{margin-bottom:14px}
+  @media(max-width:760px){#pos{max-width:140px}#driverName{max-width:120px;font-size:15px}#time{font-size:24px}#title .logo{font-size:30px}.record-section{margin-top:18px}.card p{font-size:12px}.keys{gap:7px 10px}#next{bottom:120px}#prog{bottom:110px}}
+  @media(max-width:520px){#next{left:14px;bottom:146px;transform:none;max-width:calc(100vw - 190px);white-space:normal;text-align:left;padding:8px 10px}#nextName{font-size:11px}#nextDist{display:block;margin-left:0;font-size:11px}#prog{left:14px;bottom:132px;transform:none;width:calc(100vw - 188px)}#telemetry{bottom:230px;font-size:10px}#speedo{transform:scale(.66)}.settings{margin:12px 0}.card{padding:18px}}
 </style>
 </head>
 <body>
@@ -110,9 +121,9 @@
 
 <div id="hud" class="hidden">
   <div class="hud glass" id="pos">
-    <div id="rank">1<sup>st</sup><small>/ 6</small></div>
+    <div class="lbl" id="runMode">TIME ATTACK</div><div id="driverName"></div>
     <div class="lbl" style="margin-top:8px">TIME</div><div id="time">0:00.00</div>
-    <div id="left">4.44 km to go</div>
+    <div id="left">4.39 km to go</div><div id="checkpointStatus">CHECKPOINT 0 / 32</div>
   </div>
   <div class="hud glass" id="next"><span class="lbl">NEXT</span>&nbsp; <span id="nextName">-</span><span id="nextDist"></span></div>
   <div class="hud" id="prog"></div>
@@ -129,29 +140,32 @@
   <div class="hud" id="msg"></div>
   <div class="hud" id="count"><div id="lights"><b></b><b></b><b></b></div><div id="countN"></div></div>
   <div class="hud glass" id="help"><kbd>W</kbd>/<kbd>↑</kbd> accelerate &nbsp; <kbd>S</kbd>/<kbd>↓</kbd> brake &nbsp; <kbd>A</kbd><kbd>D</kbd>/<kbd>←</kbd><kbd>→</kbd> steer<br>
-    <kbd>Space</kbd> 핸드브레이크 &nbsp; <kbd>R</kbd> 코스 복귀 &nbsp; <kbd>Esc</kbd> 일시정지 &nbsp; <kbd>T</kbd> 차량 정보 &nbsp; <kbd>M</kbd> 음소거</div>
+    <kbd>Esc</kbd> 일시정지 &nbsp; <kbd>T</kbd> 차량 정보 &nbsp; <kbd>M</kbd> 음소거</div>
   <div id="telemetry" class="hud glass hidden"><span class="lbl">VEHICLE</span><div id="telemetryText"></div></div>
-  <div id="raceActions"><button id="resetBtn" aria-label="코스로 복귀">복귀</button><button id="pauseBtn" aria-label="일시정지">Ⅱ</button></div>
+  <div id="raceActions"><button id="pauseBtn" aria-label="일시정지">Ⅱ</button></div>
 </div>
 
-<div id="touch"><button id="tL" aria-label="왼쪽 조향">◀</button><button id="tR" aria-label="오른쪽 조향">▶</button><button id="tD">HANDBRAKE</button><button id="tB">BRAKE</button><button id="tA">THROTTLE</button></div>
+<div id="touch" class="hidden"><button id="tL" aria-label="왼쪽 조향">◀</button><button id="tR" aria-label="오른쪽 조향">▶</button><button id="tB" aria-label="제동">BRAKE</button><button id="tA" aria-label="가속">THROTTLE</button></div>
 
 <div class="panel" id="title">
   <div class="card glass">
     <div class="logo">NUBZUKI KART</div>
-    <div class="tag">DAEJEON · CAMPUS DRIVE</div>
-    <div class="chips"><span id="chipLen">4.4 km lap</span><span id="chipBump">speed bumps</span><span>6 racers</span><span>Daejeon main campus</span></div>
-    <p>넙죽이와 달리는 KAIST 캠퍼스.<br>코너를 읽고, 제동하고, 노면의 변화를 느껴보세요.</p>
+    <div class="tag">KAIST · SOLO TIME ATTACK</div>
+    <div class="chips"><span id="chipLen">4.4 km lap</span><span id="chipBump">speed bumps</span><span>1인 주행</span><span>온라인 순위표</span></div>
+    <p>혼자 달리고, 기록으로 경쟁하세요.<br>코스를 한 바퀴 완주하면 닉네임과 시간이 온라인에 저장됩니다.</p>
+    <label class="name-field" for="playerName">공개 닉네임<input id="playerName" type="text" maxlength="20" placeholder="이름을 입력하세요" autocomplete="off" spellcheck="false" aria-describedby="nameError"></label>
+    <div id="nameError" role="alert"></div>
     <div class="keys">
       <div><kbd>W</kbd> / <kbd>↑</kbd> &nbsp;가속</div><div><kbd>S</kbd> / <kbd>↓</kbd> &nbsp;제동 · 정지 후 유지하면 후진</div>
-      <div><kbd>A</kbd> <kbd>D</kbd> / <kbd>←</kbd> <kbd>→</kbd> &nbsp;조향</div><div><kbd>Space</kbd> &nbsp;핸드브레이크</div>
-      <div><kbd>R</kbd> &nbsp;코스 복귀</div><div><kbd>Esc</kbd> &nbsp;일시정지 &nbsp; <kbd>M</kbd> &nbsp;음소거</div>
+      <div><kbd>A</kbd> / <kbd>←</kbd> &nbsp;왼쪽 조향</div><div><kbd>D</kbd> / <kbd>→</kbd> &nbsp;오른쪽 조향</div>
+      <div><kbd>Esc</kbd> &nbsp;일시정지</div><div><kbd>M</kbd> &nbsp;음소거</div>
     </div>
     <div class="settings"><label for="qualitySelect">그래픽 품질</label><select id="qualitySelect"><option value="auto">자동</option><option value="0">높음</option><option value="1">균형</option><option value="2">성능 우선</option></select></div>
-    <p id="bestLine"></p>
     <button class="go" id="startBtn" disabled>LOADING</button>
-    <button class="alt" id="tourBtn" disabled>자동 시승</button>
+    <button class="alt" id="practiceBtn" disabled>연습 주행</button>
+    <p class="record-note">연습 주행은 기록에 등록되지 않습니다.</p>
     <div id="loadBar"><i id="loadI"></i></div><div id="loadMsg"></div>
+    <div class="record-section"><div class="record-heading">ONLINE TOP 10<button class="alt" id="refreshRecordsBtn">새로고침</button></div><p class="record-note" id="leaderboardStatus" role="status">온라인 기록을 불러오는 중…</p><table class="res" id="leaderboardTable" aria-label="온라인 최고 기록"></table></div>
     <div class="fine">© OpenStreetMap contributors · SRTM elevation<br>KAIST 건강달리기 경로를 차도로 재구성한 비공식 팬 프로젝트. 넙죽이는 KAIST의 마스코트입니다.</div>
   </div>
 </div>
@@ -159,8 +173,8 @@
 <div class="panel hidden" id="pause">
   <div class="card glass" style="width:min(88vw,380px)">
     <div class="logo" style="font-size:44px">PAUSED</div>
-    <button class="go" id="resumeBtn">RESUME</button><br>
-    <button class="alt" id="restartBtn" style="margin-left:0">Restart race</button><button class="alt" id="quitBtn">Quit to title</button>
+    <button class="go" id="resumeBtn">계속 주행</button><br>
+    <button class="alt" id="restartBtn" style="margin-left:0">처음부터 다시</button><button class="alt" id="quitBtn">시작 화면</button>
   </div>
 </div>
 
@@ -169,9 +183,10 @@
     <div class="logo" id="resTitle" style="font-size:50px">FINISH!</div>
     <div class="tag" id="resSub"></div>
     <div class="big" id="resTime"></div>
-    <p id="resBest"></p>
-    <table class="res" id="resTable"></table>
-    <button class="go" id="againBtn">RACE AGAIN</button><button class="alt" id="titleBtn">Title</button>
+    <p id="resBest" role="status"></p>
+    <button class="alt hidden" id="retrySaveBtn">기록 저장 재시도</button>
+    <table class="res" id="resTable" aria-label="온라인 최고 기록"></table>
+    <button class="go" id="againBtn">다시 도전</button><button class="alt" id="titleBtn">시작 화면</button>
   </div>
 </div>
 

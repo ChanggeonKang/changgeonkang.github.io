@@ -55,7 +55,8 @@ export function aiControls(r, W, coursePos) {
   const alpha = angleDifference(Math.atan2(dx, dz), r.body.th);
   // Pure pursuit computes a wheel angle; the tyre forces produce yaw.
   const steeringAngle = Math.atan2(2 * 1.9 * Math.sin(alpha), distance);
-  const steer = clamp(steeringAngle / .48, -1, 1);
+  // Positive yaw turns toward +X, which is screen-left in the rear chase view.
+  const steer = clamp(-steeringAngle / .48, -1, 1);
   let targetSpeed = r.base || 18;
   const preview = Math.ceil((12 + speed * speed / 8) / ds);
   for (let j = 0; j <= preview; j += 2) {
