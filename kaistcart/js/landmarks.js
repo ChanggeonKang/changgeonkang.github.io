@@ -6,7 +6,7 @@
 // facade divisions and structural details below are visual estimates, NOT surveyed.
 import * as THREE from '../lib/three.module.min.js';
 
-export const LANDMARK_REFS = new Set(['E16', 'N3', 'E9', 'E13']);
+export const LANDMARK_REFS = new Set(['E16', 'N3', 'E9', 'E13', 'W4-1', 'W4-2']);
 const UP = [0, 1, 0];
 const mix = (a, b, t) => a + (b - a) * t;
 const tint = n => new THREE.Color(n);
@@ -346,6 +346,40 @@ function e13(b, p, base, { stone, metal, glass }) {
   return { top: focus[1] + .65, approximateBuildingHeightM: 11.6, antennaDiameterM: 13, antennaCenter: [x,z], antennaPlacement: 'eastern rooftop in official illustrated campus map; center and vertical orientation approximate', features: ['13m parabolic dish', 'radial backing truss', 'tripod feed', 'tapered rooftop pedestal'] };
 }
 
+function westDorm(b, p, base, { stone, metal, glass }) {
+  // The user's April-2026 streetview frame identifies W4-2 in blue, with the
+  // yellow-finned W4-1 in front. Footprints/levels are OSM; all facade dimensions
+  // and the inferred 3.2m storey height are approximate, not a measured elevation.
+  const floors=b.lv|| (b.ref==='W4-1'?6:8), top=base+floors*3.2+1.1, white=tint(0xe0e3dc), dark=tint(0x34565c), accent=tint(b.ref==='W4-1'?0xbba544:0x4c91bc), sign=areaSign(p);
+  volume(stone,p,base,top,white,tint(0xb9c1bf));
+  p.forEach((a,i)=>{
+    const q=p[(i+1)%p.length], L=Math.hypot(q[0]-a[0],q[1]-a[1]);if(L<1)return;
+    const n=faceNormal(a,q,sign), count=Math.max(1,Math.round(L/2.25));
+    const roadFace=n[0]<-.25, shortEnd=L>8&&L<20;
+    if(b.ref==='W4-2'&&shortEnd&&n[1]===0&&n[2]<-.1)facade(metal,a,q,0,1,base+3.3,top-.35,accent,n);
+    for(let j=0;j<count;j++){
+      const t0=j/count,t1=(j+1)/count;
+      for(let floor=1;floor<floors;floor++){
+        const lo=base+floor*3.2+.2,hi=base+(floor+1)*3.2-.15;
+        facade(glass,a,q,t0+.35/count,t0+.69/count,lo,hi,dark,n);
+        facade(metal,a,q,t0+.35/count,t0+.69/count,lo+1.55,lo+1.62,tint(0x859b9d),n);
+      }
+      facade(glass,a,q,t0+.08/count,t0+.88/count,base+.45,base+2.65,dark,n);
+      if(roadFace){
+        facade(metal,a,q,t0+.72/count,t0+.9/count,base+3.3,top-.35,b.ref==='W4-1'?accent:white,n);
+        // A slim folded return gives the coloured upright a visible side face.
+        // The return goes inward, preserving the exact OSM boundary.
+        const t=t0+.72/count, x=mix(a[0],q[0],t),z=mix(a[1],q[1],t),x1=x-n[0]*.28,z1=z-n[2]*.28;
+        if(inside(x1,z1,p))metal.quad([x,base+3.3,z],[x1,base+3.3,z1],[x1,top-.35,z1],[x,top-.35,z],tint(b.ref==='W4-1'?0x94853e:0xa9b7b6));
+      }
+    }
+    facade(metal,a,q,0,1,base+2.75,base+3.3,white,n);
+    facade(metal,a,q,0,1,top-.35,top,white,n);
+  });
+  const plant=fitRectangle(p,[[7,4],[5,3]],'north');if(plant)volume(stone,plant,top,top+2.3,tint(0xbcc4c0));
+  return {top:top+(plant?2.3:0),approximateHeightM:floors*3.2+1.1,sourceLevels:floors,features:['white vertical panel facade',b.ref==='W4-1'?'yellow upright fins':'white upright fins and blue end panel','glazed ground floor'],photoReference:'User-attached streetview image (exact panorama ID not matched); separately supplied nearby Naver link https://naver.me/xIF5lerm. Dimensions and individual fin placement estimated'};
+}
+
 /** Build source-footprint landmarks, return refs safe to omit from generic buildings. */
 export function buildLandmarks(scene, D, hAt) {
   const result = { handledRefs: new Set(), labels: [], models: [] };
@@ -358,12 +392,12 @@ export function buildLandmarks(scene, D, hAt) {
     if (!elevations.every(Number.isFinite)) continue;
     const base = Math.min(...elevations) - .65;
     const batches = { stone: new Batch(), metal: new Batch(), glass: new Batch() };
-    const builders = { E16: e16, N3: n3, E9: e9, E13: e13 };
+    const builders = { E16: e16, N3: n3, E9: e9, E13: e13, 'W4-1':westDorm, 'W4-2':westDorm };
     const detail = builders[b.ref](b, p, base, batches);
     const group = new THREE.Group(); group.name = `landmark-${b.ref}`;
     group.userData = { ref: b.ref, sourceFootprint: p, baseElevationM: base, ...detail,
       fidelity: 'photo-informed approximation; footprint from source data, heights and details not surveyed',
-      reference: `references/official/${({ E16:'chung-moon-soul-e16', N3:'sports-complex-n3', E9:'library-e9', E13:'satellite-antenna' })[b.ref]}.jpg` };
+      reference: b.ref.startsWith('W4-')?'https://naver.me/xIF5lerm':`references/official/${({ E16:'chung-moon-soul-e16', N3:'sports-complex-n3', E9:'library-e9', E13:'satellite-antenna' })[b.ref]}.jpg` };
     const materials = {
       stone: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .78, metalness: .04, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }),
       metal: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .36, metalness: .64, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }),
@@ -374,7 +408,7 @@ export function buildLandmarks(scene, D, hAt) {
     materials.glass.polygonOffset = true; materials.glass.polygonOffsetFactor = -1.5; materials.glass.polygonOffsetUnits = -1.5;
     for (const kind of ['stone', 'glass', 'metal']) { const mesh = batches[kind].mesh(materials[kind], `${b.ref}-${kind}`); if (mesh) group.add(mesh); else materials[kind].dispose(); }
     scene.add(group); result.models.push(group); result.handledRefs.add(b.ref);
-    result.labels.push({ ref: b.ref, name: b.name || b.ref, en: b.en || b.name || '', x: p.reduce((s, a) => s + a[0], 0) / p.length,
+    result.labels.push({ ref: b.ref, name: b.ref.startsWith('W4-')?(b.en||b.ref):b.name || b.ref, en: b.en || b.name || '', x: p.reduce((s, a) => s + a[0], 0) / p.length,
       z: p.reduce((s, a) => s + a[1], 0) / p.length, y: detail.top + 5 });
   }
   return result;

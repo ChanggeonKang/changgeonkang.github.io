@@ -10,7 +10,8 @@ export const VEHICLE_DEFAULTS = Object.freeze({
   suspensionMountY: -0.10, suspensionRestLength: 0.26,
   springRate: 9500, damperRate: 1000, maxCompression: 0.18,
   bumpStopRate: 65000, bumpStopDamper: 1100,
-  longitudinalStiffness: 9, corneringStiffness: 7, // multiples of normal force
+  longitudinalStiffness: 9, corneringStiffness: 7, rearCorneringStiffness: 12, // multiples of normal force
+  tractionSlip: .10, tractionResponseTime: .08, maxEngineWheelSpeed: 280,
   maxSteeringAngle: 0.48, engineTorque: 190, enginePower: 11000,
   brakeTorquePerWheel: 140, handbrakeTorquePerWheel: 180,
   rollingResistance: 0.018, airDensity: 1.225, dragArea: 0.65,
@@ -40,6 +41,48 @@ function quaternionFromBasis(r, u, f) {
   else if (m11 > m22) { s = Math.sqrt(1 + m11 - m00 - m22) * 2; w = (m02 - m20) / s; x = (m01 + m10) / s; y = s / 4; z = (m12 + m21) / s; }
   else { s = Math.sqrt(1 + m22 - m00 - m11) * 2; w = (m10 - m01) / s; x = (m02 + m20) / s; y = (m12 + m21) / s; z = s / 4; }
   return [x, y, z, w];
+}
+
+/** Horizontal wall contact manifold, inelastic normal impulses and Coulomb
+ * friction. Contact points are [worldX, worldY, worldZ], or [worldX, worldZ]
+ * for an explicitly two-dimensional footprint. Vertical velocity is preserved,
+ * while all three angular components respond at the actual contact height.
+ * No wheel speed or chassis speed is assigned by this solver.
+ */
+export function resolveWallContact(body, nx, nz, points, { friction = .45, restitution = 0 } = {}) {
+  const mass = body.parameters?.mass || VEHICLE_DEFAULTS.mass;
+  const inertia = body.parameters?.inertia || VEHICLE_DEFAULTS.inertia;
+  const q = body.q || [0, Math.sin((body.th || 0) / 2), 0, Math.cos((body.th || 0) / 2)];
+  const normal = norm([nx, 0, nz]), tangent = [-normal[2], 0, normal[0]];
+  body.angularVelocity ||= [0, 0, 0];
+  const inverseInertia = value => {
+    const local = unrotate(q, value);
+    return rotate(q, local.map((v, i) => v / inertia[i]));
+  };
+  const velocity = arm => add([body.vx, body.vy || 0, body.vz], cross(body.angularVelocity, arm));
+  const denominator = (arm, axis) => 1 / mass + dot(axis, cross(inverseInertia(cross(arm, axis)), arm));
+  const apply = (arm, axis, amount) => {
+    const impulse = scale(axis, amount);
+    body.vx += impulse[0] / mass; body.vz += impulse[2] / mass;
+    body.angularVelocity = add(body.angularVelocity, inverseInertia(cross(arm, impulse)));
+  };
+  let approach = 0;
+  const contacts = (points?.length ? points : [[body.x, body.z]]).map(point => {
+    const arm = [point[0] - body.x, point.length === 3 ? point[1] - (body.y || 0) : 0,
+      point[point.length - 1] - body.z], vn = dot(velocity(arm), normal);
+    approach = Math.max(approach, -vn);
+    return { arm, normalMass: denominator(arm, normal), tangentMass: denominator(arm, tangent),
+      target: -restitution * Math.min(0, vn), normalImpulse: 0, tangentImpulse: 0 };
+  });
+  for (let iteration = 0; iteration < 10; iteration++) for (const contact of contacts) {
+    const { arm } = contact;
+    const normalImpulse = Math.max(0, contact.normalImpulse + (contact.target - dot(velocity(arm), normal)) / contact.normalMass);
+    apply(arm, normal, normalImpulse - contact.normalImpulse); contact.normalImpulse = normalImpulse;
+    const tangentImpulse = clamp(contact.tangentImpulse - dot(velocity(arm), tangent) / contact.tangentMass,
+      -friction * normalImpulse, friction * normalImpulse);
+    apply(arm, tangent, tangentImpulse - contact.tangentImpulse); contact.tangentImpulse = tangentImpulse;
+  }
+  return approach;
 }
 
 /** A complete vehicle, with public SI position/linear velocity and quaternion q.
@@ -176,7 +219,7 @@ export class Vehicle {
         length += ((center[1] - sample.height) * sample.normal[1] - p.wheelRadius) / alignment;
       }
 
-      let tireForceLong = 0, normalLoad = 0;
+      let tireForceLong = 0, normalLoad = 0, rollingVelocity = 0;
       if (u[1] > 0.15 && alignment > 0.15 && length < p.suspensionRestLength) {
         center = add(mount, scale(u, -length)); sample = this._ground(center[0], center[2]);
         const n = sample.normal, point = add(center, scale(n, -p.wheelRadius));
@@ -194,11 +237,14 @@ export class Vehicle {
         const tangentForward = norm(add(steered, scale(n, -dot(steered, n))));
         const tangentRight = norm(cross(tangentForward, n));
         const longitudinal = dot(velocity, tangentForward), lateral = dot(velocity, tangentRight);
+        rollingVelocity = longitudinal;
         const treadSpeed = wheel.omega * p.wheelRadius;
         const slipRatio = (treadSpeed - longitudinal) / Math.max(2, Math.abs(treadSpeed), Math.abs(longitudinal));
         const slipAngle = Math.atan2(lateral, Math.max(2, Math.abs(longitudinal)));
         let fx = p.longitudinalStiffness * normalLoad * slipRatio;
-        let fy = -p.corneringStiffness * normalLoad * slipAngle;
+        // A modest rear stiffness bias makes the chassis mildly understeer;
+        // either axle can still slide when the combined friction circle saturates.
+        let fy = -(rear ? p.rearCorneringStiffness : p.corneringStiffness) * normalLoad * slipAngle;
         const limit = this._friction(point[0], point[2]) * normalLoad, demand = Math.hypot(fx, fy);
         if (demand > limit && demand > 0) { const k = limit / demand; fx *= k; fy *= k; }
         tireForceLong = fx;
@@ -208,7 +254,22 @@ export class Vehicle {
       } else { wheel.longitudinalForce = 0; wheel.lateralForce = 0; wheel.frictionLimit = 0; }
 
       // Wheel angular momentum couples engine/brake torque to road traction.
-      const driveTorque = rear ? engineTorque / 2 : 0;
+      let driveTorque = rear ? engineTorque / 2 : 0;
+      if (driveTorque) {
+        // Engine torque control, not a velocity/yaw clamp: a spinning driven
+        // wheel otherwise uses up rear lateral grip throughout a steering
+        // reversal. Reduce only drive torque; existing wheel momentum still
+        // decelerates through the same tyre/road reaction force.
+        const sign = Math.sign(driveTorque);
+        if (wheel.grounded) {
+          const targetOmega = (rollingVelocity + sign * p.tractionSlip * Math.max(2, Math.abs(rollingVelocity))) / p.wheelRadius;
+          const trackingTorque = tireForceLong * p.wheelRadius + p.wheelInertia * (targetOmega - wheel.omega) / p.tractionResponseTime;
+          driveTorque = sign * Math.min(Math.abs(driveTorque), Math.max(0, sign * trackingTorque));
+        }
+        // Finite no-load engine speed also bounds wheel spin while airborne.
+        driveTorque *= clamp((p.maxEngineWheelSpeed - Math.abs(wheel.omega)) / 40, 0, 1);
+      }
+      wheel.driveTorque = driveTorque;
       let nextOmega = wheel.omega + (driveTorque - tireForceLong * p.wheelRadius) * dt / p.wheelInertia;
       const resistTorque = p.brakeTorquePerWheel * input.brake
         + (rear && input.handbrake ? p.handbrakeTorquePerWheel : 0)

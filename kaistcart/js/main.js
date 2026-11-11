@@ -205,10 +205,10 @@ function updateHud(dt) {
   const nx = W.landmarks.find(m => m.idx > k + 4 && m.idx > 0) || { name: 'Finish line', idx: C.n };
   setText('nextName', nx.name); setText('nextDist', Math.round((nx.idx - k) * (W.C.ds || DS) / 10) * 10 + ' m');
   $('loadIbar').style.width = clamp(P.body.load / 2, 0, 1) * 100 + '%';
-  setText('contactLabel', P.body.contacts ? '접지 ' + P.body.load.toFixed(1) + ' × 정하중' : '공중 · 접촉 없음');
-  if (telemetry) setText('telemetryText', '피치 ' + (P.body.p * 180 / Math.PI).toFixed(1) + '° · 롤 ' + (P.body.r * 180 / Math.PI).toFixed(1) + '° · 수직 ' + P.body.vy.toFixed(2) + ' m/s · ' + Math.round(1000 / frameMs) + ' FPS');
+  setText('contactLabel', P.body.contacts ? 'Contact ' + P.body.load.toFixed(1) + ' × static load' : 'Airborne · no contact');
+  if (telemetry) setText('telemetryText', 'Pitch ' + (P.body.p * 180 / Math.PI).toFixed(1) + '° · Roll ' + (P.body.r * 180 / Math.PI).toFixed(1) + '° · Vertical ' + P.body.vy.toFixed(2) + ' m/s · ' + Math.round(1000 / frameMs) + ' FPS');
   $('telemetry').dataset.state = JSON.stringify({ x:P.x, z:P.z, heading:P.th, speed:spd, progress:P.prog, up:P.body.up, fps:1000/frameMs, checkpoints:lap.checkpoints.length, valid:lap.valid, mode:practice?'practice':'ranked' });
-  setText('msg', state !== 'race' ? '' : !lap.valid ? '경로 확인 실패 · 일시정지에서 다시 시작' : P.flipT > 1 ? '전복 · 일시정지에서 다시 시작' : P.wrong > .8 ? '역주행 중' : '');
+  setText('msg', state !== 'race' ? '' : !lap.valid ? 'Invalid route · pause to restart' : P.flipT > 1 ? 'Kart overturned · pause to restart' : P.wrong > .8 ? 'Wrong way' : '');
   if (helpT > 0) { helpT -= dt; if (helpT <= 0) $('help').style.opacity = 0; }
   // minimap
   const c = $('mini').getContext('2d'), S = $('mini').width, m = hud.m;
@@ -227,23 +227,23 @@ function renderRecords() {
   for (const id of ['leaderboardTable', 'resTable']) {
     const table = $(id); table.replaceChildren();
     const head = table.createTHead().insertRow();
-    for (const label of ['순위', '닉네임', '완주 기록']) { const cell = document.createElement('th'); cell.textContent = label; head.appendChild(cell); }
+    for (const label of ['Rank', 'Nickname', 'Lap time']) { const cell = document.createElement('th'); cell.textContent = label; head.appendChild(cell); }
     const body = table.createTBody();
     for (const entry of leaderboardEntries.slice(0, 10)) {
       const row = body.insertRow();
       if (entry.name === P.name) row.className = 'me';
       for (const value of [entry.rank, entry.name, fmt(entry.timeMs / 1000)]) row.insertCell().textContent = String(value);
     }
-    if (!leaderboardEntries.length) { const cell = body.insertRow().insertCell(); cell.colSpan = 3; cell.textContent = '첫 완주 기록의 주인공이 되어 보세요.'; }
+    if (!leaderboardEntries.length) { const cell = body.insertRow().insertCell(); cell.colSpan = 3; cell.textContent = 'Be the first to set a lap time.'; }
   }
 }
 async function refreshRecords() {
-  $('leaderboardStatus').textContent = '온라인 기록을 불러오는 중…';
+  $('leaderboardStatus').textContent = 'Loading online records…';
   try {
     const data = await records.list();
     leaderboardEntries = data.entries;
     renderRecords();
-    $('leaderboardStatus').textContent = '닉네임별 최고 기록 · 모든 방문자에게 공개';
+    $('leaderboardStatus').textContent = 'Best time per nickname · visible to everyone';
   } catch (error) { $('leaderboardStatus').textContent = error.message; }
 }
 async function saveFinishedRun() {
@@ -251,21 +251,21 @@ async function saveFinishedRun() {
   const session = runSession, completedTime = Math.round(P.time * 1000), checkpoints = lap.checkpoints, name = P.name;
   saving = true; show('retrySaveBtn', false);
   $('againBtn').disabled = true; $('titleBtn').disabled = true;
-  $('resBest').textContent = '완주 기록을 온라인에 저장하는 중…';
+  $('resBest').textContent = 'Saving your lap time online…';
   try {
     await records.finish(session, completedTime, checkpoints);
     if (runSession !== session) return;
     recordSaved = true;
-    $('resBest').textContent = '온라인 저장 완료 · ' + name;
+    $('resBest').textContent = 'Saved online · ' + name;
     await refreshRecords();
-  } catch (error) { if (runSession === session) { $('resBest').textContent = '저장되지 않았습니다. ' + error.message; show('retrySaveBtn', true); } }
+  } catch (error) { if (runSession === session) { $('resBest').textContent = 'Your time was not saved. ' + error.message; show('retrySaveBtn', true); } }
   finally { if (runSession === session) { saving = false; $('againBtn').disabled = false; $('titleBtn').disabled = false; } }
 }
 function showResults() {
   $('resTitle').textContent = 'FINISH';
   $('resSub').textContent = P.name + ' · ' + (W.C.len / 1000).toFixed(2) + ' KM';
   $('resTime').textContent = fmt(P.time);
-  $('resBest').textContent = practice ? '연습 주행 완료 · 온라인 기록에는 등록되지 않습니다.' : '완주 기록을 온라인에 저장하는 중…';
+  $('resBest').textContent = practice ? 'Practice complete · this time is not posted online.' : 'Saving your lap time online…';
   renderRecords(); show('retrySaveBtn', false);
   $('results').classList.remove('hidden');
   void saveFinishedRun();
@@ -279,7 +279,7 @@ async function startRace(isPractice = false) {
   if (!name.valid) { $('nameError').textContent = name.error; toTitle(false); $('playerName').focus(); return; }
   $('nameError').textContent = ''; starting = true;
   for (const id of ['startBtn', 'practiceBtn', 'againBtn', 'titleBtn', 'restartBtn', 'quitBtn']) $(id).disabled = true;
-  $('startBtn').textContent = '연결 중…';
+  $('startBtn').textContent = 'Connecting…';
   sfx.init();
   try {
     const session = isPractice ? null : await records.start(name.name);
@@ -293,7 +293,7 @@ async function startRace(isPractice = false) {
     state = 'count'; countT = 4.2; hud.beep = 4; last = 0;
     showCount('');
   } catch (error) { toTitle(false); $('nameError').textContent = error.message; }
-  finally { starting = false; for (const id of ['startBtn', 'practiceBtn', 'againBtn', 'titleBtn', 'restartBtn', 'quitBtn']) $(id).disabled = false; $('startBtn').textContent = '기록 도전'; }
+  finally { starting = false; for (const id of ['startBtn', 'practiceBtn', 'againBtn', 'titleBtn', 'restartBtn', 'quitBtn']) $(id).disabled = false; $('startBtn').textContent = 'Start time attack'; }
 }
 function toTitle(refresh = true) { placeGrid(); state = 'title'; show('title', true); show('results', false); show('pause', false); show('hud', false); show('touch', false); sfx.quiet(); if (refresh) void refreshRecords(); }
 let pausedState = 'race';
@@ -394,7 +394,7 @@ async function init() {
   placeGrid();
   buildHud();
   $('loadI').style.width = '100%'; $('loadMsg').textContent = ''; show('loadBar', false);
-  $('startBtn').disabled = false; $('practiceBtn').disabled = false; $('startBtn').textContent = '기록 도전';
+  $('startBtn').disabled = false; $('practiceBtn').disabled = false; $('startBtn').textContent = 'Start time attack';
   try { $('playerName').value = localStorage.getItem('kaistcart-nickname') || ''; } catch {}
   toTitle();
 }

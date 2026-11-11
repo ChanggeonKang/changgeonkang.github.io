@@ -1,5 +1,5 @@
 // Public nickname/time records; no account credentials are bundled in the game.
-export const COURSE_ID = 'kaist-terrain-v3';
+export const COURSE_ID = 'kaist-control-v4';
 export const RECORDS_ORIGIN = 'https://kaistcart-records.almondcrown19.chatgpt.site';
 
 export function createRecordsClient(origin = RECORDS_ORIGIN, fetcher = fetch) {
@@ -13,11 +13,11 @@ export function createRecordsClient(origin = RECORDS_ORIGIN, fetcher = fetch) {
         ...(body ? { body: JSON.stringify(body) } : {}),
       });
       let data;
-      try { data = await response.json(); } catch { throw new Error('기록 서버의 응답을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.'); }
-      if (!response.ok) throw new Error(data.error?.message || '기록 서버에 연결하지 못했습니다.');
+      try { data = await response.json(); } catch { throw new Error('The records server returned an invalid response. Please try again shortly.'); }
+      if (!response.ok) throw new Error(data.error?.message || 'Could not connect to the records server.');
       return data;
     } catch (error) {
-      if (error.name === 'AbortError' || error instanceof TypeError) throw new Error('기록 서버에 연결하지 못했습니다. 연결을 확인하고 다시 시도해 주세요.');
+      if (error.name === 'AbortError' || error instanceof TypeError) throw new Error('Could not connect to the records server. Check your connection and try again.');
       throw error;
     } finally { clearTimeout(timeout); }
   }

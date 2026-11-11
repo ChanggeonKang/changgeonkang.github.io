@@ -1,6 +1,7 @@
 // Temporary race barriers. The renderer and collision solver share these exact
 // closed inner faces; horizontal containment applies even while airborne.
 // This module is renderer-free so the full circuit can be tested in Node.
+import { resolveWallContact } from './vehicle-physics.js';
 export const COURSE_BARRIER = Object.freeze({ height: .92, thickness: .28, skin: .025,
   halfWidth: 1.12, front: 1.10, rear: 1.50, bottom: -.35, top: 1.15,
   maxSweepDistance: .15, maxSweepAngle: .035, cellSize: 16 });
@@ -66,14 +67,18 @@ function hull(points) {
 }
 function rotate(q, x, y, z) {
   const tx = 2 * (q[1] * z - q[2] * y), ty = 2 * (q[2] * x - q[0] * z), tz = 2 * (q[0] * y - q[1] * x);
-  return [x + q[3] * tx + q[1] * tz - q[2] * ty, z + q[3] * tz + q[0] * ty - q[1] * tx];
+  return [x + q[3] * tx + q[1] * tz - q[2] * ty, y + q[3] * ty + q[2] * tx - q[0] * tz,
+    z + q[3] * tz + q[0] * ty - q[1] * tx];
 }
-export function courseBarrierFootprint(body) {
+function bodyCorners(body) {
   const B = COURSE_BARRIER, q = body.q || [0, Math.sin((body.th || 0) / 2), 0, Math.cos((body.th || 0) / 2)], points = [];
   for (const x of [-B.halfWidth, B.halfWidth]) for (const y of [B.bottom, B.top]) for (const z of [-B.rear, B.front]) {
-    const p = rotate(q, x, y, z); points.push([body.x + p[0], body.z + p[1]]);
+    const p = rotate(q, x, y, z); points.push([body.x + p[0], (body.y || 0) + p[1], body.z + p[2]]);
   }
-  return hull(points);
+  return points;
+}
+export function courseBarrierFootprint(body) {
+  return hull(bodyCorners(body).map(p => [p[0], p[2]]));
 }
 function segmentHitsHull(segment, polygon) {
   let low = 0, high = 1;
@@ -97,6 +102,15 @@ function contacts(body, geometry) {
     if (minimum < COURSE_BARRIER.skin) result.push({ ...segment, depth: COURSE_BARRIER.skin - minimum });
   }
   return result;
+}
+function contactPoints(body, hit) {
+  const polygon = bodyCorners(body);
+  const distance = p => (p[0] - hit.a[0]) * hit.nx + (p[2] - hit.a[1]) * hit.nz;
+  const minimum = Math.min(...polygon.map(distance)), dx = hit.b[0] - hit.a[0], dz = hit.b[1] - hit.a[1];
+  return polygon.filter(p => distance(p) < minimum + .015).map(p => {
+    const t = clamp(((p[0] - hit.a[0]) * dx + (p[2] - hit.a[1]) * dz) / (hit.length ** 2), 0, 1);
+    return [hit.a[0] + dx * t, p[1], hit.a[1] + dz * t];
+  });
 }
 export function courseBarrierContactDepth(body, C) {
   return contacts(body, getCourseBarriers(C)).reduce((depth, hit) => Math.max(depth, hit.depth), 0);
@@ -132,7 +146,8 @@ export function courseContainsBody(body, C) {
  */
 export function resolveCourseBarrier(body, previous, C, progress) {
   const geometry = getCourseBarriers(C), dx = body.x - previous.x, dz = body.z - previous.z;
-  const endQ = body.q ? [...body.q] : null, startQ = previous.q && endQ ? [...previous.q] : endQ;
+  let endQ = body.q ? [...body.q] : null;
+  const startQ = previous.q && endQ ? [...previous.q] : endQ;
   const qAngle = (a, b) => 2 * Math.acos(clamp(Math.abs(a.reduce((s, q, i) => s + q * b[i], 0)), 0, 1));
   const mixQ = (a, b, t) => {
     const sign = a.reduce((s, q, i) => s + q * b[i], 0) < 0 ? -1 : 1;
@@ -170,7 +185,6 @@ export function resolveCourseBarrier(body, previous, C, progress) {
         body.x = from.x + (target.x - from.x) * safe; body.z = from.z + (target.z - from.z) * safe;
         if (from.q && target.q) {
           body.q = mixQ(from.q, target.q, safe);
-          if (body.angularVelocity && qAngle(from.q, target.q) > 1e-5) body.angularVelocity = body.angularVelocity.map(v => v * .5);
         }
       } else {
         // Only an already-overlapping input (e.g. another racer's positional
@@ -178,10 +192,34 @@ export function resolveCourseBarrier(body, previous, C, progress) {
         body.x = target.x + hit.nx * hit.depth; body.z = target.z + hit.nz * hit.depth;
         if (target.q) body.q = target.q;
       }
-      const vn = body.vx * hit.nx + body.vz * hit.nz;
-      if (vn < 0) { approach = Math.max(approach, -vn); body.vx -= vn * hit.nx; body.vz -= vn * hit.nz; }
+      const tangentBefore = -body.vx * hit.nz + body.vz * hit.nx;
+      approach = Math.max(approach, resolveWallContact(body, hit.nx, hit.nz, contactPoints(body, hit)));
+      // The attempted orientation belongs to the pre-impact angular velocity.
+      // Reusing it at every microstep pins a sliding car to the wall while its
+      // speedometer continues to report the unconsumed tangential velocity.
+      if (body.q) endQ = [...body.q];
       const motionNormal = sx * hit.nx + sz * hit.nz;
       if (motionNormal < 0) { sx -= motionNormal * hit.nx; sz -= motionNormal * hit.nz; }
+      const tangentAfter = -body.vx * hit.nz + body.vz * hit.nx;
+      const slidingFraction = Math.abs(tangentBefore) > 1e-8 ? clamp(tangentAfter / tangentBefore, 0, 1) : 0;
+      sx *= slidingFraction; sz *= slidingFraction;
+      // Consume the unobstructed tangent part of this microstep after contact.
+      // A second wall/corner vetoes the move rather than crossing another face.
+      const remaining = (-(target.x - body.x) * hit.nz + (target.z - body.z) * hit.nx) * slidingFraction;
+      const safeX = body.x, safeZ = body.z;
+      body.x -= hit.nz * remaining; body.z += hit.nx * remaining;
+      const blocking = contacts(body, geometry);
+      if (blocking.length) {
+        body.x = safeX; body.z = safeZ;
+        // At a join/corner, a second face may block the proposed slide. It is
+        // another velocity constraint as well as a positional constraint;
+        // discarding only its movement would again leave a fictitious speed.
+        for (const second of blocking) {
+          approach = Math.max(approach, resolveWallContact(body, second.nx, second.nz, contactPoints(body, second)));
+          const inward = sx * second.nx + sz * second.nz;
+          if (inward < 0) { sx -= inward * second.nx; sz -= inward * second.nz; }
+        }
+      }
     }
   }
   return approach;

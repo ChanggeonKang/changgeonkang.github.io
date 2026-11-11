@@ -3,6 +3,7 @@ import * as THREE from '../lib/three.module.min.js';
 import { buildLandmarks } from './landmarks.js';
 import { campusName, buildingProfile } from './campus-identity.js';
 import { buildParking } from './campus-parking.js';
+import { buildStreetscape, isStreetscapeManaged } from './campus-streetscape.js';
 import { buildGate } from './campus-gate.js';
 import { COURSE_BARRIER, getCourseBarriers } from './course-barriers.js';
 
@@ -254,7 +255,7 @@ function buildCourse() {
       if (d < best) { best = d; bi = i; }
     }
     prev = bi;
-    return { name: m.name, idx: bi };
+    return { name: campusName(m), idx: bi };
   });
   buildRoadElevation();
 }
@@ -749,7 +750,7 @@ function buildBuildings(scene) {
   m.castShadow = true; m.receiveShadow = true;
   scene.add(m);
   for (const l of labels) {
-    const name = l.name || campusName(D.buildings.find(b => b.ref === l.ref) || l);
+    const name = campusName(D.buildings.find(b => b.ref === l.ref) || l);
     const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: labelTex(l.ref, name), transparent: true, depthWrite: false }));
     s.scale.set(13, 3.25, 1); s.position.set(l.x, l.y, l.z);
     (W.buildingLabels ||= []).push(s);
@@ -791,11 +792,11 @@ function buildNature(scene) {
       const n = Math.min(900, (x1 - x0) * (z1 - z0) / 120);
       for (let i = 0; i < n; i++) {
         const x = x0 + rnd() * (x1 - x0), z = z0 + rnd() * (z1 - z0);
-        if (inPoly(x, z, a.p) && surfAt(x, z) === 0) (rnd() < .55 ? trees.conifer : trees.leaf).push([x, z, 1]);
+        if (!isStreetscapeManaged(x, z, C) && inPoly(x, z, a.p) && surfAt(x, z) === 0) (rnd() < .55 ? trees.conifer : trees.leaf).push([x, z, 1]);
       }
     }
   }
-  const clear = (x, z, r) => surfAt(x, z) === 0 && surfAt(x + r, z) === 0 && surfAt(x - r, z) === 0 && surfAt(x, z + r) === 0 && surfAt(x, z - r) === 0;
+  const clear = (x, z, r) => !isStreetscapeManaged(x, z, C) && surfAt(x, z) === 0 && surfAt(x + r, z) === 0 && surfAt(x - r, z) === 0 && surfAt(x, z + r) === 0 && surfAt(x, z - r) === 0;
   for (let i = 0; i < 1300; i++) { // scattered campus trees
     const x = b.x0 + rnd() * (b.x1 - b.x0), z = b.z0 + rnd() * (b.z1 - b.z0);
     if (clear(x, z, 3)) (rnd() < .24 ? trees.conifer : trees.leaf).push([x, z, 1]);
@@ -902,7 +903,7 @@ function buildProps(scene) {
       c.fillStyle = '#06376b'; c.fillRect(0, 0, w, h);
       c.fillStyle = '#0c568a'; c.fillRect(0, 0, w, 65);
       c.fillStyle = '#fff'; c.textBaseline = 'middle'; c.font = 'italic 800 42px Arial,sans-serif'; c.fillText('KAIST', 28, 35);
-      c.font = '500 24px "Malgun Gothic",sans-serif'; c.fillText('대전 본원', w - 150, 35);
+      c.font = '500 24px "Segoe UI",sans-serif'; c.fillText('DAEJEON CAMPUS', w - 235, 35, 207);
       c.font = '700 55px "Malgun Gothic",sans-serif'; c.fillText(m.name, 28, 139, w - 62);
       c.fillStyle = '#6ccad4'; c.fillRect(0, h - 8, w, 8);
     }, false);
@@ -1001,5 +1002,5 @@ export async function loadWorld(scene, renderer, progress) {
   await step('Shaping the hills', () => buildTerrain(scene));
   await step('Paving roads', () => { buildRoads(scene); buildBumps(scene); buildCourseMesh(scene); buildCourseBarriers(scene); });
   await step('Raising buildings', () => buildBuildings(scene));
-  await step('Planting trees', () => { buildParking(scene, W.D, hAt, surfAt, TEX); buildGate(scene, W.D, hAt); buildNature(scene); buildProps(scene); });
+  await step('Planting trees', () => { buildParking(scene, W.D, hAt, surfAt, TEX); buildGate(scene, W.D, hAt); buildNature(scene); buildStreetscape(scene, W.D, W.C, hAt, surfAt); buildProps(scene); });
 }

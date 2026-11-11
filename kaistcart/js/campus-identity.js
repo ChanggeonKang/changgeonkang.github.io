@@ -1,7 +1,22 @@
 // Building names: KAIST campus map, 2026-05. Dimensions below are estimates;
 // OSM level/height tags take precedence. Never infer height from array order.
-const CURRENT_NAMES = { E7: '기초융합과학동', E13: '정몽헌 우리별 연구동', W7: '우정연구동', N5: '융합연구동', 'N7-5': '우주모빌리티동', 'W5-2': '스타트업빌리지' };
-export function campusName(b) { return CURRENT_NAMES[b.ref] || b.name || (b.en || '').replace(/\s*\([NEW]\d+(?:-\d+)?\)\s*$/, ''); }
+const CURRENT_NAMES = {
+  E7: 'Basic Convergence Science Building', E13: 'Chung Mong-Hun Uribyeol Research Building',
+  W7: 'Woojung Research Building', N5: 'Convergence Research Building',
+  'N7-5': 'Space Mobility Building', 'W5-2': 'Startup Village',
+  E2: 'Industrial Engineering & Management Building', 'E2-1': 'Knowledge Service Engineering',
+  E3: 'Information & Electronics Building', E16: 'Chung Moon Soul Building',
+  N3: 'Ryu Keun Chul Sports Complex', N11: 'Kaimaru',
+  'W1-1': 'Department of Materials Science & Engineering', W12: 'West Energy Plant',
+};
+const WAYPOINT_NAMES = { '북측운동장': 'North Field', '서문': 'West Gate', '우리별연구동 삼거리': 'Uribyeol Research Building Junction' };
+export function campusName(b) {
+  const ref = b.ref || (b.name || '').match(/\(([NEW]\d+(?:-\d+)?)\)/)?.[1] || '';
+  const english = (b.en || '').replace(/\s*\([NEW]\d+(?:-\d+)?\)\s*$/, '').trim();
+  const name = CURRENT_NAMES[ref] || WAYPOINT_NAMES[b.name] || english || b.name || ref;
+  // Preserve source names in data. Never expose an untranslated source label.
+  return /\p{Script=Hangul}/u.test(name) ? ref || 'Campus Building' : name;
+}
 
 export function buildingProfile(b) {
   const name = `${b.name || ''} ${b.en || ''}`;

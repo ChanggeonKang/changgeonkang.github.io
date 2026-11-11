@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ko">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
@@ -136,46 +136,46 @@
       <circle id="arc" cx="95" cy="95" r="66" fill="none" stroke="#7fd0ff" stroke-width="9" stroke-linecap="round" stroke-dasharray="0 415" transform="rotate(135 95 95)"/>
     </svg>
     <div id="spd">0</div><div class="unit">KM/H</div>
-    <div id="contactLabel">접지</div><div id="contactLoad"><i id="loadIbar"></i></div>
+    <div id="contactLabel">Ground contact</div><div id="contactLoad"><i id="loadIbar"></i></div>
   </div>
   <div class="hud" id="msg"></div>
   <div class="hud" id="count"><div id="lights"><b></b><b></b><b></b></div><div id="countN"></div></div>
   <div class="hud glass" id="help"><kbd>W</kbd>/<kbd>↑</kbd> accelerate &nbsp; <kbd>S</kbd>/<kbd>↓</kbd> brake &nbsp; <kbd>A</kbd><kbd>D</kbd>/<kbd>←</kbd><kbd>→</kbd> steer<br>
-    <kbd>Esc</kbd> 일시정지 &nbsp; <kbd>T</kbd> 차량 정보 &nbsp; <kbd>M</kbd> 음소거</div>
+    <kbd>Esc</kbd> pause &nbsp; <kbd>T</kbd> telemetry &nbsp; <kbd>M</kbd> mute</div>
   <div id="telemetry" class="hud glass hidden"><span class="lbl">VEHICLE</span><div id="telemetryText"></div></div>
-  <div id="raceActions"><button id="pauseBtn" aria-label="일시정지">Ⅱ</button></div>
+  <div id="raceActions"><button id="pauseBtn" aria-label="Pause">Ⅱ</button></div>
 </div>
 
-<div id="touch" class="hidden"><button id="tL" aria-label="왼쪽 조향">◀</button><button id="tR" aria-label="오른쪽 조향">▶</button><button id="tB" aria-label="제동">BRAKE</button><button id="tA" aria-label="가속">THROTTLE</button></div>
+<div id="touch" class="hidden"><button id="tL" aria-label="Steer left">◀</button><button id="tR" aria-label="Steer right">▶</button><button id="tB" aria-label="Brake and reverse">BRAKE</button><button id="tA" aria-label="Accelerate">THROTTLE</button></div>
 
 <div class="panel" id="title">
   <div class="card glass">
     <div class="logo">KAIST CAMPUS KART</div>
-    <div class="tag">대전 본원 · SOLO TIME ATTACK</div>
-    <div class="chips"><span id="chipLen">4.4 km lap</span><span id="chipBump">speed bumps</span><span>1인 주행</span><span>온라인 순위표</span></div>
-    <p>정문술빌딩에서 출발해 캠퍼스를 한 바퀴.<br>혼자 달리고, 닉네임과 완주 기록으로 경쟁하세요.</p>
-    <label class="name-field" for="playerName">공개 닉네임<input id="playerName" type="text" maxlength="20" placeholder="이름을 입력하세요" autocomplete="off" spellcheck="false" aria-describedby="nameError"></label>
+    <div class="tag">DAEJEON CAMPUS · SOLO TIME ATTACK</div>
+    <div class="chips"><span id="chipLen">4.4 km lap</span><span id="chipBump">speed bumps</span><span>Solo driving</span><span>Online leaderboard</span></div>
+    <p>Start near the Chung Moon Soul Building and lap the campus.<br>Drive solo and compete for the fastest time.</p>
+    <label class="name-field" for="playerName">Public nickname<input id="playerName" type="text" maxlength="20" placeholder="Enter your nickname" autocomplete="off" spellcheck="false" aria-describedby="nameError"></label>
     <div id="nameError" role="alert"></div>
     <div class="keys">
-      <div><kbd>W</kbd> / <kbd>↑</kbd> &nbsp;가속</div><div><kbd>S</kbd> / <kbd>↓</kbd> &nbsp;제동 · 정지 후 유지하면 후진</div>
-      <div><kbd>A</kbd> / <kbd>←</kbd> &nbsp;왼쪽 조향</div><div><kbd>D</kbd> / <kbd>→</kbd> &nbsp;오른쪽 조향</div>
-      <div><kbd>Esc</kbd> &nbsp;일시정지</div><div><kbd>M</kbd> &nbsp;음소거</div>
+      <div><kbd>W</kbd> / <kbd>↑</kbd> &nbsp;Accelerate</div><div><kbd>S</kbd> / <kbd>↓</kbd> &nbsp;Brake · hold at rest to reverse</div>
+      <div><kbd>A</kbd> / <kbd>←</kbd> &nbsp;Steer left</div><div><kbd>D</kbd> / <kbd>→</kbd> &nbsp;Steer right</div>
+      <div><kbd>Esc</kbd> &nbsp;Pause</div><div><kbd>M</kbd> &nbsp;Mute</div>
     </div>
-    <div class="settings"><label for="qualitySelect">그래픽 품질</label><select id="qualitySelect"><option value="auto">자동</option><option value="0">높음</option><option value="1">균형</option><option value="2">성능 우선</option></select></div>
+    <div class="settings"><label for="qualitySelect">Graphics quality</label><select id="qualitySelect"><option value="auto">Auto</option><option value="0">High</option><option value="1">Balanced</option><option value="2">Performance</option></select></div>
     <button class="go" id="startBtn" disabled>LOADING</button>
-    <button class="alt" id="practiceBtn" disabled>연습 주행</button>
-    <p class="record-note">연습 주행은 기록에 등록되지 않습니다.</p>
+    <button class="alt" id="practiceBtn" disabled>Practice</button>
+    <p class="record-note">Practice runs are not posted to the leaderboard.</p>
     <div id="loadBar"><i id="loadI"></i></div><div id="loadMsg"></div>
-    <div class="record-section"><div class="record-heading">TERRAIN v3 · ONLINE TOP 10<button class="alt" id="refreshRecordsBtn">새로고침</button></div><p class="record-note" id="leaderboardStatus" role="status">온라인 기록을 불러오는 중…</p><table class="res" id="leaderboardTable" aria-label="온라인 최고 기록"></table></div>
-    <div class="fine">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> · 고도 <a href="https://doi.org/10.5069/G9BV7DT1" target="_blank" rel="noopener">GEDTM30, Ho et al.</a> (<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>, 재표본화·평활화)<br>약 30m 지형 자료와 사진으로 재구성한 캠퍼스입니다. 건물 치수·작은 노면 굴곡은 추정입니다.<br>KAIST 건강달리기 경로를 차도로 재구성한 비공식 팬 프로젝트. 넙죽이는 KAIST의 마스코트입니다.</div>
+    <div class="record-section"><div class="record-heading">SEASON 4 · ONLINE TOP 10<button class="alt" id="refreshRecordsBtn">Refresh</button></div><p class="record-note" id="leaderboardStatus" role="status">Loading online records…</p><table class="res" id="leaderboardTable" aria-label="Online best times"></table></div>
+    <div class="fine">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> · Elevation: <a href="https://doi.org/10.5069/G9BV7DT1" target="_blank" rel="noopener">GEDTM30, Ho et al.</a> (<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>, resampled and smoothed)<br>Campus reconstructed from approximately 30 m terrain data and reference photos. Building dimensions and small road features are estimates.<br>Unofficial fan project adapting the KAIST Fun Run route to campus roads. Nubzuki is KAIST's mascot.</div>
   </div>
 </div>
 
 <div class="panel hidden" id="pause">
   <div class="card glass" style="width:min(88vw,380px)">
     <div class="logo" style="font-size:44px">PAUSED</div>
-    <button class="go" id="resumeBtn">계속 주행</button><br>
-    <button class="alt" id="restartBtn" style="margin-left:0">처음부터 다시</button><button class="alt" id="quitBtn">시작 화면</button>
+    <button class="go" id="resumeBtn">Resume</button><br>
+    <button class="alt" id="restartBtn" style="margin-left:0">Restart</button><button class="alt" id="quitBtn">Main menu</button>
   </div>
 </div>
 
@@ -185,9 +185,9 @@
     <div class="tag" id="resSub"></div>
     <div class="big" id="resTime"></div>
     <p id="resBest" role="status"></p>
-    <button class="alt hidden" id="retrySaveBtn">기록 저장 재시도</button>
-    <table class="res" id="resTable" aria-label="온라인 최고 기록"></table>
-    <button class="go" id="againBtn">다시 도전</button><button class="alt" id="titleBtn">시작 화면</button>
+    <button class="alt hidden" id="retrySaveBtn">Retry saving</button>
+    <table class="res" id="resTable" aria-label="Online best times"></table>
+    <button class="go" id="againBtn">Try again</button><button class="alt" id="titleBtn">Main menu</button>
   </div>
 </div>
 

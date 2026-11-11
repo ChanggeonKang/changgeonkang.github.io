@@ -1,5 +1,6 @@
 // Race controls and collision response shared by the browser and offline checks.
 // AI requests pedals/steering; it never writes a vehicle onto the course spline.
+import { resolveWallContact } from './vehicle-physics.js';
 export const PHYSICS_STEP = 1 / 240;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const mod = (v, n) => ((v % n) + n) % n;
@@ -75,6 +76,7 @@ export function aiControls(r, W, coursePos) {
 // Static walls use the existing collision grid, sampled over the vehicle footprint.
 // This is a conservative footprint approximation, not detailed bodywork collision.
 export function resolveWalls(b, previous, surfaceAt) {
+  const attemptedX = b.x, attemptedZ = b.z;
   const s = Math.sin(b.th), c = Math.cos(b.th);
   const points = [[-.72, -1.05], [.72, -1.05], [-.72, 1.05], [.72, 1.05], [0, 0]];
   const footprintHit = (px, pz) => {
@@ -122,11 +124,16 @@ export function resolveWalls(b, previous, surfaceAt) {
       b.x = previous.x; b.z = previous.z;
     }
   }
-  const inward = b.vx * nx + b.vz * nz;
-  if (inward >= 0) return 0;
-  // Infinite-mass wall with low restitution; no arbitrary forward speed penalty.
-  b.vx -= 1.08 * inward * nx; b.vz -= 1.08 * inward * nz;
-  return -inward;
+  const manifold = points.map(([lx, lz]) => [b.x + lx * c + lz * s, b.z - lx * s + lz * c]);
+  const projection = p => p[0] * nx + p[1] * nz, minimum = Math.min(...manifold.map(projection));
+  const tangentBefore = -b.vx * nz + b.vz * nx;
+  const approach = resolveWallContact(b, nx, nz, manifold.filter(p => projection(p) < minimum + .015));
+  const tangentAfter = -b.vx * nz + b.vz * nx;
+  const fraction = Math.abs(tangentBefore) > 1e-8 ? clamp(tangentAfter / tangentBefore, 0, 1) : 0;
+  const tangentMove = (-(attemptedX - b.x) * nz + (attemptedZ - b.z) * nx) * fraction;
+  const slideX = b.x - nz * tangentMove, slideZ = b.z + nx * tangentMove;
+  if (!footprintHit(slideX, slideZ)) { b.x = slideX; b.z = slideZ; }
+  return approach;
 }
 
 export function resolveRacerContacts(racers, surfaceAt) {

@@ -40,8 +40,8 @@ function namePlate(group, center, axis, outward) {
   const context = canvas.getContext('2d'); if (!context) return;
   context.clearRect(0, 0, canvas.width, canvas.height);
   context.fillStyle = '#154b84'; context.textAlign = 'center'; context.textBaseline = 'middle';
-  context.font = 'bold 104px Arial, sans-serif'; context.fillText('KAIST', 226, 110);
-  context.font = 'bold 61px "Malgun Gothic", "Noto Sans KR", sans-serif'; context.fillText('한국과학기술원', 683, 112);
+  context.font = 'bold 104px Arial, sans-serif'; context.fillText('KAIST', 512, 83);
+  context.font = '28px Arial, sans-serif'; context.fillText('Korea Advanced Institute of Science and Technology', 512, 151, 920);
   context.fillStyle = '#39729b'; context.fillRect(67, 181, 870, 6);
   const texture = new THREE.CanvasTexture(canvas); texture.colorSpace = THREE.SRGBColorSpace;
   const plate = new THREE.Mesh(new THREE.PlaneGeometry(4.65, 1.16), new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }));

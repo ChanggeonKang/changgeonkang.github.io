@@ -58,12 +58,12 @@ export class LapTracker {
  * The backend should apply the same checks independently before saving a score.
  */
 export function normalizeName(value) {
-  if (typeof value !== 'string') return { valid: false, name: '', error: '이름을 입력해 주세요.' };
+  if (typeof value !== 'string') return { valid: false, name: '', error: 'Enter a nickname.' };
   const name = value.normalize('NFC').trim().replace(/ +/g, ' ');
-  if (name.length === 0) return { valid: false, name, error: '이름을 입력해 주세요.' };
-  if ([...name].length > 20) return { valid: false, name, error: '이름은 20자 이하로 입력해 주세요.' };
+  if (name.length === 0) return { valid: false, name, error: 'Enter a nickname.' };
+  if ([...name].length > 20) return { valid: false, name, error: 'Use 20 characters or fewer for your nickname.' };
   if (!/^[\p{Script=Hangul}A-Za-z0-9 _.\-]+$/u.test(name)) {
-    return { valid: false, name, error: '한글, 영문, 숫자, 공백, _, ., -만 사용할 수 있습니다.' };
+    return { valid: false, name, error: 'Use Korean or English letters, numbers, spaces, underscores, periods or hyphens.' };
   }
   return { valid: true, name, error: null };
 }
