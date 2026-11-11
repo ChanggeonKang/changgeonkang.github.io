@@ -25,7 +25,7 @@ export function syncRacer(r) {
   const b = r.body;
   for (const k of ['x', 'z', 'th', 'vx', 'vz', 'vf', 'vl', 'wy']) r[k] = b[k];
   r.grip = b.load;
-  r.drift = b.contacts > 0 && Math.abs(b.vl) > 1.8;
+  r.drift = !b.parameters.noSlide && b.contacts > 0 && Math.abs(b.vl) > 1.8;
   r.boost = 0;
 }
 

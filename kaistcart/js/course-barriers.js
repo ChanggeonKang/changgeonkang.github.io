@@ -144,7 +144,7 @@ export function courseContainsBody(body, C) {
  * maximum approach speed in m/s for collision sound/feedback. No progress/spline
  * position is assigned, and horizontal impulses cannot add kinetic energy.
  */
-export function resolveCourseBarrier(body, previous, C, progress) {
+export function resolveCourseBarrier(body, previous, C, progress, dt = body.parameters?.maxStep || 1 / 240) {
   const geometry = getCourseBarriers(C), dx = body.x - previous.x, dz = body.z - previous.z;
   let endQ = body.q ? [...body.q] : null;
   const startQ = previous.q && endQ ? [...previous.q] : endQ;
@@ -159,7 +159,7 @@ export function resolveCourseBarrier(body, previous, C, progress) {
   let sx = dx / steps, sz = dz / steps;
   body.x = previous.x; body.z = previous.z;
   if (startQ) body.q = startQ;
-  let approach = 0;
+  let approach = 0, constrained = false, correctionX = 0, correctionZ = 0;
   for (let step = 1; step <= steps; step++) {
     const from = { x: body.x, z: body.z, q: body.q ? [...body.q] : null };
     body.x += sx; body.z += sz;
@@ -167,6 +167,7 @@ export function resolveCourseBarrier(body, previous, C, progress) {
     for (let iteration = 0; iteration < 10; iteration++) {
       const hits = contacts(body, geometry);
       if (!hits.length) break;
+      constrained = true;
       const target = { x: body.x, z: body.z, q: body.q ? [...body.q] : null };
       const hit = hits.reduce((a, b) => sx * a.nx + sz * a.nz < sx * b.nx + sz * b.nz ? a : b);
       body.x = from.x; body.z = from.z; if (from.q) body.q = from.q;
@@ -190,6 +191,7 @@ export function resolveCourseBarrier(body, previous, C, progress) {
         // Only an already-overlapping input (e.g. another racer's positional
         // separation) uses local depenetration. Normal driving uses swept contact.
         body.x = target.x + hit.nx * hit.depth; body.z = target.z + hit.nz * hit.depth;
+        correctionX += hit.nx * hit.depth; correctionZ += hit.nz * hit.depth;
         if (target.q) body.q = target.q;
       }
       const tangentBefore = -body.vx * hit.nz + body.vz * hit.nx;
@@ -221,6 +223,16 @@ export function resolveCourseBarrier(body, previous, C, progress) {
         }
       }
     }
+  }
+  if (constrained && body.parameters?.noSlide && dt > 0) {
+    // Grip assistance and the swept rigid boundary are both position
+    // constraints. Reconstruct their shared admissible horizontal velocity
+    // after projection, rather than carrying a blocked tyre velocity forward.
+    // Never restore energy already dissipated by the physical impact impulse.
+    const actualX = (body.x - previous.x - correctionX) / dt, actualZ = (body.z - previous.z - correctionZ) / dt;
+    const admissible = Math.hypot(actualX, actualZ), remaining = Math.hypot(body.vx, body.vz);
+    const ratio = admissible > 1e-10 ? Math.min(1, remaining / admissible) : 0;
+    body.vx = actualX * ratio; body.vz = actualZ * ratio;
   }
   return approach;
 }

@@ -4,6 +4,9 @@ import { buildLandmarks } from './landmarks.js';
 import { campusName, buildingProfile } from './campus-identity.js';
 import { buildParking } from './campus-parking.js';
 import { buildStreetscape, isStreetscapeManaged } from './campus-streetscape.js';
+import { buildCapturedLandscape, isCaptureLandscapeManaged } from './capture-landscaping.js';
+import { buildCapturedArchitecture } from './capture-architecture.js';
+import { buildCapturedRoadside, capturedRoadStyles, capturedSpeedMarks, capturedBumps } from './capture-roadside.js';
 import { buildGate } from './campus-gate.js';
 import { COURSE_BARRIER, getCourseBarriers } from './course-barriers.js';
 
@@ -547,7 +550,7 @@ function buildRoads(scene) {
 
 function buildCourseMesh(scene) {
   const C = W.C, road = new MB(), lines = new MB(), walk = new MB(), curb = new MB();
-  const asph = col(0x565a63), white = col(0xf2f2ee), yellow = col(0xf2c230), red = col(0xd8382e), grey = col(0xb9b7b0), dark = col(0x17191e), pave = col(0xb08a76);
+  const asph = col(0x98958e), white = col(0xe5e2d8), yellow = col(0xd7b353), red = col(0xd8382e), grey = col(0xb9b7b0), dark = col(0x17191e), pave = col(0xad9188);
   const offset = (off, i) => typeof off === 'function' ? off(mod(i, C.n)) : off;
   const P = (i, off, lift) => { const a = mod(i, C.n), o = offset(off, i), x = C.x[a] + C.tz[a] * o, z = C.z[a] - C.tx[a] * o; return [x, hAt(x, z) + lift, z]; };
   const strip = (mb, i, o0, o1, lift, c, v0, v1) => mb.quad(P(i, o0, lift), P(i, o1, lift), P(i + 1, o1, lift), P(i + 1, o0, lift), UP,
@@ -555,9 +558,14 @@ function buildCourseMesh(scene) {
   for (let i = 0; i < C.n; i++) {
     const v0 = i * C.ds / 4, v1 = (i + 1) * C.ds / 4;
     strip(road, i, a => C.halfWidth[a], a => -C.halfWidth[a], ROAD_LIFT, asph, v0, v1);
-    strip(lines, i, .19, .07, ROAD_LIFT + .015, yellow, v0, v1);       // double yellow centre line
-    strip(lines, i, -.07, -.19, ROAD_LIFT + .015, yellow, v0, v1);
-    for (const s of [1, -1]) strip(lines, i, a => s * (C.halfWidth[a] - .3), a => s * (C.halfWidth[a] - .45), ROAD_LIFT + .015, white, v0, v1);
+    const style = capturedRoadStyles.find(a => i >= a.from && i <= a.to) || { center: 'double', edges: 'white' };
+    if (style.center === 'double') {
+      strip(lines, i, .19, .07, ROAD_LIFT + .015, yellow, v0, v1);
+      strip(lines, i, -.07, -.19, ROAD_LIFT + .015, yellow, v0, v1);
+    } else if (style.center === 'single' || style.center === 'dashed' && Math.floor(i / 2) % 2 === 0) {
+      strip(lines, i, .065, -.065, ROAD_LIFT + .015, yellow, v0, v1);
+    }
+    if (style.edges !== 'none') for (const s of [1, -1]) strip(lines, i, a => s * (C.halfWidth[a] - .3), a => s * (C.halfWidth[a] - .43), ROAD_LIFT + .015, style.edges === 'yellow' ? yellow : white, v0, v1);
     for (let s = 0; s < 2; s++) {
       if (!C.side[s][i] || !C.side[s][mod(i + 1, C.n)]) continue;
       const sg = s ? -1 : 1, e0 = a => sg * C.halfWidth[a], e1 = a => sg * (C.halfWidth[a] + .32), e2 = a => sg * (C.halfWidth[a] + 2.3), top = ROAD_LIFT + CURB_H;
@@ -591,20 +599,39 @@ function buildCourseMesh(scene) {
   flat(scene, walk, new THREE.MeshStandardMaterial({ map: TEX.paver, vertexColors: true, roughness: .95 }), 3);
   const cm = flat(scene, curb, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .85 }), 4);
   cm.castShadow = false;
+  const marking = canvasTex(256, 512, (c, w, h) => {
+    c.clearRect(0, 0, w, h); c.fillStyle = '#e6e3d9'; c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.font = '700 210px Arial,sans-serif'; c.fillText('30', w / 2, h / 2, 230);
+  }, false), speedMarkings = new MB();
+  for (const { progress: i } of capturedSpeedMarks) {
+    if (W.courseBumps.some(k => Math.abs(k - i) < 4)) continue;
+    speedMarkings.quad(mid(i - 1.1, 2.25), mid(i - 1.1, .35), mid(i + 1.1, .35), mid(i + 1.1, 2.25), UP,
+      [0, 0], [1, 0], [1, 1], [0, 1], white);
+  }
+  flat(scene, speedMarkings, new THREE.MeshStandardMaterial({ map: marking, transparent: true, alphaTest: .2, depthWrite: false, roughness: .95, vertexColors: true }), 5);
 }
 
 function buildCourseBarriers(scene) {
-  const geometry = getCourseBarriers(W.C), mb = new MB(), topColor = col(0xcbd6dc), backColor = col(0x627785);
-  const colors = [col(0xb4c4cd), col(0x446779)], height = COURSE_BARRIER.height;
+  const geometry = getCourseBarriers(W.C), mb = new MB(), topColor = col(0xa6ada9), backColor = col(0x626d68);
+  const frontColor = col(0x89928c), height = COURSE_BARRIER.height;
   for (const segment of geometry.segments) {
     const { a, b, outerA, outerB, nx, nz, index } = segment;
-    const base = p => [p[0], hAt(p[0], p[1]) + ROAD_LIFT - .12, p[1]];
-    const raised = p => [p[0], hAt(p[0], p[1]) + ROAD_LIFT + height, p[1]];
-    const a0 = base(a), b0 = base(b), a1 = raised(a), b1 = raised(b), oa0 = base(outerA), ob0 = base(outerB), oa1 = raised(outerA), ob1 = raised(outerB);
-    const v0 = index * W.C.ds, v1 = (index + 1) * W.C.ds, frontColor = colors[Math.floor(index / 4) % colors.length];
-    mb.quad(a0, b0, b1, a1, [nx, 0, nz], [v0, 0], [v1, 0], [v1, 1], [v0, 1], frontColor);
-    mb.quad(ob0, oa0, oa1, ob1, [-nx, 0, -nz], [v1, 0], [v0, 0], [v0, 1], [v1, 1], backColor);
-    mb.quad(a1, b1, ob1, oa1, UP, [v0, 0], [v1, 0], [v1, .28], [v0, .28], topColor);
+    // A more open temporary race railing keeps the unchanged physical boundary
+    // visible while letting the photographed sidewalks and planting show through.
+    // It is race infrastructure, not claimed to exist in the source street views.
+    const at = (p, lift) => [p[0], hAt(p[0], p[1]) + ROAD_LIFT + lift, p[1]];
+    const v0 = index * W.C.ds, v1 = (index + 1) * W.C.ds;
+    for (const [low, high] of [[-.12, .12], [.36, .48], [.78, height]]) {
+      const a0=at(a,low),b0=at(b,low),a1=at(a,high),b1=at(b,high),oa0=at(outerA,low),ob0=at(outerB,low),oa1=at(outerA,high),ob1=at(outerB,high);
+      mb.quad(a0,b0,b1,a1,[nx,0,nz],[v0,0],[v1,0],[v1,1],[v0,1],frontColor);
+      mb.quad(ob0,oa0,oa1,ob1,[-nx,0,-nz],[v1,0],[v0,0],[v0,1],[v1,1],backColor);
+      mb.quad(a1,b1,ob1,oa1,UP,[v0,0],[v1,0],[v1,.28],[v0,.28],topColor);
+    }
+    if (index % 2 === 0) {
+      const t = Math.min(.075, .14 / segment.length), c = [lerp(a[0],b[0],t),lerp(a[1],b[1],t)], oc = [lerp(outerA[0],outerB[0],t),lerp(outerA[1],outerB[1],t)];
+      mb.quad(at(a,.1),at(c,.1),at(c,height),at(a,height),[nx,0,nz],[0,0],[1,0],[1,1],[0,1],backColor);
+      mb.quad(at(oc,.1),at(outerA,.1),at(outerA,height),at(oc,height),[-nx,0,-nz],[0,0],[1,0],[1,1],[0,1],backColor);
+    }
   }
   const mesh = new THREE.Mesh(mb.geo(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .83, metalness: .08 }));
   mesh.name = 'Closed temporary race barriers'; mesh.castShadow = true; mesh.receiveShadow = true;
@@ -630,6 +657,17 @@ function buildBumps(scene) {
       W.bumps.push({ ...b, dx: b.dx / directionLength, dz: b.dz / directionLength, hw: width / 2, width,
         height: b.height ?? BUMP_H, length: b.length || BUMP_L * 2, ci: -1, snapDistanceM: 0 });
     }
+  }
+  for (const observed of capturedBumps) {
+    const ci = mod(Math.round(observed.progress), C.n);
+    // Do not duplicate an OSM hump within 12 metres of this approximate observation.
+    if (W.bumps.some(b => b.ci >= 0 && Math.min(mod(b.ci - ci, C.n), mod(ci - b.ci, C.n)) * C.ds <= 12)) continue;
+    const directionLength = Math.hypot(C.tx[ci], C.tz[ci]) || 1;
+    W.bumps.push({ x: C.x[ci], z: C.z[ci], dx: C.tx[ci] / directionLength, dz: C.tz[ci] / directionLength,
+      hw: C.halfWidth[ci], width: C.halfWidth[ci] * 2, height: observed.heightM, length: observed.lengthM, ci,
+      source: 'user-streetview-2025-04', photoNumbers: observed.photoNumbers, progressRange: observed.progressRange,
+      evidence: observed.evidence, confidence: observed.confidence,
+      dimensionSources: { height: 'assumed:0.10m', length: 'assumed:3.6m', width: 'assumed:rendered-road-width' } });
   }
   W.courseBumps = W.bumps.filter(b => b.ci >= 0).map(b => b.ci).sort((a, b) => a - b);
   C.slow = new Uint8Array(C.n);
@@ -675,12 +713,13 @@ function buildBumps(scene) {
 const GLASS = new Set(['N1', 'E4', 'N3', 'E16', 'E16-1', 'E9', 'N27', 'N26']);
 const REAL = { 'N13-1': [0xc2532c, 1], N3: [0xb4b9c0, 2], E16: [0xcdb894, 2], E11: [0xd3c2a0, 1] }; // seen in street-level photos
 function buildBuildings(scene) {
-  const D = W.D, mb = new MB(true), specialized = buildLandmarks(scene, D, hAt), labels = [...specialized.labels];
+  const D = W.D, mb = new MB(true), specialized = buildLandmarks(scene, D, hAt), captured = buildCapturedArchitecture(scene, D, hAt), labels = [...specialized.labels, ...captured.labels];
+  W.capturedArchitecture = captured.metadata;
   const BRICK = [0xa5553c, 0xb0644a, 0x9a5a48, 0xb86a4c], STONE = [0xd6c4a2, 0xcdb994, 0xdccdb0, 0xc9bda8, 0xbfb5a3, 0xd9d2c4],
     APT = [0xe6e2d8, 0xd9d4c8, 0xcfd2d6], MISC = [0xcfc8ba, 0xb9b2a4, 0xa9a59c, 0xc4a58a, 0xb7bcc2];
   const roofC = col(0x8b8f94), roofD = col(0x6f7378);
   D.buildings.forEach((b, bi) => {
-    if (specialized.handledRefs.has(b.ref)) return;
+    if (specialized.handledRefs.has(b.ref) || captured.handledIds.has(b.id)) return;
     const p = b.p, n = p.length;
     if (n < 3) return;
     let lo = 1e9, hi = -1e9, cx = 0, cz = 0, area = 0;
@@ -792,11 +831,11 @@ function buildNature(scene) {
       const n = Math.min(900, (x1 - x0) * (z1 - z0) / 120);
       for (let i = 0; i < n; i++) {
         const x = x0 + rnd() * (x1 - x0), z = z0 + rnd() * (z1 - z0);
-        if (!isStreetscapeManaged(x, z, C) && inPoly(x, z, a.p) && surfAt(x, z) === 0) (rnd() < .55 ? trees.conifer : trees.leaf).push([x, z, 1]);
+        if (!isStreetscapeManaged(x, z, C) && !isCaptureLandscapeManaged(x, z, C) && inPoly(x, z, a.p) && surfAt(x, z) === 0) (rnd() < .55 ? trees.conifer : trees.leaf).push([x, z, 1]);
       }
     }
   }
-  const clear = (x, z, r) => !isStreetscapeManaged(x, z, C) && surfAt(x, z) === 0 && surfAt(x + r, z) === 0 && surfAt(x - r, z) === 0 && surfAt(x, z + r) === 0 && surfAt(x, z - r) === 0;
+  const clear = (x, z, r) => !isStreetscapeManaged(x, z, C) && !isCaptureLandscapeManaged(x, z, C) && surfAt(x, z) === 0 && surfAt(x + r, z) === 0 && surfAt(x - r, z) === 0 && surfAt(x, z + r) === 0 && surfAt(x, z - r) === 0;
   for (let i = 0; i < 1300; i++) { // scattered campus trees
     const x = b.x0 + rnd() * (b.x1 - b.x0), z = b.z0 + rnd() * (b.z1 - b.z0);
     if (clear(x, z, 3)) (rnd() < .24 ? trees.conifer : trees.leaf).push([x, z, 1]);
@@ -1002,5 +1041,5 @@ export async function loadWorld(scene, renderer, progress) {
   await step('Shaping the hills', () => buildTerrain(scene));
   await step('Paving roads', () => { buildRoads(scene); buildBumps(scene); buildCourseMesh(scene); buildCourseBarriers(scene); });
   await step('Raising buildings', () => buildBuildings(scene));
-  await step('Planting trees', () => { buildParking(scene, W.D, hAt, surfAt, TEX); buildGate(scene, W.D, hAt); buildNature(scene); buildStreetscape(scene, W.D, W.C, hAt, surfAt); buildProps(scene); });
+  await step('Planting trees', () => { buildParking(scene, W.D, hAt, surfAt, TEX); buildGate(scene, W.D, hAt); buildNature(scene); buildStreetscape(scene, W.D, W.C, hAt, surfAt); W.capturedLandscape = buildCapturedLandscape(scene, W.D, W.C, hAt, surfAt).metadata; W.capturedRoadside = buildCapturedRoadside(scene, W.D, W.C, hAt, surfAt).metadata; buildProps(scene); });
 }

@@ -93,7 +93,7 @@ function stepPlayer(dt, input) {
   const impulse = P.body.step(dt, controls);
   ev.J += impulse / P.body.parameters.mass;
   ev.hit = Math.max(ev.hit, resolveWalls(P.body, previous, surfAt));
-  ev.hit = Math.max(ev.hit, resolveCourseBarrier(P.body, previous, W.C, P.prog));
+  ev.hit = Math.max(ev.hit, resolveCourseBarrier(P.body, previous, W.C, P.prog, dt));
   syncRacer(P);
   P.flipT = P.body.up < .25 && P.body.contacts ? P.flipT + dt : 0;
 }
@@ -130,7 +130,7 @@ function effects(dt) {
   const sc = renderer.getDrawingBufferSize(v2).y / (2 * Math.tan(camera.fov * Math.PI / 360));
   dust.update(dt, sc); glow.update(dt, sc);
   P.shake = Math.max(0, P.shake - dt * 2.4);
-  sfx.update(clamp(spd / 30, 0, 1.2), keys.up && state === 'race' ? 1 : 0, clamp(Math.abs(P.vl) / 7, 0, 1) * (grounded ? 1 : 0), grounded, surf === 0, false);
+  sfx.update(clamp(spd / (160 / 3.6), 0, 1.2), keys.up && state === 'race' ? 1 : 0, b.parameters.noSlide ? 0 : clamp(Math.abs(P.vl) / 7, 0, 1) * (grounded ? 1 : 0), grounded, surf === 0, false);
 }
 
 // ───────────────────────── camera ─────────────────────────
@@ -192,7 +192,7 @@ function buildHud() {
 function updateHud(dt) {
   const C = W.C, spd = Math.hypot(P.vx, P.vz) * 3.6;
   setText('spd', Math.round(spd));
-  $('arc').setAttribute('stroke-dasharray', (311 * clamp(spd / 130, 0, 1)).toFixed(1) + ' 415');
+  $('arc').setAttribute('stroke-dasharray', (311 * clamp(spd / 160, 0, 1)).toFixed(1) + ' 415');
   $('arc').setAttribute('stroke', P.body.contacts ? '#7fd0ff' : '#ffd23f');
   setText('time', fmt(P.done ? P.time : raceT));
   setText('driverName', P.name);

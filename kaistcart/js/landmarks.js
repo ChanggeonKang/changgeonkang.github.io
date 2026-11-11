@@ -186,13 +186,27 @@ function e16(b, p, base, batches) {
   const tower = fitTower(p);
   if (!tower) return { top: podium, note: 'Tower omitted because no inscribed footprint rectangle could be found' };
   const top = base + 41, curtain = sliceRect(tower, 0, .88), core = sliceRect(tower, .88, 1);
-  volume(glass, curtain, podium, top - 2.1, teal, tint(0x678588));
+  // Captures 52–54 show large pale-pink wall fields on the road-facing long
+  // elevation, rather than an almost entirely glazed tower. Corner cores and
+  // the narrow middle strip remain teal; small paired windows puncture stone.
+  volume(stone, curtain, podium, top - 2.1, tint(0xc8b9b5), tint(0x8b9997));
   const signT = areaSign(curtain);
   curtain.forEach((a, i) => {
     const q = curtain[(i + 1) % curtain.length], L = Math.hypot(q[0] - a[0], q[1] - a[1]), normal = faceNormal(a, q, signT);
-    const count = Math.max(1, Math.round(L / 2.2));
-    for (let j = 0; j <= count; j++) facade(metal, a, q, Math.max(0, j / count - .06 / L), Math.min(1, j / count + .06 / L), podium, top - 1.7, frame, normal);
-    for (let y = podium + 2.7; y < top - 2.1; y += 2.7) facade(metal, a, q, 0, 1, y, y + .16, frame, normal);
+    const strips = L > 15 ? [[0,.13],[.49,.68],[.91,1]] : [[.05,.95]];
+    for (const [lo,hi] of strips) {
+      facade(glass,a,q,lo,hi,podium,top-2.1,teal,normal);
+      for(let s=lo*L;s<hi*L;s+=2.2)facade(metal,a,q,s/L,Math.min(hi,(s+.08)/L),podium,top-2.1,frame,normal);
+      for(let y=podium+2.7;y<top-2.1;y+=2.7)facade(metal,a,q,lo,hi,y,y+.09,frame,normal);
+    }
+    if(L>15){
+      for(let y=podium+1.6;y<top-3;y+=2.7)for(const [lo,hi]of[[.21,.28],[.32,.4],[.75,.83]]){
+        facade(glass,a,q,lo,hi,y,y+.78,teal,normal);
+        facade(metal,a,q,lo,hi,y-.04,y+.02,frame,normal);
+      }
+      facade(metal,a,q,.455,.488,podium+.8,top-3,tint(0x3e4a4d),normal);
+      for(let y=podium+1;y<top-3;y+=.25)facade(metal,a,q,.455,.488,y,y+.07,tint(0x87918e),normal);
+    }
     facade(metal, a, q, 0, 1, top - 2.3, top - 1.7, tint(0x507b7b), normal);
   });
   // A real opening is formed from separate solid pieces, rather than painting a
@@ -211,7 +225,7 @@ function e16(b, p, base, batches) {
     facade(glass, a, q, .26, .51, podium + .8, top - 6.2, dark, n);
     for (let y = podium + 2.7; y < top - 6.2; y += 2.7) facade(metal, a, q, .26, .51, y, y + .12, frame, n);
   }
-  return { top, towerFootprint: tower, podiumFootprint: curved, podiumHeightM: 9.2, approximateHeightM: 41, features: ['curved pink podium', 'teal curtain wall', 'pale clock core', 'two open upper apertures'] };
+  return { top, towerFootprint: tower, podiumFootprint: curved, podiumHeightM: 9.2, approximateHeightM: 41, capturePhotos:[52,53,54], features: ['curved pink podium', 'pale pink wall fields with small horizontal windows', 'teal corner cores and central glazing', 'dark vertical louvers', 'pale clock core', 'two open upper apertures'] };
 }
 
 function n3(b, p, base, batches) {
@@ -233,6 +247,17 @@ function n3(b, p, base, batches) {
     glass.quad([a[0], fascia0 + 1.1, a[1]], [q[0], fascia1 + 1.1, q[1]], [q[0], top - 1.1, q[1]], [a[0], top - 1.1, a[1]], teal, normal);
     metal.quad([a[0], fascia0, a[1]], [q[0], fascia1, q[1]], [q[0], fascia1 + 1.4, q[1]], [a[0], fascia0 + 1.4, a[1]], silver, normal);
     facade(metal, a, q, 0, 1, top - 1.1, top, silver, normal);
+    // The entry-facing elevation in captures 51–53 has a silver S-like ribbon
+    // splitting two upper glass openings. It follows the existing rounded shell
+    // exactly; the curve and belt width are photo estimates, not measured plans.
+    if(normal[0]>.18){
+      const ribbon=z=>base+11.3+3.7*Math.tanh((z+283)/10.5);
+      const parts=Math.max(1,Math.ceil(L/1.2));
+      for(let j=0;j<parts;j++){
+        const t0=j/parts,t1=(j+1)/parts,x0=mix(a[0],q[0],t0),z0=mix(a[1],q[1],t0),x1=mix(a[0],q[0],t1),z1=mix(a[1],q[1],t1),y0=ribbon(z0),y1=ribbon(z1);
+        metal.quad([x0,y0-.7,z0],[x1,y1-.7,z1],[x1,Math.min(top-.9,y1+.7),z1],[x0,Math.min(top-.9,y0+.7),z0],silver,normal);
+      }
+    }
     for (let j = Math.ceil(perimeter / 1.65) * 1.65; j < perimeter + L; j += 1.65) {
       const t = (j - perimeter) / L, bottom = mix(fascia0, fascia1, t) + 1.4;
       facade(metal, a, q, Math.max(0, t - .055 / L), Math.min(1, t + .055 / L), bottom, top - 1.1, darkSilver, normal);
@@ -250,7 +275,7 @@ function n3(b, p, base, batches) {
   const stair = fitRectangle(p, [[16, 8], [12, 7]], 'north');
   if (stair) for (let i = 0; i < 18; i++) volume(stone, sliceRect(stair, i / 18, 1), base + .32 + i * .26, base + .32 + (i + 1) * .26, concrete);
   roof(metal, shell, top, silver);
-  return { top, approximateHeightM: 18.5, shellFootprint: shell, lowerFootprint: lower, features: ['rounded glass shell', 'sweeping silver belt', 'inset lower storey', 'flared support columns', 'entry stair'] };
+  return { top, approximateHeightM: 18.5, shellFootprint: shell, lowerFootprint: lower, capturePhotos:[50,51,52,53,54], features: ['rounded glass shell', 'S-shaped silver front ribbon', 'sweeping silver belt', 'inset lower storey', 'flared support columns', 'entry stair'] };
 }
 
 function e9(b, p, base, { stone, metal, glass }) {

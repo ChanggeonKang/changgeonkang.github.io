@@ -11,8 +11,10 @@ export const VEHICLE_DEFAULTS = Object.freeze({
   springRate: 9500, damperRate: 1000, maxCompression: 0.18,
   bumpStopRate: 65000, bumpStopDamper: 1100,
   longitudinalStiffness: 9, corneringStiffness: 7, rearCorneringStiffness: 12, // multiples of normal force
-  tractionSlip: .10, tractionResponseTime: .08, maxEngineWheelSpeed: 280,
-  maxSteeringAngle: 0.48, engineTorque: 190, enginePower: 11000,
+  tractionSlip: .10, tractionResponseTime: .06, maxEngineWheelSpeed: 400,
+  maxSteeringAngle: 0.48, engineTorque: 190, enginePower: 48000,
+  accelerationMultiplier: 2, noSlide: true, maxSpeed: 160 / 3.6,
+  gripYawResponse: 20, gripLateralAcceleration: 9,
   brakeTorquePerWheel: 140, handbrakeTorquePerWheel: 180,
   rollingResistance: 0.018, airDensity: 1.225, dragArea: 0.65,
   chassisContactStiffness: 80000, chassisContactDamping: 1800,
@@ -82,6 +84,10 @@ export function resolveWallContact(body, nx, nz, points, { friction = .45, resti
       -friction * normalImpulse, friction * normalImpulse);
     apply(arm, tangent, tangentImpulse - contact.tangentImpulse); contact.tangentImpulse = tangentImpulse;
   }
+  // Let contact impulses settle before the optional driving constraint resumes.
+  // Forcing the nose-aligned velocity during contact would push a resolved wall
+  // tangent straight back into the wall and recreate stationary residual speed.
+  if (contacts.some(c => c.normalImpulse > 1e-7)) body.wallGripDelay = .15;
   return approach;
 }
 
@@ -144,7 +150,7 @@ export class Vehicle {
     this.q = quaternionFromBasis(norm(cross(u, f)), u, f);
     this.x = x; this.z = z; this.y = (groundOverride ?? ground.height) + this.rideHeight / Math.max(0.2, u[1]);
     this.vx = 0; this.vy = 0; this.vz = 0; this.angularVelocity = [0, 0, 0];
-    this.load = 1; this.contacts = 4; this.airT = 0; this.landed = 0; this.roof = false; this.steer = 0;
+    this.load = 1; this.contacts = 4; this.airT = 0; this.landed = 0; this.roof = false; this.steer = 0; this.wallGripDelay = 0;
     this.normalImpulse = 0; this.hardImpulse = 0;
     for (const w of this.wheels) { w.omega = 0; w.angle = 0; w.compression = 0; w.normalLoad = 0; w.grounded = false; w.slipRatio = 0; w.slipAngle = 0; }
     return this;
@@ -192,8 +198,11 @@ export class Vehicle {
 
   _integrate(dt, input) {
     const p = this.parameters, u = this.upward, f = this.forward, right = this.right;
+    this.wallGripDelay = Math.max(0, (this.wallGripDelay || 0) - dt);
     const force = [0, -p.mass * p.gravity, 0], torque = [0, 0, 0];
     let normalSum = 0, contacts = 0, hardImpulse = 0, roof = false;
+    let wheelContacts = 0;
+    const roadNormalSum = [0, 0, 0];
     const applyForce = (v, point) => {
       for (let i = 0; i < 3; i++) force[i] += v[i];
       if (point) {
@@ -204,7 +213,7 @@ export class Vehicle {
     this.steer += (input.steer - this.steer) * (1 - Math.exp(-dt * 10));
     const rearAngularSpeed = (Math.abs(this.wheels[2].omega) + Math.abs(this.wheels[3].omega)) / 2;
     const engineTorque = input.throttle * (input.throttle < 0 ? 0.45 : 1)
-      * Math.min(p.engineTorque, p.enginePower / Math.max(20, rearAngularSpeed));
+      * Math.min(p.engineTorque * p.accelerationMultiplier, p.enginePower / Math.max(20, rearAngularSpeed));
 
     for (const wheel of this.wheels) {
       const rear = wheel.z < 0, steering = rear ? 0 : this.steer * p.maxSteeringAngle;
@@ -229,7 +238,7 @@ export class Vehicle {
         const stopForce = stop > 0 ? p.bumpStopRate * stop + p.bumpStopDamper * Math.max(0, compressionRate) : 0;
         normalLoad = Math.max(0, (p.springRate * compression + p.damperRate * compressionRate + stopForce) / Math.max(0.15, dot(n, u)));
         wheel.compression = compression; wheel.normalLoad = normalLoad; wheel.grounded = normalLoad > 1;
-        if (wheel.grounded) contacts++;
+        if (wheel.grounded) { contacts++; wheelContacts++; for (let j = 0; j < 3; j++) roadNormalSum[j] += n[j] * normalLoad; }
         normalSum += normalLoad; hardImpulse += stopForce * dt;
         applyForce(scale(n, normalLoad), point);
 
@@ -244,7 +253,7 @@ export class Vehicle {
         let fx = p.longitudinalStiffness * normalLoad * slipRatio;
         // A modest rear stiffness bias makes the chassis mildly understeer;
         // either axle can still slide when the combined friction circle saturates.
-        let fy = -(rear ? p.rearCorneringStiffness : p.corneringStiffness) * normalLoad * slipAngle;
+        let fy = p.noSlide ? 0 : -(rear ? p.rearCorneringStiffness : p.corneringStiffness) * normalLoad * slipAngle;
         const limit = this._friction(point[0], point[2]) * normalLoad, demand = Math.hypot(fx, fy);
         if (demand > limit && demand > 0) { const k = limit / demand; fx *= k; fy *= k; }
         tireForceLong = fx;
@@ -254,7 +263,8 @@ export class Vehicle {
       } else { wheel.longitudinalForce = 0; wheel.lateralForce = 0; wheel.frictionLimit = 0; }
 
       // Wheel angular momentum couples engine/brake torque to road traction.
-      let driveTorque = rear ? engineTorque / 2 : 0;
+      // Grip mode spreads the doubled launch torque across all four contacts.
+      let driveTorque = p.noSlide ? engineTorque / 4 : rear ? engineTorque / 2 : 0;
       if (driveTorque) {
         // Engine torque control, not a velocity/yaw clamp: a spinning driven
         // wheel otherwise uses up rear lateral grip throughout a steering
@@ -300,17 +310,41 @@ export class Vehicle {
     const velocity = [this.vx, this.vy, this.vz], speed = Math.hypot(...velocity);
     applyForce(scale(velocity, -0.5 * p.airDensity * p.dragArea * speed));
     this.vx += force[0] / p.mass * dt; this.vy += force[1] / p.mass * dt; this.vz += force[2] / p.mass * dt;
-    this.x += this.vx * dt; this.y += this.vy * dt; this.z += this.vz * dt;
 
     const bodyOmega = unrotate(this.q, this.angularVelocity), inertia = p.inertia;
     const bodyMomentum = [bodyOmega[0] * inertia[0], bodyOmega[1] * inertia[1], bodyOmega[2] * inertia[2]];
     const bodyTorque = unrotate(this.q, torque), gyroscopic = cross(bodyOmega, bodyMomentum);
     const angularAcceleration = rotate(this.q, [(bodyTorque[0] - gyroscopic[0]) / inertia[0], (bodyTorque[1] - gyroscopic[1]) / inertia[1], (bodyTorque[2] - gyroscopic[2]) / inertia[2]]);
     this.angularVelocity = add(this.angularVelocity, scale(angularAcceleration, dt));
+    const gripping = p.noSlide && !this.wallGripDelay && wheelContacts >= 2 && u[1] > .6 && !roof;
+    const roadNormal = gripping ? norm(roadNormalSum) : null;
+    if (gripping) {
+      // Requested non-sliding game handling. A rolling constraint replaces
+      // tyre slip only while supported; suspension, pitch, roll and flight
+      // still use the six-degree-of-freedom model and actual ground surface.
+      const forwardSpeed = dot([this.vx, this.vy, this.vz], f);
+      const requestedYaw = -forwardSpeed * Math.tan(this.steer * p.maxSteeringAngle) / p.wheelbase;
+      const maxYaw = Math.min(1.7, p.gripLateralAcceleration / Math.max(1, Math.abs(forwardSpeed)));
+      const targetYaw = clamp(requestedYaw, -maxYaw, maxYaw);
+      const change = (targetYaw - dot(this.angularVelocity, roadNormal)) * (1 - Math.exp(-dt * p.gripYawResponse));
+      this.angularVelocity = add(this.angularVelocity, scale(roadNormal, change));
+    }
     const w = this.angularVelocity, q = this.q;
     const dq = [w[0] * q[3] + w[1] * q[2] - w[2] * q[1], -w[0] * q[2] + w[1] * q[3] + w[2] * q[0], w[0] * q[1] - w[1] * q[0] + w[2] * q[3], -w[0] * q[0] - w[1] * q[1] - w[2] * q[2]];
     for (let i = 0; i < 4; i++) q[i] += 0.5 * dq[i] * dt;
     const qLength = Math.hypot(...q); for (let i = 0; i < 4; i++) q[i] /= qLength;
+
+    if (gripping) {
+      const heading = this.forward, forward = norm(add(heading, scale(roadNormal, -dot(heading, roadNormal))));
+      const speed = [this.vx, this.vy, this.vz];
+      const constrained = add(scale(forward, dot(speed, forward)), scale(roadNormal, dot(speed, roadNormal)));
+      [this.vx, this.vy, this.vz] = constrained;
+    }
+    const horizontalSpeed = Math.hypot(this.vx, this.vz);
+    if (horizontalSpeed > p.maxSpeed) {
+      const fraction = p.maxSpeed / horizontalSpeed; this.vx *= fraction; this.vz *= fraction;
+    }
+    this.x += this.vx * dt; this.y += this.vy * dt; this.z += this.vz * dt;
 
     this.load = normalSum / (p.mass * p.gravity); this.contacts = contacts; this.roof = roof;
     this.normalImpulse = normalSum * dt; this.hardImpulse = hardImpulse;
