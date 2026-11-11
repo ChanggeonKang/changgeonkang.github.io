@@ -92,6 +92,7 @@
   button.alt{border-radius:5px;font:14px inherit}.settings{display:flex;align-items:center;gap:16px;margin:18px 0;color:#bfd1dc;font-size:12px}
   select{font:inherit;color:#e5eff4;background:#1c3443;border:1px solid #435c6b;padding:8px 10px;border-radius:5px}
   .fine{opacity:1;color:#839ba9;font-size:11px;line-height:1.6;margin-top:22px}
+  .fine a{color:#a2c4d5;text-underline-offset:2px}
   #contactLabel{position:absolute;top:143px;width:100%;text-align:center;font-size:10px;letter-spacing:.02em;color:#c4d8e2}
   #contactLoad{position:absolute;left:42px;right:42px;top:163px;height:3px;background:rgba(255,255,255,.15)}#loadIbar{display:block;height:100%;width:50%;background:#b1dcff;transition:width .08s}
   #telemetry{left:18px;bottom:98px;padding:10px 14px;font-size:12px;line-height:1.8;max-width:calc(100vw - 64px)}
@@ -149,10 +150,10 @@
 
 <div class="panel" id="title">
   <div class="card glass">
-    <div class="logo">NUBZUKI KART</div>
-    <div class="tag">KAIST · SOLO TIME ATTACK</div>
+    <div class="logo">KAIST CAMPUS KART</div>
+    <div class="tag">대전 본원 · SOLO TIME ATTACK</div>
     <div class="chips"><span id="chipLen">4.4 km lap</span><span id="chipBump">speed bumps</span><span>1인 주행</span><span>온라인 순위표</span></div>
-    <p>혼자 달리고, 기록으로 경쟁하세요.<br>코스를 한 바퀴 완주하면 닉네임과 시간이 온라인에 저장됩니다.</p>
+    <p>정문술빌딩에서 출발해 캠퍼스를 한 바퀴.<br>혼자 달리고, 닉네임과 완주 기록으로 경쟁하세요.</p>
     <label class="name-field" for="playerName">공개 닉네임<input id="playerName" type="text" maxlength="20" placeholder="이름을 입력하세요" autocomplete="off" spellcheck="false" aria-describedby="nameError"></label>
     <div id="nameError" role="alert"></div>
     <div class="keys">
@@ -165,8 +166,8 @@
     <button class="alt" id="practiceBtn" disabled>연습 주행</button>
     <p class="record-note">연습 주행은 기록에 등록되지 않습니다.</p>
     <div id="loadBar"><i id="loadI"></i></div><div id="loadMsg"></div>
-    <div class="record-section"><div class="record-heading">ONLINE TOP 10<button class="alt" id="refreshRecordsBtn">새로고침</button></div><p class="record-note" id="leaderboardStatus" role="status">온라인 기록을 불러오는 중…</p><table class="res" id="leaderboardTable" aria-label="온라인 최고 기록"></table></div>
-    <div class="fine">© OpenStreetMap contributors · SRTM elevation<br>KAIST 건강달리기 경로를 차도로 재구성한 비공식 팬 프로젝트. 넙죽이는 KAIST의 마스코트입니다.</div>
+    <div class="record-section"><div class="record-heading">TERRAIN v3 · ONLINE TOP 10<button class="alt" id="refreshRecordsBtn">새로고침</button></div><p class="record-note" id="leaderboardStatus" role="status">온라인 기록을 불러오는 중…</p><table class="res" id="leaderboardTable" aria-label="온라인 최고 기록"></table></div>
+    <div class="fine">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> · 고도 <a href="https://doi.org/10.5069/G9BV7DT1" target="_blank" rel="noopener">GEDTM30, Ho et al.</a> (<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>, 재표본화·평활화)<br>약 30m 지형 자료와 사진으로 재구성한 캠퍼스입니다. 건물 치수·작은 노면 굴곡은 추정입니다.<br>KAIST 건강달리기 경로를 차도로 재구성한 비공식 팬 프로젝트. 넙죽이는 KAIST의 마스코트입니다.</div>
   </div>
 </div>
 

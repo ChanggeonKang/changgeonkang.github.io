@@ -1,6 +1,9 @@
 // World: terrain, course, roads, buildings, vegetation, props, sky.
 import * as THREE from '../lib/three.module.min.js';
 import { buildLandmarks } from './landmarks.js';
+import { campusName, buildingProfile } from './campus-identity.js';
+import { buildParking } from './campus-parking.js';
+import { buildGate } from './campus-gate.js';
 import { COURSE_BARRIER, getCourseBarriers } from './course-barriers.js';
 
 export const VS = 1;          // preserve source elevation scale (source resolution remains limited)
@@ -19,15 +22,43 @@ const rnd = rng(20261111);
 export const W = {
   D: null, C: null, G: null, bumps: [], courseBumps: [], landmarks: [],
   sun: new THREE.Vector3(0.5, 0.62, 0.6).normalize(),
-  horizon: new THREE.Color().setRGB(0.70, 0.84, 0.97),
+  horizon: new THREE.Color(0xb2cede),
   sky: null, env: null,
 };
 
 // ───────────────────────── height / surface queries ─────────────────────────
 export function hAt(x, z) {
   const t = W.D.terrain;
-  const u = clamp((x - t.x0) / t.gs, 0, t.w - 1.001), v = clamp((z - t.z0) / t.gs, 0, t.h - 1.001);
-  const i = Math.floor(u), j = Math.floor(v), fu = u - i, fv = v - j, d = t.d, o = j * t.w + i;
+  const natural = sampleHeight(t, x, z), R = W.roadElevation;
+  if (!R) return natural;
+  const candidates = R.cells.get(Math.floor(x / R.cellSize) * 8192 + Math.floor(z / R.cellSize));
+  if (!candidates) return natural;
+  const C = W.C;
+  let nearestSquared = Infinity, weightSum = 0, weightedHeight = 0, weightedWidth = 0;
+  for (const a of candidates) {
+    const b = (a + 1) % C.n, dx = C.x[b] - C.x[a], dz = C.z[b] - C.z[a], len2 = dx * dx + dz * dz;
+    const u = clamp(((x - C.x[a]) * dx + (z - C.z[a]) * dz) / len2, 0, 1);
+    const ex = x - C.x[a] - dx * u, ez = z - C.z[a] - dz * u, distanceSquared = ex * ex + ez * ez;
+    nearestSquared = Math.min(nearestSquared, distanceSquared);
+    // A hard nearest-segment choice creates height steps on inside corners.
+    // A short spatial kernel joins adjacent longitudinal profiles continuously.
+    const weight = Math.exp(-distanceSquared / 18); // sigma 3 m
+    weightSum += weight;
+    weightedHeight += weight * lerp(R.heights[a], R.heights[b], u);
+    weightedWidth += weight * lerp(C.halfWidth[a], C.halfWidth[b], u);
+  }
+  if (!weightSum || nearestSquared >= (HALF_W + 14) ** 2) return natural;
+  const nearest = Math.sqrt(nearestSquared), width = weightedWidth / weightSum;
+  const crowned = .015 * (Math.sqrt(nearestSquared + .16) - .4);
+  const target = weightedHeight / weightSum - crowned;
+  // A 30 m terrain model cannot measure road camber. Infer a gently crowned
+  // cross-section and blend cut/fill back to the untouched surrounding DEM.
+  const f = clamp((nearest - width - 4) / 10, 0, 1), blend = f * f * (3 - 2 * f);
+  return lerp(target, natural, blend);
+}
+function sampleHeight(t, x, z) {
+  const u = clamp((x - t.x0) / t.gs, 0, t.w - 1), v = clamp((z - t.z0) / t.gs, 0, t.h - 1);
+  const i = Math.min(t.w - 2, Math.floor(u)), j = Math.min(t.h - 2, Math.floor(v)), fu = u - i, fv = v - j, d = t.d, o = j * t.w + i;
   return (d[o] * (1 - fu) * (1 - fv) + d[o + 1] * fu * (1 - fv) + d[o + t.w] * (1 - fu) * fv + d[o + t.w + 1] * fu * fv) * VS;
 }
 function inPoly(x, z, p) {
@@ -148,6 +179,7 @@ function resampleLoop(points, spacing) {
 
 function buildCourse() {
   const D = W.D;
+  W.roadElevation = null;
   W.footprints = D.buildings.map((b, index) => ({ p: b.p, index,
     x0: Math.min(...b.p.map(p => p[0])), x1: Math.max(...b.p.map(p => p[0])),
     z0: Math.min(...b.p.map(p => p[1])), z1: Math.max(...b.p.map(p => p[1])) }));
@@ -224,6 +256,33 @@ function buildCourse() {
     prev = bi;
     return { name: m.name, idx: bi };
   });
+  buildRoadElevation();
+}
+
+function buildRoadElevation() {
+  const C = W.C, sigmaM = 40, radius = Math.ceil(4 * sigmaM / C.ds);
+  const raw = new Float64Array(C.n), heights = new Float64Array(C.n), weights = [];
+  for (let i = 0; i < C.n; i++) raw[i] = sampleHeight(W.D.terrain, C.x[i], C.z[i]);
+  for (let k = -radius; k <= radius; k++) weights.push(Math.exp(-.5 * (k * C.ds / sigmaM) ** 2));
+  const total = weights.reduce((s, w) => s + w, 0);
+  for (let i = 0; i < C.n; i++) {
+    let sum = 0;
+    for (let k = -radius; k <= radius; k++) sum += raw[mod(i + k, C.n)] * weights[k + radius];
+    heights[i] = sum / total;
+  }
+  const cellSize = 32, cells = new Map();
+  for (let i = 0; i < C.n; i++) {
+    const j = (i + 1) % C.n, margin = Math.max(C.halfWidth[i], C.halfWidth[j]) + 14;
+    for (let ix = Math.floor((Math.min(C.x[i], C.x[j]) - margin) / cellSize); ix <= Math.floor((Math.max(C.x[i], C.x[j]) + margin) / cellSize); ix++) {
+      for (let iz = Math.floor((Math.min(C.z[i], C.z[j]) - margin) / cellSize); iz <= Math.floor((Math.max(C.z[i], C.z[j]) + margin) / cellSize); iz++) {
+        const key = ix * 8192 + iz;
+        if (!cells.has(key)) cells.set(key, []);
+        cells.get(key).push(i);
+      }
+    }
+  }
+  W.roadElevation = { raw, heights, cells, cellSize, sigmaM, cornerKernelSigmaM: 3, crownSlope: .015,
+    measured: false, source: 'GEDTM30 centreline, circular Gaussian sigma 40 m, continuous 3 m corner kernel; inferred 1.5% crown and roadside cut/fill blend' };
 }
 
 const ROAD = { // [width, class]  class 1 = footpath, 2 = drivable
@@ -253,6 +312,7 @@ function buildGrid() {
     }
   };
   for (let i = 0; i < C.n; i++) stamp(C.x[i], C.z[i], C.halfWidth[i] - .5, k => { near[k] = 1; });
+  for (const a of D.parking || []) fillPoly(a.p, 2);
   for (const a of D.areas) if (a.k === 'water') fillPoly(a.p, 8);
   for (const pass of [1, 2]) for (const r of D.roads) {
     const R = ROAD[r.t]; if (!R || R[1] !== pass) continue;
@@ -335,6 +395,9 @@ float vnoise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * 
   return mix(mix(h21(i), h21(i + vec2(1.0, 0.0)), f.x), mix(h21(i + vec2(0.0, 1.0)), h21(i + vec2(1.0, 1.0)), f.x), f.y); }`;
 /** Add a world-position varying + custom fragment code to a standard material. */
 function patch(mat, { vHead = '', vBody = '', fHead = '', fColor = '', fRough = '' }) {
+  // THREE's default key stringifies onBeforeCompile. These closures have the
+  // same function text but different GLSL, so each patch needs its own key.
+  mat.customProgramCacheKey = () => JSON.stringify([vHead, vBody, fHead, fColor, fRough]);
   mat.onBeforeCompile = sh => {
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWp;\n' + vHead)
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWp = (modelMatrix * vec4(transformed, 1.0)).xyz;\n' + vBody);
@@ -374,8 +437,14 @@ const col = h => new THREE.Color(h);
 
 // ───────────────────────── terrain ─────────────────────────
 function buildTerrain(scene) {
-  const D = W.D, t = D.terrain, S = t.gs / 2, w = (t.w - 1) * 2 + 1, h = (t.h - 1) * 2 + 1;
+  const D = W.D, t = D.terrain, subdivisions = 5, S = t.gs / subdivisions, w = (t.w - 1) * subdivisions + 1, h = (t.h - 1) * subdivisions + 1;
   const pos = new Float32Array(w * h * 3), colr = new Float32Array(w * h * 3), idx = [];
+  // DEM pixels cannot resolve a pond's banks. Form a shallow visual basin
+  // within the mapped water polygon, keeping vehicle hAt/gAt unchanged.
+  W.waterLevels = new Map(D.areas.filter(a => a.k === 'water').map(a => {
+    const shore = a.p.map(p => hAt(p[0], p[1])).sort((a, b) => a - b);
+    return [a, shore[Math.floor(shore.length / 2)] + .05];
+  }));
   const woods = D.areas.filter(a => a.k === 'wood').map(a => {
     let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9;
     for (const q of a.p) { x0 = Math.min(x0, q[0]); x1 = Math.max(x1, q[0]); z0 = Math.min(z0, q[1]); z1 = Math.max(z1, q[1]); }
@@ -384,6 +453,7 @@ function buildTerrain(scene) {
   for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
     const x = t.x0 + i * S, z = t.z0 + j * S, o = (j * w + i) * 3;
     pos[o] = x; pos[o + 1] = hAt(x, z); pos[o + 2] = z;
+    for (const [water, level] of W.waterLevels) if (inPoly(x, z, water.p)) pos[o + 1] = Math.min(pos[o + 1], level - .6);
     let wood = 0;
     for (const a of woods) if (x > a.x0 && x < a.x1 && z > a.z0 && z < a.z1 && inPoly(x, z, a.p)) { wood = 1; break; }
     colr[o] = wood ? .5 : 1; colr[o + 1] = wood ? .62 : 1; colr[o + 2] = wood ? .5 : 1;
@@ -393,7 +463,7 @@ function buildTerrain(scene) {
   g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   g.setAttribute('color', new THREE.BufferAttribute(colr, 3));
   g.setIndex(idx); g.computeVertexNormals();
-  const grass = () => patch(new THREE.MeshStandardMaterial({ color: 0x6fa24a, roughness: 1, metalness: 0, vertexColors: true }), {
+  const grass = () => patch(new THREE.MeshStandardMaterial({ color: 0x627d45, roughness: 1, metalness: 0, vertexColors: true, envMapIntensity: .5 }), {
     fColor: `
       float n1 = vnoise(vWp.xz * 0.02), n2 = vnoise(vWp.xz * 0.21), n3 = vnoise(vWp.xz * 1.7);
       diffuseColor.rgb *= mix(0.74, 1.16, n1 * 0.5 + n2 * 0.32 + n3 * 0.18);
@@ -402,11 +472,18 @@ function buildTerrain(scene) {
   const m = new THREE.Mesh(g, grass());
   m.receiveShadow = true;
   scene.add(m);
-  // apron: continue the edge heights far beyond the playable area
-  const b = D.bounds, AS = 50, ext = 2600, mb = new MB(), one = col(0xffffff);
-  for (let x = b.x0 - ext; x < b.x1 + ext; x += AS) for (let z = b.z0 - ext; z < b.z1 + ext; z += AS) {
+  // Georeferenced surrounding terrain. Blend only the resolution seam, not
+  // the course; elevations stay at their real scale and hills stay fixed.
+  const b = D.bounds, AS = 50, ex = D.terrainExtended, mb = new MB(), one = col(0xa2b68d);
+  if (!ex) return;
+  const outerY = (x, z) => {
+    const cx = clamp(x, b.x0, b.x1), cz = clamp(z, b.z0, b.z1);
+    const distance = Math.hypot(x - cx, z - cz), f = clamp(distance / 150, 0, 1), blend = f * f * (3 - 2 * f);
+    return sampleHeight(ex, x, z) + (hAt(cx, cz) - sampleHeight(ex, cx, cz)) * (1 - blend) - .025;
+  };
+  for (let x = ex.x0; x < ex.x0 + (ex.w - 1) * ex.gs; x += AS) for (let z = ex.z0; z < ex.z0 + (ex.h - 1) * ex.gs; z += AS) {
     if (x >= b.x0 && x + AS <= b.x1 && z >= b.z0 && z + AS <= b.z1) continue;
-    const P = (px, pz) => [px, hAt(px, pz) - .05, pz];
+    const P = (px, pz) => [px, outerY(px, pz), pz];
     mb.quad(P(x, z), P(x, z + AS), P(x + AS, z + AS), P(x + AS, z), UP, [0, 0], [0, 1], [1, 1], [1, 0], one);
   }
   const ag = mb.geo(); ag.computeVertexNormals();
@@ -612,21 +689,21 @@ function buildBuildings(scene) {
       area += q[0] * r[1] - r[0] * q[1];
     }
     // Keep every mapped building. Course clearance is solved before mesh creation.
-    const nm = (b.en || '') + ' ' + (b.name || '');
-    const tall = !b.ref && b.lv >= 10;
-    let style = GLASS.has(b.ref) ? 2 : (/Hall|Village|Apartment|Housing|Dorm|관$/.test(nm) || tall) ? 0 : b.ref ? 1 : bi % 3 ? 1 : 0;
-    const pal = style === 2 ? [0xaab4bc, 0xc2c6c8] : tall ? APT : /Hall|Village|Housing|Dorm/.test(nm) ? BRICK : b.ref ? STONE : MISC;
+    const profile = buildingProfile(b), tall = b.lv >= 10;
+    let style = GLASS.has(b.ref) ? 2 : profile.residential ? 0 : 1;
+    const pal = style === 2 ? [0xaab4bc, 0xc2c6c8] : tall ? APT : profile.residential ? BRICK : b.ref ? STONE : MISC;
     let wc = col(pal[(bi * 7 + n) % pal.length]);
     if (REAL[b.ref]) { wc = col(REAL[b.ref][0]); style = REAL[b.ref][1]; }
-    const hh = b.hh || (b.lv ? b.lv * 3.7 : 6 + ((bi * 37) % 9)) + .9, base = lo - 1, top = hi + hh, H = top - base, sgn = area > 0 ? 1 : -1, seed = (bi * 0.6180339) % 1;
+    const hh = profile.height, base = lo - 1, top = (lo + hi) / 2 + hh, H = top - base, sgn = area > 0 ? 1 : -1, seed = (bi * 0.6180339) % 1;
     for (let i = 0; i < n; i++) {
       const a = p[i], c = p[(i + 1) % n], dx = c[0] - a[0], dz = c[1] - a[1], len = Math.hypot(dx, dz);
       if (len < .05) continue;
-      const nr = [sgn * dz / len, 0, -sgn * dx / len], ex = [len, H, style, seed];
+      const nr = [sgn * dz / len, 0, -sgn * dx / len], ex = [len, H, style + profile.floorHeight / 10, seed];
       mb.quad([a[0], base, a[1]], [c[0], base, c[1]], [c[0], top, c[1]], [a[0], top, a[1]], nr, [0, 0], [len, 0], [len, H], [0, H], wc, ex);
     }
     const tris = THREE.ShapeUtils.triangulateShape(p.map(q => new THREE.Vector2(q[0], q[1])), []), rex = [0, 0, -1, seed];
-    for (const t of tris) mb.tri([p[t[0]][0], top, p[t[0]][1]], [p[t[1]][0], top, p[t[1]][1]], [p[t[2]][0], top, p[t[2]][1]], UP, [0, 0], [0, 0], [0, 0], roofC, rex);
+    const roofColor = profile.redRoof ? col(0x974c38) : roofC;
+    for (const t of tris) mb.tri([p[t[0]][0], top, p[t[0]][1]], [p[t[1]][0], top, p[t[1]][1]], [p[t[2]][0], top, p[t[2]][1]], UP, [0, 0], [0, 0], [0, 0], roofColor, rex);
     const A = Math.abs(area) / 2;
     if (A > 350) for (let k = 0; k < Math.min(4, 1 + A / 900); k++) { // rooftop plant boxes
       const sx = 2 + rnd() * 4, sz = 2 + rnd() * 4, sh = 1.4 + rnd() * 1.8, ox = cx + (rnd() - .5) * Math.sqrt(A) * .6, oz = cz + (rnd() - .5) * Math.sqrt(A) * .6;
@@ -638,20 +715,20 @@ function buildBuildings(scene) {
       }
       mb.quad([c4[0][0], top + sh, c4[0][1]], [c4[1][0], top + sh, c4[1][1]], [c4[2][0], top + sh, c4[2][1]], [c4[3][0], top + sh, c4[3][1]], UP, [0, 0], [0, 0], [0, 0], [0, 0], roofC, rex);
     }
-    if (b.ref) labels.push({ ref: b.ref, en: b.en || '', x: cx, y: top + 5, z: cz });
+    if (b.ref) labels.push({ ref: b.ref, name: campusName(b), en: b.en || '', x: cx, y: top + 3, z: cz });
   });
   const mat = patch(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .86, metalness: 0 }), {
     vHead: 'attribute vec4 aInfo; varying vec4 vInfo; varying vec2 vBuv;', vBody: 'vInfo = aInfo; vBuv = uv;',
     fHead: 'varying vec4 vInfo; varying vec2 vBuv; float winMask;',
     fColor: `
       winMask = 0.0;
-      float style = vInfo.z;
+      float style = floor(vInfo.z + 0.001);
       if (style > -0.5) {
         float wallLen = vInfo.x, bh = vInfo.y;
         diffuseColor.rgb *= mix(0.80, 1.0, smoothstep(0.0, 5.0, vBuv.y)) * mix(0.94, 1.04, vnoise(vec2(vBuv.x * 0.15 + vInfo.w * 40.0, vBuv.y * 0.6)));
         if (wallLen > 2.4) {
           float nCol = max(1.0, floor(wallLen / (style > 1.5 ? 2.2 : 3.3) + 0.5));
-          float cu = vBuv.x / wallLen * nCol, fl = vBuv.y / 3.7;
+          float cu = vBuv.x / wallLen * nCol, fl = vBuv.y / max(2.5, fract(vInfo.z) * 10.0);
           float fwx = fwidth(cu) * 1.2, fwy = fwidth(fl) * 1.2, fx = fract(cu), fy = fract(fl);
           vec4 e = style < 0.5 ? vec4(0.22, 0.78, 0.34, 0.80) : style < 1.5 ? vec4(0.05, 0.95, 0.38, 0.80) : vec4(0.045, 0.955, 0.10, 0.93);
           float wx = smoothstep(e.x - fwx, e.x + fwx, fx) - smoothstep(e.y - fwx, e.y + fwx, fx);
@@ -672,9 +749,10 @@ function buildBuildings(scene) {
   m.castShadow = true; m.receiveShadow = true;
   scene.add(m);
   for (const l of labels) {
-    const name = l.en.length > 26 ? l.en.slice(0, 25) + '…' : l.en;
+    const name = l.name || campusName(D.buildings.find(b => b.ref === l.ref) || l);
     const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: labelTex(l.ref, name), transparent: true, depthWrite: false }));
     s.scale.set(13, 3.25, 1); s.position.set(l.x, l.y, l.z);
+    (W.buildingLabels ||= []).push(s);
     scene.add(s);
   }
 }
@@ -692,7 +770,7 @@ function labelTex(ref, name) {
 // ───────────────────────── vegetation, water, props ─────────────────────────
 function buildNature(scene) {
   const D = W.D, C = W.C, b = D.bounds;
-  const water = new THREE.MeshStandardMaterial({ color: 0x2a6f8e, roughness: .06, metalness: .65, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+  const water = new THREE.MeshStandardMaterial({ color: 0x315c60, roughness: .18, metalness: .28, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
   const turf = new THREE.MeshStandardMaterial({ color: 0x3e9a4c, roughness: 1, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
   const trees = { conifer: [], leaf: [], cherry: [] };
   let pond = null;
@@ -704,9 +782,9 @@ function buildNature(scene) {
       const g = new THREE.ShapeGeometry(new THREE.Shape(a.p.map(p => new THREE.Vector2(p[0], -p[1]))));
       g.rotateX(-Math.PI / 2);
       const m = new THREE.Mesh(g, a.k === 'water' ? water : turf);
-      m.position.y = (a.k === 'water' ? lo : (lo + hi) / 2) + .3; m.receiveShadow = true;
+      m.position.y = a.k === 'water' ? W.waterLevels.get(a) : (lo + hi) / 2 + .3; m.receiveShadow = true;
       scene.add(m);
-      if (a.name) pond = a;
+      if (a.k === 'water' && /오리|Duck|석림/i.test(a.name || '')) pond = a;
     } else if (a.k === 'wood') {
       let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9;
       for (const q of a.p) { x0 = Math.min(x0, q[0]); x1 = Math.max(x1, q[0]); z0 = Math.min(z0, q[1]); z1 = Math.max(z1, q[1]); }
@@ -720,35 +798,48 @@ function buildNature(scene) {
   const clear = (x, z, r) => surfAt(x, z) === 0 && surfAt(x + r, z) === 0 && surfAt(x - r, z) === 0 && surfAt(x, z + r) === 0 && surfAt(x, z - r) === 0;
   for (let i = 0; i < 1300; i++) { // scattered campus trees
     const x = b.x0 + rnd() * (b.x1 - b.x0), z = b.z0 + rnd() * (b.z1 - b.z0);
-    if (clear(x, z, 3)) (rnd() < .2 ? trees.conifer : rnd() < .2 ? trees.cherry : trees.leaf).push([x, z, 1]);
+    if (clear(x, z, 3)) (rnd() < .24 ? trees.conifer : trees.leaf).push([x, z, 1]);
   }
-  for (let i = 0; i < C.n; i += 8) for (const sg of [1, -1]) { // street trees (cherry blossom stretches)
+  for (const tree of D.trees || []) { const [x, z] = Array.isArray(tree) ? tree : [tree.x, tree.z]; if (clear(x, z, 1)) trees.leaf.push([x, z, 1.1]); }
+  for (let i = 0; i < C.n; i += 8) for (const sg of [1, -1]) { // estimated planting within mapped roadside greenspace
     const off = (C.halfWidth[i] + 4 + rnd() * 1.2) * sg, x = C.x[i] + C.tz[i] * off, z = C.z[i] - C.tx[i] * off;
     if (!clear(x, z, 1.5)) continue;
-    (Math.sin(i * .011) > .35 ? trees.cherry : trees.leaf).push([x, z, .8]);
+    trees.leaf.push([x, z, .9]);
   }
-  const ico = new THREE.IcosahedronGeometry(1, 1), white = col(0xffffff);
-  const leafG = merged([[ico, M4(0, .7, 0, .3, .27, .3), white], [ico, M4(.17, .59, .06, .22, .2, .22), white], [ico, M4(-.16, .61, -.08, .23, .21, .23), white], [ico, M4(.02, .58, -.18, .2, .18, .2), white]]);
+  const ico = new THREE.IcosahedronGeometry(1, 2), white = col(0xffffff);
+  const leafG = merged([[ico, M4(0, .77, 0, .26, .28, .28), white], [ico, M4(.21, .66, .09, .23, .22, .25), col(0xe6eedb)], [ico, M4(-.20, .68, -.08, .25, .23, .24), col(0xe1ead8)], [ico, M4(.02, .63, -.23, .22, .21, .23), col(0xd7e3cf)], [ico, M4(-.10, .60, .20, .21, .21, .23), col(0xe8eddb)]]);
+  const distantCrown = new THREE.IcosahedronGeometry(1, 1);
+  const leafFarG = merged([[distantCrown, M4(0, .73, 0, .37, .31, .37), white], [distantCrown, M4(.12, .62, -.08, .27, .23, .30), col(0xdfe9d3)]]);
   const coneG = merged([[new THREE.ConeGeometry(.2, .5, 9), M4(0, .45, 0), white], [new THREE.ConeGeometry(.16, .45, 9), M4(0, .68, 0), white], [new THREE.ConeGeometry(.11, .38, 9), M4(0, .87, 0), white]]);
-  const trunkG = new THREE.CylinderGeometry(.045, .07, .5, 7); trunkG.translate(0, .25, 0);
+  const branch = new THREE.CylinderGeometry(.018, .027, .3, 6);
+  const trunkG = merged([[new THREE.CylinderGeometry(.022, .035, .65, 8), M4(0, .325, 0), white], [branch, M4(.06, .49, 0, 1, 1, 1, 0, 0, -.6), white], [branch, M4(-.06, .52, .02, 1, 1, 1, .2, 0, .55), white]]);
   const trunkM = new THREE.MeshStandardMaterial({ color: 0x6a4d35, roughness: 1 });
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), c = new THREE.Color(), e = new THREE.Euler();
-  const make = (list, geo, hue, sat, lig, hmin, hmax, wide) => {
+  const make = (list, geo, hue, sat, lig, hmin, hmax, wide, distantGeo) => {
     if (!list.length) return;
-    const mesh = new THREE.InstancedMesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .95 }), list.length);
+    const mesh = new THREE.InstancedMesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .95, envMapIntensity: .45 }), list.length);
     const tr = new THREE.InstancedMesh(trunkG, trunkM, list.length);
+    const far = distantGeo ? new THREE.InstancedMesh(distantGeo, mesh.material, list.length) : null, instances = [];
     list.forEach(([x, z, sc], i) => {
       const h = (hmin + rnd() * (hmax - hmin)) * sc, y = hAt(x, z) + liftAt(x, z);
       q.setFromEuler(e.set(0, rnd() * 6.28, 0));
       m4.compose(new THREE.Vector3(x, y, z), q, new THREE.Vector3(h * wide, h, h * wide)); mesh.setMatrixAt(i, m4);
+      const treeMatrix = far ? m4.clone() : null;
       m4.compose(new THREE.Vector3(x, y, z), q, new THREE.Vector3(h * 1.1, h, h * 1.1)); tr.setMatrixAt(i, m4);
-      mesh.setColorAt(i, c.setHSL(hue + (rnd() - .5) * .05, sat, lig + (rnd() - .5) * .1));
+      mesh.setColorAt(i, c.setHSL(hue + (rnd() - .5) * .05, sat, lig + (rnd() - .5) * .1, THREE.SRGBColorSpace));
+      if (far) { far.setMatrixAt(i, treeMatrix); far.setColorAt(i, c); instances.push({ x, z, matrix: treeMatrix, color: c.clone() }); }
     });
     mesh.castShadow = tr.castShadow = true; mesh.receiveShadow = true;
     scene.add(mesh, tr);
+    if (far) {
+      // Pack only nearby crowns into the detailed draw. Distant foliage uses
+      // fewer vertices; zero-scaling would still execute every high-detail vertex.
+      mesh.frustumCulled = far.frustumCulled = false; far.receiveShadow = true;
+      scene.add(far); (W.treeLods ||= []).push({ near: mesh, far, instances });
+    }
   };
   make(trees.conifer, coneG, .36, .42, .25, 8, 14, 1);
-  make(trees.leaf, leafG, .28, .5, .36, 6.5, 10, 1.25);
+  make(trees.leaf, leafG, .26, .38, .30, 8.5, 14, 1.05, leafFarG);
   make(trees.cherry, leafG, .93, .75, .86, 5.5, 8, 1.3);
 
   // lamp posts
@@ -777,15 +868,8 @@ function buildNature(scene) {
     const p = pond.p[i], dx = p[0] - cx, dz = p[1] - cz, L = Math.hypot(dx, dz) || 1;
     for (let k = 0; k < 2; k++) { const x = p[0] + dx / L * (2 + rnd() * 3) + rnd() * 2, z = p[1] + dz / L * (2 + rnd() * 3) + rnd() * 2; if (surfAt(x, z) < 2) geese.push([x, z]); }
   }
-  for (let i = 60; i < C.n; i += 173) { // a gaggle by the roadside every few hundred metres
-    const sg = (i / 173 | 0) & 1 ? 1 : -1;
-    for (let k = 0; k < 3; k++) {
-      const j = mod(i + k * 2, C.n), off = (C.halfWidth[j] + 3.4 + rnd() * 2.5) * sg, x = C.x[j] + C.tz[j] * off, z = C.z[j] - C.tx[j] * off;
-      if (surfAt(x, z) < 2) geese.push([x, z]);
-    }
-  }
   const gm = new THREE.InstancedMesh(gooseG, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .8 }), geese.length);
-  geese.forEach(([x, z], i) => { const s = 1.5 + rnd() * .5; m4.compose(new THREE.Vector3(x, hAt(x, z) + liftAt(x, z), z), q.setFromEuler(e.set(0, rnd() * 6.28, 0)), new THREE.Vector3(s, s, s)); gm.setMatrixAt(i, m4); });
+  geese.forEach(([x, z], i) => { const s = .9 + rnd() * .2; m4.compose(new THREE.Vector3(x, hAt(x, z) + liftAt(x, z), z), q.setFromEuler(e.set(0, rnd() * 6.28, 0)), new THREE.Vector3(s, s, s)); gm.setMatrixAt(i, m4); });
   gm.castShadow = true; scene.add(gm);
 }
 
@@ -794,9 +878,10 @@ function buildProps(scene) {
   const poleM = new THREE.MeshStandardMaterial({ color: 0x8d949c, roughness: .5, metalness: .6 });
   // speed-bump warning signs, 30 m ahead of each bump
   const signTex = canvasTex(128, 128, (x) => {
-    x.translate(64, 64); x.rotate(Math.PI / 4);
-    x.fillStyle = '#111'; x.fillRect(-44, -44, 88, 88); x.fillStyle = '#f5c518'; x.fillRect(-39, -39, 78, 78);
-    x.rotate(-Math.PI / 4); x.strokeStyle = '#111'; x.lineWidth = 7; x.lineCap = 'round';
+    x.translate(64, 64);
+    x.fillStyle = '#c42925'; x.beginPath(); x.moveTo(0, -57); x.lineTo(59, 49); x.lineTo(-59, 49); x.closePath(); x.fill();
+    x.fillStyle = '#f4ca35'; x.beginPath(); x.moveTo(0, -39); x.lineTo(44, 40); x.lineTo(-44, 40); x.closePath(); x.fill();
+    x.strokeStyle = '#191c1e'; x.lineWidth = 7; x.lineCap = 'round';
     x.beginPath(); x.moveTo(-30, 12); x.lineTo(-14, 12); x.quadraticCurveTo(0, -18, 14, 12); x.lineTo(30, 12); x.stroke();
   }, false);
   const n = W.courseBumps.length;
@@ -813,12 +898,15 @@ function buildProps(scene) {
   // landmark direction boards
   for (const m of W.landmarks.slice(1)) {
     const i = m.idx, off = -(C.halfWidth[i] + 3.4), x = C.x[i] + C.tz[i] * off, z = C.z[i] - C.tx[i] * off, y = hAt(x, z) + liftAt(x, z);
-    const tex = canvasTex(512, 128, (c, w, h) => {
-      c.fillStyle = '#134a9c'; c.fillRect(0, 0, w, h); c.strokeStyle = '#fff'; c.lineWidth = 6; c.strokeRect(7, 7, w - 14, h - 14);
-      c.fillStyle = '#fff'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.font = '700 44px "Segoe UI",Arial,sans-serif';
-      c.fillText(m.name, w / 2, h / 2 + 2, w - 40);
+    const tex = canvasTex(768, 224, (c, w, h) => {
+      c.fillStyle = '#06376b'; c.fillRect(0, 0, w, h);
+      c.fillStyle = '#0c568a'; c.fillRect(0, 0, w, 65);
+      c.fillStyle = '#fff'; c.textBaseline = 'middle'; c.font = 'italic 800 42px Arial,sans-serif'; c.fillText('KAIST', 28, 35);
+      c.font = '500 24px "Malgun Gothic",sans-serif'; c.fillText('대전 본원', w - 150, 35);
+      c.font = '700 55px "Malgun Gothic",sans-serif'; c.fillText(m.name, 28, 139, w - 62);
+      c.fillStyle = '#6ccad4'; c.fillRect(0, h - 8, w, 8);
     }, false);
-    const g = new THREE.Group(), board = new THREE.Mesh(new THREE.BoxGeometry(4.4, 1.1, .08),
+    const g = new THREE.Group(), board = new THREE.Mesh(new THREE.BoxGeometry(4.8, 1.4, .08),
       [poleM, poleM, poleM, poleM, new THREE.MeshStandardMaterial({ map: tex, roughness: .5 }), poleM]);
     board.position.y = 3.6; g.add(board);
     for (const s of [-1.6, 1.6]) { const p = new THREE.Mesh(new THREE.CylinderGeometry(.06, .06, 4.2, 6), poleM); p.position.set(s, 2.1, -.08); g.add(p); }
@@ -835,7 +923,7 @@ function buildProps(scene) {
     c.fillStyle = gr; c.fillRect(0, 0, w, h);
     for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) { c.fillStyle = (i + j) & 1 ? '#fff' : '#111'; c.fillRect(i * 40, j * 40, 40, 40); c.fillRect(w - 160 + i * 40, j * 40, 40, 40); }
     c.fillStyle = '#fff'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.font = 'italic 900 92px "Segoe UI",Arial,sans-serif';
-    c.fillText('KAIST FUN RUN GP', w / 2, h / 2 + 6, w - 380);
+    c.fillText('KAIST CAMPUS RUN', w / 2, h / 2 + 6, w - 380);
   }, false);
   const bm = new THREE.MeshStandardMaterial({ map: ban, roughness: .6 });
   const beam = new THREE.Mesh(new THREE.BoxGeometry(span + .7, 1.9, .6), [truss, truss, truss, truss, bm, bm]);
@@ -858,7 +946,7 @@ function buildSky(scene, renderer) {
       void main(){
         vec3 d = normalize(vDir);
         float h = max(d.y, 0.0), sd = max(dot(d, uSun), 0.0);
-        vec3 hor = vec3(0.70, 0.84, 0.97), col = mix(hor, vec3(0.13, 0.36, 0.82), pow(h, 0.55));
+        vec3 hor = vec3(0.445, 0.617, 0.730), col = mix(hor, vec3(0.035, 0.14, 0.42), pow(h, 0.55));
         col += vec3(1.0, 0.86, 0.62) * (pow(sd, 420.0) * 7.0 + pow(sd, 14.0) * 0.22);
         if (d.y > 0.015) {
           vec2 uv = d.xz / (d.y + 0.14) * 1.25 + vec2(uTime * 0.006, uTime * 0.002);
@@ -880,24 +968,28 @@ function buildSky(scene, renderer) {
   W.env = pm.fromScene(es, 0, 1, 9000).texture;
   scene.environment = W.env;
   pm.dispose();
-  // distant hills to close the horizon
-  const N = 96, pos = [], colr = [], idx = [], r = rng(5), hs = [];
-  for (let i = 0; i < N; i++) hs.push(70 + 150 * (.5 + .5 * Math.sin(i * .37 + 1.3) * Math.sin(i * .11)) + r() * 35);
-  for (let i = 0; i <= N; i++) {
-    const a = i / N * Math.PI * 2, R = 3300, x = Math.cos(a) * R, z = Math.sin(a) * R, hh = hs[i % N];
-    pos.push(x, -20, z, x, hh, z); colr.push(.52, .66, .70, .50, .63, .74);
-    if (i < N) { const o = i * 2; idx.push(o, o + 1, o + 2, o + 1, o + 3, o + 2); }
-  }
-  const hg = new THREE.BufferGeometry();
-  hg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); hg.setAttribute('color', new THREE.Float32BufferAttribute(colr, 3)); hg.setIndex(idx);
-  const hills = new THREE.Mesh(hg, new THREE.MeshBasicMaterial({ vertexColors: true, fog: false, side: THREE.DoubleSide }));
-  hills.renderOrder = -9; W.hills = hills;
-  scene.add(hills);
 }
 
 export function updateWorld(t, camera) {
   if (W.sky) { W.sky.position.copy(camera.position); W.sky.material.uniforms.uTime.value = t; }
-  if (W.hills) W.hills.position.set(camera.position.x, 0, camera.position.z);
+  if (!W.treeLodCamera || W.treeLodCamera.distanceToSquared(camera.position) > 225) {
+    (W.treeLodCamera ||= new THREE.Vector3()).copy(camera.position);
+    for (const lod of W.treeLods || []) {
+      let near = 0, far = 0;
+      for (const tree of lod.instances) {
+        const close = (tree.x - camera.position.x) ** 2 + (tree.z - camera.position.z) ** 2 < 220 ** 2;
+        const mesh = close ? lod.near : lod.far, index = close ? near++ : far++;
+        mesh.setMatrixAt(index, tree.matrix); mesh.setColorAt(index, tree.color);
+      }
+      lod.near.count = near; lod.far.count = far;
+      for (const mesh of [lod.near, lod.far]) { mesh.instanceMatrix.needsUpdate = true; mesh.instanceColor.needsUpdate = true; }
+    }
+  }
+  for (const s of W.buildingLabels || []) {
+    const distance = s.position.distanceTo(camera.position);
+    s.material.opacity = clamp((260 - distance) / 110, 0, .92);
+    s.visible = distance < 260;
+  }
 }
 
 export async function loadWorld(scene, renderer, progress) {
@@ -909,5 +1001,5 @@ export async function loadWorld(scene, renderer, progress) {
   await step('Shaping the hills', () => buildTerrain(scene));
   await step('Paving roads', () => { buildRoads(scene); buildBumps(scene); buildCourseMesh(scene); buildCourseBarriers(scene); });
   await step('Raising buildings', () => buildBuildings(scene));
-  await step('Planting trees', () => { buildNature(scene); buildProps(scene); });
+  await step('Planting trees', () => { buildParking(scene, W.D, hAt, surfAt, TEX); buildGate(scene, W.D, hAt); buildNature(scene); buildProps(scene); });
 }

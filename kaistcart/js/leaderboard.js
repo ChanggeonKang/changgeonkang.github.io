@@ -1,5 +1,5 @@
 // Public nickname/time records; no account credentials are bundled in the game.
-export const COURSE_ID = 'kaist-timeattack-v2';
+export const COURSE_ID = 'kaist-terrain-v3';
 export const RECORDS_ORIGIN = 'https://kaistcart-records.almondcrown19.chatgpt.site';
 
 export function createRecordsClient(origin = RECORDS_ORIGIN, fetcher = fetch) {
