@@ -2,6 +2,7 @@
 // spaces, occupancy, colours and vehicle positions are NOT surveyed references.
 // No downloaded images or additional collision geometry are used here.
 import * as THREE from '../lib/three.module.min.js';
+import { isCaptureWestParkingOverride } from './capture-extension-west.js';
 
 const WIDTH = 2.6, DEPTH = 5, AISLE = 6, CAR_CAP = 120;
 const ASPHALT_LIFT = .207, PAINT_LIFT = .218;
@@ -31,7 +32,7 @@ function clip(p, axis, bound, keepGreater) {
 function surfaceClear(p, surfAt) {
   const xs = p.map(a => a[0]), zs = p.map(a => a[1]);
   for (let z = Math.floor(Math.min(...zs)); z <= Math.floor(Math.max(...zs)); z++) for (let x = Math.floor(Math.min(...xs)); x <= Math.floor(Math.max(...xs)); x++) {
-    if (surfAt(x + .5, z + .5) === 2) continue;
+    if (surfAt(x + .5, z + .5) === 2 && !isCaptureWestParkingOverride(x + .5,z + .5)) continue;
     let q = clip(p, 0, x, true); q = clip(q, 0, x + 1, false); q = clip(q, 1, z, true); q = clip(q, 1, z + 1, false);
     if (q.length >= 3 && area(q) > 1e-7) return false;
   }
@@ -40,7 +41,7 @@ function surfaceClear(p, surfAt) {
 function surfaceContainsParking(p, surfAt) {
   const xs=p.map(a=>a[0]),zs=p.map(a=>a[1]);
   for(let z=Math.floor(Math.min(...zs));z<=Math.floor(Math.max(...zs));z++)for(let x=Math.floor(Math.min(...xs));x<=Math.floor(Math.max(...xs));x++){
-    if(surfAt(x+.5,z+.5)!==2)continue;
+    if(surfAt(x+.5,z+.5)!==2||isCaptureWestParkingOverride(x+.5,z+.5))continue;
     let q=clip(p,0,x,true);q=clip(q,0,x+1,false);q=clip(q,1,z,true);q=clip(q,1,z+1,false);
     if(q.length>=3&&area(q)>1e-7)return true;
   }
@@ -193,7 +194,7 @@ export function buildParking(scene, D, hAt, surfAt, TEX = {}) {
     placements.push(a);if(placements.length===CAR_CAP)break;
   }
   placements.forEach(a=>{a.record.illustrativeCars++;delete a.record;});models.push(...cars(scene,placements,hAt));
-  const metadata={source:'OSM parking polygons; stalls and vehicles are illustrative estimates',stallWidthM:WIDTH,stallDepthM:DEPTH,aisleWidthM:AISLE,carCap:CAR_CAP,parkingLots:lots.length,stalls:stalls.length,cars:placements.length,drawCalls:models.length,collisionAdded:false};
+  const metadata={source:'OSM parking polygons; stalls and vehicles are illustrative estimates',photoOverride:'Captures94–97: exclude only the planted strip1–7m beyond the western road edge; source parking polygons unchanged',stallWidthM:WIDTH,stallDepthM:DEPTH,aisleWidthM:AISLE,carCap:CAR_CAP,parkingLots:lots.length,stalls:stalls.length,cars:placements.length,drawCalls:models.length,collisionAdded:false};
   models.forEach(m=>{m.userData.parking=metadata;});
   return {models,lots,stalls,cars:placements,metadata};
 }

@@ -107,9 +107,19 @@ function contactPoints(body, hit) {
   const polygon = bodyCorners(body);
   const distance = p => (p[0] - hit.a[0]) * hit.nx + (p[2] - hit.a[1]) * hit.nz;
   const minimum = Math.min(...polygon.map(distance)), dx = hit.b[0] - hit.a[0], dz = hit.b[1] - hit.a[1];
+  const supportedGameChassis = body.parameters?.noSlide && body.up > .6
+    && body.wheels?.filter(w => w.grounded).length >= 2;
   return polygon.filter(p => distance(p) < minimum + .015).map(p => {
     const t = clamp(((p[0] - hit.a[0]) * dx + (p[2] - hit.a[1]) * dz) / (hit.length ** 2), 0, 1);
-    return [hit.a[0] + dx * t, p[1], hit.a[1] + dz * t];
+    const x = hit.a[0] + dx * t, z = hit.a[1] + dz * t;
+    // The conservative containment hull includes the character's tall head.
+    // A low race rail must not use that head corner as a lever to overturn a
+    // supported game chassis. Distribute its horizontal reaction at chassis
+    // height inside the real rail's vertical span. Keep the full 3D support
+    // point when airborne or when the explicit physical-tire mode is selected.
+    const ground = supportedGameChassis ? body.groundAt(x, z) : 0;
+    const y = supportedGameChassis ? clamp(body.y, ground + .12, ground + COURSE_BARRIER.height - .08) : p[1];
+    return [x, y, z];
   });
 }
 export function courseBarrierContactDepth(body, C) {
@@ -200,16 +210,22 @@ export function resolveCourseBarrier(body, previous, C, progress, dt = body.para
       // Reusing it at every microstep pins a sliding car to the wall while its
       // speedometer continues to report the unconsumed tangential velocity.
       if (body.q) endQ = [...body.q];
-      const motionNormal = sx * hit.nx + sz * hit.nz;
-      if (motionNormal < 0) { sx -= motionNormal * hit.nx; sz -= motionNormal * hit.nz; }
       const tangentAfter = -body.vx * hit.nz + body.vz * hit.nx;
       const slidingFraction = Math.abs(tangentBefore) > 1e-8 ? clamp(tangentAfter / tangentBefore, 0, 1) : 0;
-      sx *= slidingFraction; sz *= slidingFraction;
-      // Consume the unobstructed tangent part of this microstep after contact.
+      const motionNormal = Math.max(0, sx * hit.nx + sz * hit.nz);
+      const motionTangent = (-sx * hit.nz + sz * hit.nx) * slidingFraction;
+      sx = hit.nx * motionNormal - hit.nz * motionTangent;
+      sz = hit.nz * motionNormal + hit.nx * motionTangent;
+      // Rotation may touch the wall even while the center is moving away.
+      // Keep that separating translation: scaling it by tangent friction or
+      // discarding it after a rotational TOI permanently traps a reversing car.
+      // Both components remain bounded by this step's actual attempted motion.
       // A second wall/corner vetoes the move rather than crossing another face.
       const remaining = (-(target.x - body.x) * hit.nz + (target.z - body.z) * hit.nx) * slidingFraction;
+      const separating = Math.max(0, (target.x - body.x) * hit.nx + (target.z - body.z) * hit.nz);
       const safeX = body.x, safeZ = body.z;
-      body.x -= hit.nz * remaining; body.z += hit.nx * remaining;
+      body.x += hit.nx * separating - hit.nz * remaining;
+      body.z += hit.nz * separating + hit.nx * remaining;
       const blocking = contacts(body, geometry);
       if (blocking.length) {
         body.x = safeX; body.z = safeZ;
@@ -228,6 +244,8 @@ export function resolveCourseBarrier(body, previous, C, progress, dt = body.para
     // Grip assistance and the swept rigid boundary are both position
     // constraints. Reconstruct their shared admissible horizontal velocity
     // after projection, rather than carrying a blocked tyre velocity forward.
+    // This collision rule also applies while Shift temporarily permits slip:
+    // a projected-away movement cannot remain as speed on the HUD.
     // Never restore energy already dissipated by the physical impact impulse.
     const actualX = (body.x - previous.x - correctionX) / dt, actualZ = (body.z - previous.z - correctionZ) / dt;
     const admissible = Math.hypot(actualX, actualZ), remaining = Math.hypot(body.vx, body.vz);

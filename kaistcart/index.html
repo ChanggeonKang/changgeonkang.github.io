@@ -76,6 +76,7 @@
   #touch{position:fixed;inset:0;display:none;pointer-events:none}
   #touch button{position:absolute;bottom:24px;width:80px;height:80px;border-radius:50%;background:rgba(255,255,255,.2);border:2px solid rgba(255,255,255,.55);display:flex;align-items:center;justify-content:center;font-size:26px;font-weight:800;pointer-events:auto}
   #tL{left:18px}#tR{left:104px}#tA{right:18px;font-size:11px!important}#tB{right:104px;font-size:11px!important}
+  #touch #tD{left:calc(50% - 32px);width:64px;height:54px;bottom:118px;font-size:12px;border-color:#dbdc9a;background:rgba(117,119,43,.35)}
   @media (max-width:760px){#help{display:none}#mini{width:120px;height:120px}#next{top:auto;bottom:118px;font-size:12px}#prog{top:auto;bottom:108px}
     #rank{font-size:44px}#speedo{transform:scale(.72);transform-origin:100% 100%;bottom:112px;right:10px}.logo{font-size:44px}}
 
@@ -141,24 +142,25 @@
   <div class="hud" id="msg"></div>
   <div class="hud" id="count"><div id="lights"><b></b><b></b><b></b></div><div id="countN"></div></div>
   <div class="hud glass" id="help"><kbd>W</kbd>/<kbd>↑</kbd> accelerate &nbsp; <kbd>S</kbd>/<kbd>↓</kbd> brake &nbsp; <kbd>A</kbd><kbd>D</kbd>/<kbd>←</kbd><kbd>→</kbd> steer<br>
-    <kbd>Esc</kbd> pause &nbsp; <kbd>T</kbd> telemetry &nbsp; <kbd>M</kbd> mute</div>
+    <kbd>Shift</kbd> hold to drift &nbsp; <kbd>Esc</kbd> pause &nbsp; <kbd>T</kbd> telemetry &nbsp; <kbd>M</kbd> mute</div>
   <div id="telemetry" class="hud glass hidden"><span class="lbl">VEHICLE</span><div id="telemetryText"></div></div>
   <div id="raceActions"><button id="pauseBtn" aria-label="Pause">Ⅱ</button></div>
 </div>
 
-<div id="touch" class="hidden"><button id="tL" aria-label="Steer left">◀</button><button id="tR" aria-label="Steer right">▶</button><button id="tB" aria-label="Brake and reverse">BRAKE</button><button id="tA" aria-label="Accelerate">THROTTLE</button></div>
+<div id="touch" class="hidden"><button id="tL" aria-label="Steer left">◀</button><button id="tR" aria-label="Steer right">▶</button><button id="tB" aria-label="Brake and reverse">BRAKE</button><button id="tA" aria-label="Accelerate">THROTTLE</button><button id="tD" aria-label="Hold to drift">DRIFT</button></div>
 
 <div class="panel" id="title">
   <div class="card glass">
     <div class="logo">KAIST CAMPUS KART</div>
     <div class="tag">DAEJEON CAMPUS · SOLO TIME ATTACK</div>
-    <div class="chips"><span id="chipLen">4.4 km lap</span><span id="chipBump">speed bumps</span><span>Grip driving · 160 km/h</span><span>Online leaderboard</span></div>
+    <div class="chips"><span id="chipLen">4.4 km lap</span><span id="chipBump">speed bumps</span><span>130 km/h · Shift to drift</span><span>Online leaderboard</span></div>
     <p>Start near the Chung Moon Soul Building and lap the campus.<br>Drive solo and compete for the fastest time.</p>
     <label class="name-field" for="playerName">Public nickname<input id="playerName" type="text" maxlength="20" placeholder="Enter your nickname" autocomplete="off" spellcheck="false" aria-describedby="nameError"></label>
     <div id="nameError" role="alert"></div>
     <div class="keys">
       <div><kbd>W</kbd> / <kbd>↑</kbd> &nbsp;Accelerate</div><div><kbd>S</kbd> / <kbd>↓</kbd> &nbsp;Brake · hold at rest to reverse</div>
       <div><kbd>A</kbd> / <kbd>←</kbd> &nbsp;Steer left</div><div><kbd>D</kbd> / <kbd>→</kbd> &nbsp;Steer right</div>
+      <div><kbd>Shift</kbd> &nbsp;Hold to drift · release for grip</div><div>Steer normally for full grip</div>
       <div><kbd>Esc</kbd> &nbsp;Pause</div><div><kbd>M</kbd> &nbsp;Mute</div>
     </div>
     <div class="settings"><label for="qualitySelect">Graphics quality</label><select id="qualitySelect"><option value="auto">Auto</option><option value="0">High</option><option value="1">Balanced</option><option value="2">Performance</option></select></div>
@@ -166,7 +168,7 @@
     <button class="alt" id="practiceBtn" disabled>Practice</button>
     <p class="record-note">Practice runs are not posted to the leaderboard.</p>
     <div id="loadBar"><i id="loadI"></i></div><div id="loadMsg"></div>
-    <div class="record-section"><div class="record-heading">SEASON 5 · ONLINE TOP 10<button class="alt" id="refreshRecordsBtn">Refresh</button></div><p class="record-note" id="leaderboardStatus" role="status">Loading online records…</p><table class="res" id="leaderboardTable" aria-label="Online best times"></table></div>
+    <div class="record-section"><div class="record-heading">SEASON 6 · ONLINE TOP 10<button class="alt" id="refreshRecordsBtn">Refresh</button></div><p class="record-note" id="leaderboardStatus" role="status">Loading online records…</p><table class="res" id="leaderboardTable" aria-label="Online best times"></table></div>
     <div class="fine">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> · Elevation: <a href="https://doi.org/10.5069/G9BV7DT1" target="_blank" rel="noopener">GEDTM30, Ho et al.</a> (<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>, resampled and smoothed)<br>Campus reconstructed from approximately 30 m terrain data and reference photos. Building dimensions and small road features are estimates.<br>Unofficial fan project adapting the KAIST Fun Run route to campus roads. Nubzuki is KAIST's mascot.</div>
   </div>
 </div>

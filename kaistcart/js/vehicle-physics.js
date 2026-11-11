@@ -13,7 +13,7 @@ export const VEHICLE_DEFAULTS = Object.freeze({
   longitudinalStiffness: 9, corneringStiffness: 7, rearCorneringStiffness: 12, // multiples of normal force
   tractionSlip: .10, tractionResponseTime: .06, maxEngineWheelSpeed: 400,
   maxSteeringAngle: 0.48, engineTorque: 190, enginePower: 48000,
-  accelerationMultiplier: 2, noSlide: true, maxSpeed: 160 / 3.6,
+  accelerationMultiplier: 2, noSlide: true, maxSpeed: 130 / 3.6,
   gripYawResponse: 20, gripLateralAcceleration: 9,
   brakeTorquePerWheel: 140, handbrakeTorquePerWheel: 180,
   rollingResistance: 0.018, airDensity: 1.225, dragArea: 0.65,
@@ -93,7 +93,7 @@ export function resolveWallContact(body, nx, nz, points, { friction = .45, resti
 
 /** A complete vehicle, with public SI position/linear velocity and quaternion q.
  * Constructor does not query the world. Call reset only after map initialization.
- * step(dt, {throttle:-1..1, brake:0..1, steer:-1..1, handbrake:boolean}) returns
+ * step(dt, {throttle:-1..1, brake:0..1, steer:-1..1, drift:boolean}) returns
  * accumulated chassis/bump-stop normal impulse in N s. Wheels and chassis are
  * unilateral contacts; steering/drive cannot rotate the chassis in free flight.
  */
@@ -118,7 +118,7 @@ export class Vehicle {
       [0, 1.55 - this.rideHeight, -0.30, true], [0, 0.30 - this.rideHeight, -1.40, false],
     ];
     this.load = 0; this.contacts = 0; this.airT = 0; this.landed = 0; this.roof = false;
-    this.normalImpulse = 0; this.hardImpulse = 0; this.steer = 0;
+    this.normalImpulse = 0; this.hardImpulse = 0; this.steer = 0; this.driftActive = false;
   }
 
   get right() { return rotate(this.q, [-1, 0, 0]); }
@@ -150,7 +150,7 @@ export class Vehicle {
     this.q = quaternionFromBasis(norm(cross(u, f)), u, f);
     this.x = x; this.z = z; this.y = (groundOverride ?? ground.height) + this.rideHeight / Math.max(0.2, u[1]);
     this.vx = 0; this.vy = 0; this.vz = 0; this.angularVelocity = [0, 0, 0];
-    this.load = 1; this.contacts = 4; this.airT = 0; this.landed = 0; this.roof = false; this.steer = 0; this.wallGripDelay = 0;
+    this.load = 1; this.contacts = 4; this.airT = 0; this.landed = 0; this.roof = false; this.steer = 0; this.wallGripDelay = 0; this.driftActive = false;
     this.normalImpulse = 0; this.hardImpulse = 0;
     for (const w of this.wheels) { w.omega = 0; w.angle = 0; w.compression = 0; w.normalLoad = 0; w.grounded = false; w.slipRatio = 0; w.slipAngle = 0; }
     return this;
@@ -188,7 +188,7 @@ export class Vehicle {
     const count = Math.max(1, Math.ceil(dt / this.parameters.maxStep)), h = dt / count;
     const input = {
       throttle: clamp(controls.throttle || 0, -1, 1), brake: clamp(controls.brake || 0, 0, 1),
-      steer: clamp(controls.steer || 0, -1, 1), handbrake: Boolean(controls.handbrake),
+      steer: clamp(controls.steer || 0, -1, 1), handbrake: Boolean(controls.handbrake), drift: Boolean(controls.drift),
     };
     let hardImpulse = 0, normalImpulse = 0;
     for (let i = 0; i < count; i++) { this._integrate(h, input); hardImpulse += this.hardImpulse; normalImpulse += this.normalImpulse; }
@@ -199,6 +199,11 @@ export class Vehicle {
   _integrate(dt, input) {
     const p = this.parameters, u = this.upward, f = this.forward, right = this.right;
     this.wallGripDelay = Math.max(0, (this.wallGripDelay || 0) - dt);
+    const gripRequested = p.noSlide && !input.drift;
+    // While a wall temporarily suspends the rolling constraint, real lateral
+    // tyre forces must still work. Otherwise both steering models disappear
+    // together and the driver cannot steer away from a lingering contact.
+    const tireSlip = !gripRequested || this.wallGripDelay > 0;
     const force = [0, -p.mass * p.gravity, 0], torque = [0, 0, 0];
     let normalSum = 0, contacts = 0, hardImpulse = 0, roof = false;
     let wheelContacts = 0;
@@ -253,7 +258,7 @@ export class Vehicle {
         let fx = p.longitudinalStiffness * normalLoad * slipRatio;
         // A modest rear stiffness bias makes the chassis mildly understeer;
         // either axle can still slide when the combined friction circle saturates.
-        let fy = p.noSlide ? 0 : -(rear ? p.rearCorneringStiffness : p.corneringStiffness) * normalLoad * slipAngle;
+        let fy = tireSlip ? -(rear ? p.rearCorneringStiffness : p.corneringStiffness) * normalLoad * slipAngle : 0;
         const limit = this._friction(point[0], point[2]) * normalLoad, demand = Math.hypot(fx, fy);
         if (demand > limit && demand > 0) { const k = limit / demand; fx *= k; fy *= k; }
         tireForceLong = fx;
@@ -264,7 +269,7 @@ export class Vehicle {
 
       // Wheel angular momentum couples engine/brake torque to road traction.
       // Grip mode spreads the doubled launch torque across all four contacts.
-      let driveTorque = p.noSlide ? engineTorque / 4 : rear ? engineTorque / 2 : 0;
+      let driveTorque = gripRequested ? engineTorque / 4 : rear ? engineTorque / 2 : 0;
       if (driveTorque) {
         // Engine torque control, not a velocity/yaw clamp: a spinning driven
         // wheel otherwise uses up rear lateral grip throughout a steering
@@ -316,7 +321,9 @@ export class Vehicle {
     const bodyTorque = unrotate(this.q, torque), gyroscopic = cross(bodyOmega, bodyMomentum);
     const angularAcceleration = rotate(this.q, [(bodyTorque[0] - gyroscopic[0]) / inertia[0], (bodyTorque[1] - gyroscopic[1]) / inertia[1], (bodyTorque[2] - gyroscopic[2]) / inertia[2]]);
     this.angularVelocity = add(this.angularVelocity, scale(angularAcceleration, dt));
-    const gripping = p.noSlide && !this.wallGripDelay && wheelContacts >= 2 && u[1] > .6 && !roof;
+    const supported = wheelContacts >= 2 && u[1] > .6 && !roof;
+    const gripping = gripRequested && !this.wallGripDelay && supported;
+    this.driftActive = input.drift && supported;
     const roadNormal = gripping ? norm(roadNormalSum) : null;
     if (gripping) {
       // Requested non-sliding game handling. A rolling constraint replaces

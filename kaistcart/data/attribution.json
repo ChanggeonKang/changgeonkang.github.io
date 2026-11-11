@@ -12,32 +12,125 @@
     "datasetDoi": "https://doi.org/10.5069/G9BV7DT1",
     "license": "CC BY 4.0",
     "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
-    "changes": "Cropped to KAIST and surrounding 8 km square, projected to local metres, bilinearly resampled and lightly smoothed. Vertical scale 1.0. The source grid is preserved; driving surfaces use an inferred 40 m longitudinal Gaussian profile, 3 m continuous corner blending, a 1.5% crown and roadside cut/fill transitions. Pond basins are rendering-only; a 150 m transition joins the outer terrain resolution. The April 2025 screenshot-based scenery update retains the existing DEM elevations and road-elevation profile; perspective images were not used to derive elevation or numerical road gradients.",
+    "changes": "Cropped to KAIST and surrounding 8 km square, projected to local metres, bilinearly resampled and lightly smoothed. Vertical scale 1.0 and original terrain grid preserved. Road centreline starts from the 40 m longitudinal Gaussian DEM profile, then fits the user-described local ascents, descents and level intersection. A continuous 3 m corner kernel, inferred 1.5% crown and roadside cut/fill blending join the drivable surface to surrounding terrain. Pond basins remain rendering-only.",
     "limitations": "Approximate 30 m machine-learning bare-earth model, not a pavement survey. Source Float32 values treated as metres after independent cross-check; an inconsistent GDAL scale tag is retained in the offline audit."
   },
   "architecture": {
-    "sources": ["https://www.kaist.ac.kr/site/map/index.html", "https://kaist.ac.kr/kr/html/kaist/01.html", "https://kds.kaist.ac.kr/dormInfo/dormInfo.do", "https://naver.me/xIF5lerm"],
+    "sources": [
+      "https://www.kaist.ac.kr/site/map/index.html",
+      "https://kaist.ac.kr/kr/html/kaist/01.html",
+      "https://kds.kaist.ac.kr/dormInfo/dormInfo.do",
+      "https://naver.me/xIF5lerm"
+    ],
     "changes": "Original code-generated geometry based on reference photographs and mapped footprints; no photograph textures redistributed. The supplied street-view captures inform distinctive building facades, roof forms, planting, sidewalks, parking context and roadside features. Building models retain their mapped footprint boundaries.",
     "limitations": "Camera locations and viewing directions are visually matched to the existing map and course, not extracted survey coordinates. Building heights, facade divisions and decorative details are estimated unless separately sourced; gate pylon positions ±10 m. Parking spaces, parked cars and supplementary vegetation are illustrative. April foliage, blossoms and dormant grass describe the capture season. Review of the supplied images does not establish surveyed accuracy or current conditions across the entire campus."
   },
   "streetViewReferences": {
     "attribution": "User-supplied screenshots of NAVER Maps Street View. Original imagery remains the property of its respective rights holders.",
     "source": "https://map.naver.com/",
-    "captureDateShown": "April 2025",
+    "captureDateShown": "April 2025 and April 2026, as displayed per image",
     "captureDateScope": "The imagery date displayed in the supplied screenshot interfaces; not the date of this game release.",
-    "reviewedImageCount": 54,
-    "reviewedFiles": "Offline reference files map_resource/1.png through map_resource/55.png, excluding missing 6.png.",
-    "missingImageNumbers": [6],
-    "excludedImageNumbers": [56, 57],
+    "reviewedImageCount": 109,
+    "reviewedFiles": "Offline map_resource/1.png through 102.png (missing 6.png), plus 77_left, 77_right, 85_right, 90_left, 93_left, 93_right, 95_right and 102_right.",
+    "missingImageNumbers": [
+      6
+    ],
+    "excludedImageNumbers": [],
     "use": "Visual reference for original code-generated scenery. Screenshots and source panorama imagery are not included in the distributed game and are not used as game textures.",
-    "limitations": "Approximate camera positions, view directions, facade dimensions, tree placement and roadside detail were inferred visually. No redistribution license for the source imagery is claimed. Screenshot perspective does not measure road width, terrain elevation, building height or speed-bump dimensions."
+    "limitations": "Approximate camera positions, view directions, facade dimensions, tree placement and roadside detail were inferred visually. No redistribution license for the source imagery is claimed. Screenshot perspective does not measure road width, terrain elevation, building height or speed-bump dimensions.",
+    "sideViews": "Side views are matched to their base photo location and viewing wedge; they are not additional route positions."
   },
   "referenceInformedSpeedBumps": {
-    "source": "The user-supplied April 2025 NAVER Street View captures, cross-checked against the existing game course and mapped bumps.",
-    "addedCourseSampleIndices": [1563, 1760, 1817],
+    "source": "User-supplied April 2025 / April 2026 NAVER Street View captures, cross-checked against the course and existing mapped humps.",
+    "addedCourseSampleIndices": [
+      413,
+      608,
+      654,
+      704,
+      774,
+      797,
+      1563,
+      1760,
+      1817
+    ],
     "positionBasis": "Approximate visual matching to the current course samples; these indices are game coordinates, not surveyed geographic positions.",
     "assumedHeightM": 0.1,
     "assumedLengthAlongRoadM": 3.6,
-    "limitations": "Three additional bumps are represented for gameplay. Their positions, 0.10 m height and 3.6 m travel-direction length are modeling assumptions. The photographs establish visible bump markings but do not establish measured dimensions or an exact physical profile. These local bump surfaces do not replace the underlying DEM elevations."
+    "limitations": "Nine reference-informed bumps complement the 43 existing course bumps. Positions and 0.10 m height / 3.6 m length are modeling assumptions, not measured dimensions. Candidate bumps matching existing mapped features are not duplicated."
+  },
+  "userObservedRoadGrades": {
+    "source": "User correction supplied 2026-11-12",
+    "observations": [
+      {
+        "photos": [
+          11,
+          12,
+          13,
+          14,
+          15
+        ],
+        "description": "gentle ascent",
+        "assumedGradePercent": 2.2
+      },
+      {
+        "photos": [
+          20,
+          21
+        ],
+        "description": "gentle ascent",
+        "assumedGradePercent": 2
+      },
+      {
+        "photos": [
+          26,
+          27
+        ],
+        "description": "gentle ascent",
+        "assumedGradePercent": 2.5
+      },
+      {
+        "photos": [
+          42,
+          43,
+          44
+        ],
+        "description": "descent",
+        "assumedGradePercent": -3.5
+      },
+      {
+        "photos": [
+          45,
+          46,
+          47
+        ],
+        "description": "ascent",
+        "assumedGradePercent": 3
+      },
+      {
+        "photos": [
+          50,
+          51
+        ],
+        "description": "descent",
+        "assumedGradePercent": -3.5
+      },
+      {
+        "photos": [
+          52
+        ],
+        "description": "level",
+        "assumedGradePercent": 0
+      },
+      {
+        "photos": [
+          53,
+          54
+        ],
+        "description": "steep descent",
+        "assumedGradePercent": -7.5
+      }
+    ],
+    "method": "Fit a smooth closed road profile near the DEM-derived heights. The rendered roadway and wheel collision use the same surface.",
+    "limitations": "The user supplied grade signs and relative steepness, not measured percentages. Numeric target grades, segment limits, and transition distances are explicitly estimated; absolute terrain is not surveyed."
   }
 }

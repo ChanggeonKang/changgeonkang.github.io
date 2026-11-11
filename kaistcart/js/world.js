@@ -8,7 +8,14 @@ import { buildCapturedLandscape, isCaptureLandscapeManaged } from './capture-lan
 import { buildCapturedArchitecture } from './capture-architecture.js';
 import { buildCapturedRoadside, capturedRoadStyles, capturedSpeedMarks, capturedBumps } from './capture-roadside.js';
 import { buildGate } from './campus-gate.js';
+import { applyObservedGrades } from './capture-elevation.js';
+import { buildCaptureEast, isCaptureEastManaged, eastRoadStyles, eastSpeedMarks, eastBumps } from './capture-extension-east.js';
+import { buildCaptureWest, isCaptureWestManaged, westRoadStyles, westSpeedMarks, westBumps } from './capture-extension-west.js';
 import { COURSE_BARRIER, getCourseBarriers } from './course-barriers.js';
+
+const referenceRoadStyles = [...capturedRoadStyles, ...eastRoadStyles, ...westRoadStyles];
+const referenceSpeedMarks = [...capturedSpeedMarks, ...eastSpeedMarks, ...westSpeedMarks];
+const referenceBumps = [...capturedBumps, ...eastBumps, ...westBumps];
 
 export const VS = 1;          // preserve source elevation scale (source resolution remains limited)
 export const DS = 2;          // course sample spacing (m)
@@ -274,6 +281,8 @@ function buildRoadElevation() {
     for (let k = -radius; k <= radius; k++) sum += raw[mod(i + k, C.n)] * weights[k + radius];
     heights[i] = sum / total;
   }
+  const observed = applyObservedGrades(C, heights);
+  heights.set(observed.heights);
   const cellSize = 32, cells = new Map();
   for (let i = 0; i < C.n; i++) {
     const j = (i + 1) % C.n, margin = Math.max(C.halfWidth[i], C.halfWidth[j]) + 14;
@@ -285,8 +294,8 @@ function buildRoadElevation() {
       }
     }
   }
-  W.roadElevation = { raw, heights, cells, cellSize, sigmaM, cornerKernelSigmaM: 3, crownSlope: .015,
-    measured: false, source: 'GEDTM30 centreline, circular Gaussian sigma 40 m, continuous 3 m corner kernel; inferred 1.5% crown and roadside cut/fill blend' };
+  W.roadElevation = { raw, heights, cells, cellSize, sigmaM, cornerKernelSigmaM: 3, crownSlope: .015, observations: observed.metadata,
+    measured: false, source: 'GEDTM30 centreline with user-described local grade corrections, continuous 3 m corner kernel; inferred 1.5% crown and roadside cut/fill blend' };
 }
 
 const ROAD = { // [width, class]  class 1 = footpath, 2 = drivable
@@ -557,8 +566,11 @@ function buildCourseMesh(scene) {
     [offset(o0, i) / 4, v0], [offset(o1, i) / 4, v0], [offset(o1, i + 1) / 4, v1], [offset(o0, i + 1) / 4, v1], c);
   for (let i = 0; i < C.n; i++) {
     const v0 = i * C.ds / 4, v1 = (i + 1) * C.ds / 4;
-    strip(road, i, a => C.halfWidth[a], a => -C.halfWidth[a], ROAD_LIFT, asph, v0, v1);
-    const style = capturedRoadStyles.find(a => i >= a.from && i <= a.to) || { center: 'double', edges: 'white' };
+    // Worn red anti-skid surfacing visible in photos 50–54, independent of the
+    // physical grade correction and with no additional raised collision plane.
+    const pavement = i >= 2105 && i <= 2181 ? col(0xa4746f) : asph;
+    strip(road, i, a => C.halfWidth[a], a => -C.halfWidth[a], ROAD_LIFT, pavement, v0, v1);
+    const style = referenceRoadStyles.find(a => i >= a.from && i <= a.to) || { center: 'double', edges: 'white' };
     if (style.center === 'double') {
       strip(lines, i, .19, .07, ROAD_LIFT + .015, yellow, v0, v1);
       strip(lines, i, -.07, -.19, ROAD_LIFT + .015, yellow, v0, v1);
@@ -603,7 +615,7 @@ function buildCourseMesh(scene) {
     c.clearRect(0, 0, w, h); c.fillStyle = '#e6e3d9'; c.textAlign = 'center'; c.textBaseline = 'middle';
     c.font = '700 210px Arial,sans-serif'; c.fillText('30', w / 2, h / 2, 230);
   }, false), speedMarkings = new MB();
-  for (const { progress: i } of capturedSpeedMarks) {
+  for (const { progress: i } of referenceSpeedMarks) {
     if (W.courseBumps.some(k => Math.abs(k - i) < 4)) continue;
     speedMarkings.quad(mid(i - 1.1, 2.25), mid(i - 1.1, .35), mid(i + 1.1, .35), mid(i + 1.1, 2.25), UP,
       [0, 0], [1, 0], [1, 1], [0, 1], white);
@@ -658,14 +670,14 @@ function buildBumps(scene) {
         height: b.height ?? BUMP_H, length: b.length || BUMP_L * 2, ci: -1, snapDistanceM: 0 });
     }
   }
-  for (const observed of capturedBumps) {
+  for (const observed of referenceBumps) {
     const ci = mod(Math.round(observed.progress), C.n);
     // Do not duplicate an OSM hump within 12 metres of this approximate observation.
     if (W.bumps.some(b => b.ci >= 0 && Math.min(mod(b.ci - ci, C.n), mod(ci - b.ci, C.n)) * C.ds <= 12)) continue;
     const directionLength = Math.hypot(C.tx[ci], C.tz[ci]) || 1;
     W.bumps.push({ x: C.x[ci], z: C.z[ci], dx: C.tx[ci] / directionLength, dz: C.tz[ci] / directionLength,
       hw: C.halfWidth[ci], width: C.halfWidth[ci] * 2, height: observed.heightM, length: observed.lengthM, ci,
-      source: 'user-streetview-2025-04', photoNumbers: observed.photoNumbers, progressRange: observed.progressRange,
+      source: 'user-streetview-reference', photoNumbers: observed.photoNumbers, progressRange: observed.progressRange,
       evidence: observed.evidence, confidence: observed.confidence,
       dimensionSources: { height: 'assumed:0.10m', length: 'assumed:3.6m', width: 'assumed:rendered-road-width' } });
   }
@@ -713,13 +725,16 @@ function buildBumps(scene) {
 const GLASS = new Set(['N1', 'E4', 'N3', 'E16', 'E16-1', 'E9', 'N27', 'N26']);
 const REAL = { 'N13-1': [0xc2532c, 1], N3: [0xb4b9c0, 2], E16: [0xcdb894, 2], E11: [0xd3c2a0, 1] }; // seen in street-level photos
 function buildBuildings(scene) {
-  const D = W.D, mb = new MB(true), specialized = buildLandmarks(scene, D, hAt), captured = buildCapturedArchitecture(scene, D, hAt), labels = [...specialized.labels, ...captured.labels];
+  const D = W.D, mb = new MB(true), specialized = buildLandmarks(scene, D, hAt), captured = buildCapturedArchitecture(scene, D, hAt);
+  const east = buildCaptureEast(scene, D, W.C, hAt, surfAt), west = buildCaptureWest(scene, D, W.C, hAt, surfAt);
+  const labels = [...specialized.labels, ...captured.labels, ...east.labels, ...west.labels];
+  W.capturedEast = east.metadata; W.capturedWest = west.metadata;
   W.capturedArchitecture = captured.metadata;
   const BRICK = [0xa5553c, 0xb0644a, 0x9a5a48, 0xb86a4c], STONE = [0xd6c4a2, 0xcdb994, 0xdccdb0, 0xc9bda8, 0xbfb5a3, 0xd9d2c4],
     APT = [0xe6e2d8, 0xd9d4c8, 0xcfd2d6], MISC = [0xcfc8ba, 0xb9b2a4, 0xa9a59c, 0xc4a58a, 0xb7bcc2];
   const roofC = col(0x8b8f94), roofD = col(0x6f7378);
   D.buildings.forEach((b, bi) => {
-    if (specialized.handledRefs.has(b.ref) || captured.handledIds.has(b.id)) return;
+    if (specialized.handledRefs.has(b.ref) || captured.handledIds.has(b.id) || east.handledIds.has(b.id) || west.handledIds.has(b.id)) return;
     const p = b.p, n = p.length;
     if (n < 3) return;
     let lo = 1e9, hi = -1e9, cx = 0, cz = 0, area = 0;
@@ -831,11 +846,11 @@ function buildNature(scene) {
       const n = Math.min(900, (x1 - x0) * (z1 - z0) / 120);
       for (let i = 0; i < n; i++) {
         const x = x0 + rnd() * (x1 - x0), z = z0 + rnd() * (z1 - z0);
-        if (!isStreetscapeManaged(x, z, C) && !isCaptureLandscapeManaged(x, z, C) && inPoly(x, z, a.p) && surfAt(x, z) === 0) (rnd() < .55 ? trees.conifer : trees.leaf).push([x, z, 1]);
+        if (!isStreetscapeManaged(x, z, C) && !isCaptureLandscapeManaged(x, z, C) && !isCaptureEastManaged(x,z) && !isCaptureWestManaged(x,z) && inPoly(x, z, a.p) && surfAt(x, z) === 0) (rnd() < .55 ? trees.conifer : trees.leaf).push([x, z, 1]);
       }
     }
   }
-  const clear = (x, z, r) => !isStreetscapeManaged(x, z, C) && !isCaptureLandscapeManaged(x, z, C) && surfAt(x, z) === 0 && surfAt(x + r, z) === 0 && surfAt(x - r, z) === 0 && surfAt(x, z + r) === 0 && surfAt(x, z - r) === 0;
+  const clear = (x, z, r) => !isStreetscapeManaged(x, z, C) && !isCaptureLandscapeManaged(x, z, C) && !isCaptureEastManaged(x,z) && !isCaptureWestManaged(x,z) && surfAt(x, z) === 0 && surfAt(x + r, z) === 0 && surfAt(x - r, z) === 0 && surfAt(x, z + r) === 0 && surfAt(x, z - r) === 0;
   for (let i = 0; i < 1300; i++) { // scattered campus trees
     const x = b.x0 + rnd() * (b.x1 - b.x0), z = b.z0 + rnd() * (b.z1 - b.z0);
     if (clear(x, z, 3)) (rnd() < .24 ? trees.conifer : trees.leaf).push([x, z, 1]);

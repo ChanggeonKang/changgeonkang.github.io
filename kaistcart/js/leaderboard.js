@@ -1,5 +1,5 @@
 // Public nickname/time records; no account credentials are bundled in the game.
-export const COURSE_ID = 'kaist-grip160-v5';
+export const COURSE_ID = 'kaist-shift130-v6';
 export const RECORDS_ORIGIN = 'https://kaistcart-records.almondcrown19.chatgpt.site';
 
 export function createRecordsClient(origin = RECORDS_ORIGIN, fetcher = fetch) {

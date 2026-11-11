@@ -50,8 +50,11 @@ function resize() {
 addEventListener('resize', resize);
 
 // ───────────────────────── state ─────────────────────────
-const keys = { up: false, down: false, left: false, right: false };
-const KEYMAP = { ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down', ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right' };
+const keys = { up: false, down: false, left: false, right: false, drift: false };
+const KEYMAP = { ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down', ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right', ShiftLeft: 'drift', ShiftRight: 'drift' };
+const heldCodes = new Set(), heldPointers = new Map();
+function updateKey(key) { keys[key] = [...heldCodes].some(code => KEYMAP[code] === key) || [...heldPointers.values()].includes(key); }
+function clearInputs() { heldCodes.clear(); heldPointers.clear(); for (const key in keys) keys[key] = false; }
 let touchMode = matchMedia('(pointer:coarse)').matches;
 let state = 'load'; // load → title → count → race → finish (+ pause)
 let T = 0, raceT = 0, countT = 0, finT = 0, helpT = 0;
@@ -72,7 +75,7 @@ function placeGrid() {
     prog: 0, lost: false, off: false, wrong: 0, shake: 0, flipT: 0, done: 0, time: 0 });
   P.body.reset(P.x, P.z, P.th); syncRacer(P); reverseHold = 0; stepper.reset();
   lap = new LapTracker(W.C.n); raceT = 0; cam.snap = true;
-  for (const key in keys) keys[key] = false;
+  clearInputs();
   if (skids) skids.clear();
 }
 
@@ -87,6 +90,7 @@ function stepPlayer(dt, input) {
     throttle: input && keys.up ? 1 : reversing ? -.45 : 0,
     brake: input ? (keys.down && !reversing ? 1 : 0) : 1,
     steer: P.steer,
+    drift: Boolean(input && keys.drift),
     handbrake: false,
   };
   const previous = { x: P.body.x, z: P.body.z, q: [...P.body.q] };
@@ -130,7 +134,7 @@ function effects(dt) {
   const sc = renderer.getDrawingBufferSize(v2).y / (2 * Math.tan(camera.fov * Math.PI / 360));
   dust.update(dt, sc); glow.update(dt, sc);
   P.shake = Math.max(0, P.shake - dt * 2.4);
-  sfx.update(clamp(spd / (160 / 3.6), 0, 1.2), keys.up && state === 'race' ? 1 : 0, b.parameters.noSlide ? 0 : clamp(Math.abs(P.vl) / 7, 0, 1) * (grounded ? 1 : 0), grounded, surf === 0, false);
+  sfx.update(clamp(spd / b.parameters.maxSpeed, 0, 1.2), keys.up && state === 'race' ? 1 : 0, b.driftActive ? clamp(Math.abs(P.vl) / 7, 0, 1) * (grounded ? 1 : 0) : 0, grounded, surf === 0, false);
 }
 
 // ───────────────────────── camera ─────────────────────────
@@ -192,7 +196,7 @@ function buildHud() {
 function updateHud(dt) {
   const C = W.C, spd = Math.hypot(P.vx, P.vz) * 3.6;
   setText('spd', Math.round(spd));
-  $('arc').setAttribute('stroke-dasharray', (311 * clamp(spd / 160, 0, 1)).toFixed(1) + ' 415');
+  $('arc').setAttribute('stroke-dasharray', (311 * clamp(spd / (P.body.parameters.maxSpeed * 3.6), 0, 1)).toFixed(1) + ' 415');
   $('arc').setAttribute('stroke', P.body.contacts ? '#7fd0ff' : '#ffd23f');
   setText('time', fmt(P.done ? P.time : raceT));
   setText('driverName', P.name);
@@ -205,7 +209,7 @@ function updateHud(dt) {
   const nx = W.landmarks.find(m => m.idx > k + 4 && m.idx > 0) || { name: 'Finish line', idx: C.n };
   setText('nextName', nx.name); setText('nextDist', Math.round((nx.idx - k) * (W.C.ds || DS) / 10) * 10 + ' m');
   $('loadIbar').style.width = clamp(P.body.load / 2, 0, 1) * 100 + '%';
-  setText('contactLabel', P.body.contacts ? 'Contact ' + P.body.load.toFixed(1) + ' × static load' : 'Airborne · no contact');
+  setText('contactLabel', P.body.contacts ? (P.body.driftActive ? 'DRIFT · ' : '') + 'Contact ' + P.body.load.toFixed(1) + ' × static load' : 'Airborne · no contact');
   if (telemetry) setText('telemetryText', 'Pitch ' + (P.body.p * 180 / Math.PI).toFixed(1) + '° · Roll ' + (P.body.r * 180 / Math.PI).toFixed(1) + '° · Vertical ' + P.body.vy.toFixed(2) + ' m/s · ' + Math.round(1000 / frameMs) + ' FPS');
   $('telemetry').dataset.state = JSON.stringify({ x:P.x, z:P.z, heading:P.th, speed:spd, progress:P.prog, up:P.body.up, fps:1000/frameMs, checkpoints:lap.checkpoints.length, valid:lap.valid, mode:practice?'practice':'ranked' });
   setText('msg', state !== 'race' ? '' : !lap.valid ? 'Invalid route · pause to restart' : P.flipT > 1 ? 'Kart overturned · pause to restart' : P.wrong > .8 ? 'Wrong way' : '');
@@ -297,7 +301,7 @@ async function startRace(isPractice = false) {
 }
 function toTitle(refresh = true) { placeGrid(); state = 'title'; show('title', true); show('results', false); show('pause', false); show('hud', false); show('touch', false); sfx.quiet(); if (refresh) void refreshRecords(); }
 let pausedState = 'race';
-function setPause(on) { if (on && (state === 'race' || state === 'count')) { for (const key in keys) keys[key] = false; pausedState = state; state = 'pause'; show('pause', true); show('touch', false); sfx.quiet(); } else if (!on && state === 'pause') { state = pausedState; last = 0; show('pause', false); show('touch', touchMode); } }
+function setPause(on) { if (on && (state === 'race' || state === 'count')) { clearInputs(); pausedState = state; state = 'pause'; show('pause', true); show('touch', false); sfx.quiet(); } else if (!on && state === 'pause') { state = pausedState; last = 0; show('pause', false); show('touch', touchMode); } }
 $('startBtn').onclick = () => startRace(); $('againBtn').onclick = () => startRace(practice);
 $('restartBtn').onclick = () => { toTitle(false); void startRace(practice); };
 $('practiceBtn').onclick = () => startRace(true);
@@ -311,19 +315,19 @@ addEventListener('keydown', e => {
     return;
   }
   if (state !== 'race' && state !== 'count' && state !== 'pause') return;
-  if (KEYMAP[e.code]) { keys[KEYMAP[e.code]] = true; e.preventDefault(); }
+  if (KEYMAP[e.code]) { heldCodes.add(e.code); updateKey(KEYMAP[e.code]); e.preventDefault(); }
   if (e.repeat) return;
   if (e.code === 'KeyM') sfx.setMuted(!sfx.muted);
   if (e.code === 'KeyT') { telemetry = !telemetry; $('telemetry').classList.toggle('hidden', !telemetry); }
   if (e.code === 'Escape' || e.code === 'KeyP') setPause(state !== 'pause');
 });
-addEventListener('keyup', e => { if (KEYMAP[e.code]) { keys[KEYMAP[e.code]] = false; e.preventDefault(); } });
-addEventListener('blur', () => { for (const k in keys) keys[k] = false; setPause(true); });
+addEventListener('keyup', e => { if (KEYMAP[e.code]) { heldCodes.delete(e.code); updateKey(KEYMAP[e.code]); e.preventDefault(); } });
+addEventListener('blur', () => { clearInputs(); setPause(true); });
 document.addEventListener('visibilitychange', () => { if (document.hidden) setPause(true); });
-for (const [id, k] of [['tL', 'left'], ['tR', 'right'], ['tB', 'down'], ['tA', 'up']]) {
+for (const [id, k] of [['tL', 'left'], ['tR', 'right'], ['tB', 'down'], ['tA', 'up'], ['tD', 'drift']]) {
   const el = $(id);
-  el.addEventListener('pointerdown', e => { keys[k] = true; el.setPointerCapture(e.pointerId); e.preventDefault(); });
-  for (const evn of ['pointerup', 'pointercancel']) el.addEventListener(evn, () => { keys[k] = false; });
+  el.addEventListener('pointerdown', e => { heldPointers.set(e.pointerId, k); updateKey(k); el.setPointerCapture(e.pointerId); e.preventDefault(); });
+  for (const evn of ['pointerup', 'pointercancel', 'lostpointercapture']) el.addEventListener(evn, e => { heldPointers.delete(e.pointerId); updateKey(k); });
 }
 $('qualitySelect').onchange = e => { qual = e.target.value === 'auto' ? 0 : Number(e.target.value); applyQuality(); };
 addEventListener('touchstart', () => { touchMode = true; if (state === 'race' || state === 'count') { $('touch').style.display = 'block'; show('touch', true); } }, { passive: true });
