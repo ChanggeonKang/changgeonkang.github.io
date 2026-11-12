@@ -13,7 +13,8 @@ export const VEHICLE_DEFAULTS = Object.freeze({
   longitudinalStiffness: 9, corneringStiffness: 7, rearCorneringStiffness: 12, // multiples of normal force
   tractionSlip: .10, tractionResponseTime: .06, maxEngineWheelSpeed: 400,
   maxSteeringAngle: 0.48, engineTorque: 190, enginePower: 48000,
-  accelerationMultiplier: 2, noSlide: true, maxSpeed: 130 / 3.6,
+  accelerationMultiplier: 2, noSlide: true, maxSpeed: 100 / 3.6,
+  accelerationReductionSpeed: 50 / 3.6, highSpeedAccelerationScale: .7,
   gripYawResponse: 20, gripLateralAcceleration: 9,
   brakeTorquePerWheel: 140, handbrakeTorquePerWheel: 180,
   rollingResistance: 0.018, airDensity: 1.225, dragArea: 0.65,
@@ -219,6 +220,14 @@ export class Vehicle {
     const rearAngularSpeed = (Math.abs(this.wheels[2].omega) + Math.abs(this.wheels[3].omega)) / 2;
     const engineTorque = input.throttle * (input.throttle < 0 ? 0.45 : 1)
       * Math.min(p.engineTorque * p.accelerationMultiplier, p.enginePower / Math.max(20, rearAngularSpeed));
+    const forwardVelocity = dot([this.vx, this.vy, this.vz], f);
+    const reducedAcceleration = input.throttle > 0 && forwardVelocity > 0
+      && Math.hypot(this.vx, this.vz) > p.accelerationReductionSpeed;
+    // Reduce the torque available for acceleration, preserving the portion
+    // that overcomes ordinary rolling/air resistance. This retains the old
+    // launch below 50 km/h and targets 70% of its flat-road acceleration above.
+    const roadLossTorque = p.wheelRadius * (p.rollingResistance * p.mass * p.gravity
+      + .5 * p.airDensity * p.dragArea * Math.hypot(this.vx, this.vy, this.vz) * Math.max(0, forwardVelocity));
 
     for (const wheel of this.wheels) {
       const rear = wheel.z < 0, steering = rear ? 0 : this.steer * p.maxSteeringAngle;
@@ -271,13 +280,27 @@ export class Vehicle {
       // Grip mode spreads the doubled launch torque across all four contacts.
       let driveTorque = gripRequested ? engineTorque / 4 : rear ? engineTorque / 2 : 0;
       if (driveTorque) {
+        const lossShare = roadLossTorque / (gripRequested ? 4 : 2);
+        if (reducedAcceleration && driveTorque > 0) {
+          driveTorque -= (1 - p.highSpeedAccelerationScale) * Math.max(0, driveTorque - lossShare);
+        }
         // Engine torque control, not a velocity/yaw clamp: a spinning driven
         // wheel otherwise uses up rear lateral grip throughout a steering
         // reversal. Reduce only drive torque; existing wheel momentum still
         // decelerates through the same tyre/road reaction force.
         const sign = Math.sign(driveTorque);
         if (wheel.grounded) {
-          const targetOmega = (rollingVelocity + sign * p.tractionSlip * Math.max(2, Math.abs(rollingVelocity))) / p.wheelRadius;
+          let targetSlip = p.tractionSlip;
+          if (reducedAcceleration && sign > 0) {
+            // The traction controller must reduce its force target as well as
+            // engine torque; an unchanged slip target would restore much of
+            // the removed acceleration through its wheel-speed feedback.
+            const oldRatio = targetSlip / (1 + targetSlip);
+            const lossRatio = Math.min(oldRatio, lossShare / Math.max(1e-6, p.wheelRadius * p.longitudinalStiffness * normalLoad));
+            const ratio = oldRatio - (1 - p.highSpeedAccelerationScale) * (oldRatio - lossRatio);
+            targetSlip = ratio / (1 - ratio);
+          }
+          const targetOmega = (rollingVelocity + sign * targetSlip * Math.max(2, Math.abs(rollingVelocity))) / p.wheelRadius;
           const trackingTorque = tireForceLong * p.wheelRadius + p.wheelInertia * (targetOmega - wheel.omega) / p.tractionResponseTime;
           driveTorque = sign * Math.min(Math.abs(driveTorque), Math.max(0, sign * trackingTorque));
         }
