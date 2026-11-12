@@ -1,5 +1,5 @@
 // Public nickname/time records; no account credentials are bundled in the game.
-export const COURSE_ID = 'kaist-accel100-v7';
+export const COURSE_ID = 'kaist-splits-v8';
 export const RECORDS_ORIGIN = 'https://kaistcart-records.almondcrown19.chatgpt.site';
 
 export function createRecordsClient(origin = RECORDS_ORIGIN, fetcher = fetch) {
@@ -24,8 +24,8 @@ export function createRecordsClient(origin = RECORDS_ORIGIN, fetcher = fetch) {
   return {
     list: () => request('/api/leaderboard?course=' + encodeURIComponent(COURSE_ID)),
     start: name => request('/api/runs/start', { name, course: COURSE_ID }),
-    finish: (session, timeMs, checkpoints) => request('/api/runs/finish', {
-      runId: session.runId, token: session.token, timeMs, checkpoints,
+    finish: (session, timeMs, checkpoints, splitsMs) => request('/api/runs/finish', {
+      runId: session.runId, token: session.token, timeMs, checkpoints, splitsMs,
     }),
   };
 }

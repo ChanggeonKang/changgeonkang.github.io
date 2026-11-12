@@ -16,6 +16,8 @@ export const VEHICLE_DEFAULTS = Object.freeze({
   accelerationMultiplier: 2, noSlide: true, maxSpeed: 100 / 3.6,
   accelerationReductionSpeed: 50 / 3.6, highSpeedAccelerationScale: .7,
   gripYawResponse: 20, gripLateralAcceleration: 9,
+  driftRearCorneringScale: .60,
+  groundTiltDeadZone: .12, groundTiltDamping: 10000, // supported game assist, rad and N m s/rad
   brakeTorquePerWheel: 140, handbrakeTorquePerWheel: 180,
   rollingResistance: 0.018, airDensity: 1.225, dragArea: 0.65,
   chassisContactStiffness: 80000, chassisContactDamping: 1800,
@@ -52,7 +54,7 @@ function quaternionFromBasis(r, u, f) {
  * while all three angular components respond at the actual contact height.
  * No wheel speed or chassis speed is assigned by this solver.
  */
-export function resolveWallContact(body, nx, nz, points, { friction = .45, restitution = 0 } = {}) {
+export function resolveWallContact(body, nx, nz, points, { friction = .10, restitution = 0 } = {}) {
   const mass = body.parameters?.mass || VEHICLE_DEFAULTS.mass;
   const inertia = body.parameters?.inertia || VEHICLE_DEFAULTS.inertia;
   const q = body.q || [0, Math.sin((body.th || 0) / 2), 0, Math.cos((body.th || 0) / 2)];
@@ -199,7 +201,15 @@ export class Vehicle {
 
   _integrate(dt, input) {
     const p = this.parameters, u = this.upward, f = this.forward, right = this.right;
+    const recoveringWall = this.wallGripDelay > 0;
     this.wallGripDelay = Math.max(0, (this.wallGripDelay || 0) - dt);
+    if (recoveringWall && p.noSlide && Math.hypot(this.vx, this.vz) > 2
+      && Math.abs(dot([this.vx, this.vy, this.vz], right)) > Math.max(2, Math.abs(dot([this.vx, this.vy, this.vz], f))) * .5) {
+      // A timed return to nose-aligned grip can erase the remaining wall-tangent
+      // speed while the chassis is still turned by the impact. Keep physical
+      // tyre forces until it aligns (or slows), retaining steering and escape.
+      this.wallGripDelay = Math.max(this.wallGripDelay, .05);
+    }
     const gripRequested = p.noSlide && !input.drift;
     // While a wall temporarily suspends the rolling constraint, real lateral
     // tyre forces must still work. Otherwise both steering models disappear
@@ -267,7 +277,8 @@ export class Vehicle {
         let fx = p.longitudinalStiffness * normalLoad * slipRatio;
         // A modest rear stiffness bias makes the chassis mildly understeer;
         // either axle can still slide when the combined friction circle saturates.
-        let fy = tireSlip ? -(rear ? p.rearCorneringStiffness : p.corneringStiffness) * normalLoad * slipAngle : 0;
+        const cornering = rear ? p.rearCorneringStiffness * (p.noSlide && input.drift ? p.driftRearCorneringScale : 1) : p.corneringStiffness;
+        let fy = tireSlip ? -cornering * normalLoad * slipAngle : 0;
         const limit = this._friction(point[0], point[2]) * normalLoad, demand = Math.hypot(fx, fy);
         if (demand > limit && demand > 0) { const k = limit / demand; fx *= k; fy *= k; }
         tireForceLong = fx;
@@ -338,6 +349,25 @@ export class Vehicle {
     const velocity = [this.vx, this.vy, this.vz], speed = Math.hypot(...velocity);
     applyForce(scale(velocity, -0.5 * p.airDensity * p.dragArea * speed));
     this.vx += force[0] / p.mass * dt; this.vy += force[1] / p.mass * dt; this.vz += force[2] / p.mass * dt;
+
+    if (p.noSlide && wheelContacts > 0 && u[1] > .2 && !roof) {
+      // A passive, load-limited ground couple damps large pitch/roll motion.
+      // Small suspension motion and straight acceleration remain untouched;
+      // no orientation or airborne angular velocity is ever assigned here.
+      // World-up is intentional for the supported game assist: the local
+      // normal of a curb face is not the road plane to which a kart should roll.
+      // The dead zone admits ordinary road slopes and small suspension travel.
+      const groundNormal = [0, 1, 0], angle = Math.acos(clamp(u[1], -1, 1));
+      const tiltOmega = add(this.angularVelocity, scale(groundNormal, -dot(this.angularVelocity, groundNormal)));
+      const rate = Math.hypot(...tiltOmega);
+      const damping = clamp(Math.max((angle - p.groundTiltDeadZone) / .12, (rate - 1.2) / 1.2), 0, 1);
+      if (damping > 0) {
+        let reaction = scale(tiltOmega, -p.groundTiltDamping * damping);
+        const magnitude = Math.hypot(...reaction), budget = normalSum * p.track * .5;
+        if (magnitude > budget) reaction = scale(reaction, budget / magnitude);
+        for (let i = 0; i < 3; i++) torque[i] += reaction[i];
+      }
+    }
 
     const bodyOmega = unrotate(this.q, this.angularVelocity), inertia = p.inertia;
     const bodyMomentum = [bodyOmega[0] * inertia[0], bodyOmega[1] * inertia[1], bodyOmega[2] * inertia[2]];

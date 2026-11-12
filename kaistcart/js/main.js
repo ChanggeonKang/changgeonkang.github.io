@@ -7,6 +7,8 @@ import { FixedStepper, syncRacer, updateProgress, resolveWalls } from './race-si
 import { resolveCourseBarrier } from './course-barriers.js';
 import { LapTracker, normalizeName } from './time-attack.js';
 import { createRecordsClient } from './leaderboard.js';
+import { snapshotLeader, compareSplit, timingProgress } from './split-times.js';
+import { ROLLOVER_RECOVERY_SECONDS, advanceRolloverTimer, recoverOverturned } from './rollover-recovery.js';
 import { Particles, Skids, Post } from './fx.js';
 import { Sfx } from './audio.js';
 
@@ -60,21 +62,21 @@ let state = 'load'; // load → title → count → race → finish (+ pause)
 let T = 0, raceT = 0, countT = 0, finT = 0, helpT = 0;
 const sfx = new Sfx();
 const P = { name: 'You', color: 0x2f95e8, x: 0, z: 0, th: 0, vx: 0, vz: 0, vf: 0, vl: 0, wy: 0, steer: 0, drift: false, grip: 1,
-  prog: 0, lost: false, off: false, wrong: 0, shake: 0, flipT: 0, done: 0, time: 0, body: new Vehicle({ groundAt: gAt, surfaceAt: surfAt }), mesh: null };
+  prog: 0, lost: false, off: false, wrong: 0, shake: 0, flipT: 0, recoveryT: 0, recoveryRetry: 0, done: 0, time: 0, body: new Vehicle({ groundAt: gAt, surfaceAt: surfAt }), mesh: null };
 const tmp = { x: 0, z: 0, th: 0 }, v3 = new THREE.Vector3(), v2 = new THREE.Vector2();
 let dust, glow, skids;
 const stepper = new FixedStepper();
 let reverseHold = 0, telemetry = false, frameMs = 16.7;
 let lap, runSession = null, practice = false, starting = false, saving = false, recordSaved = false;
 const records = createRecordsClient();
-let leaderboardEntries = [];
+let leaderboardEntries = [], leaderboardLeader = null, leaderSnapshot = null;
 
 function placeGrid() {
   coursePos(0, 0, tmp);
   Object.assign(P, { x: tmp.x, z: tmp.z, th: tmp.th, vx: 0, vz: 0, vf: 0, vl: 0, wy: 0, steer: 0, drift: false, grip: 1,
-    prog: 0, lost: false, off: false, wrong: 0, shake: 0, flipT: 0, done: 0, time: 0 });
+    prog: 0, lost: false, off: false, wrong: 0, shake: 0, flipT: 0, recoveryT: 0, recoveryRetry: 0, done: 0, time: 0 });
   P.body.reset(P.x, P.z, P.th); syncRacer(P); reverseHold = 0; stepper.reset();
-  lap = new LapTracker(W.C.n); raceT = 0; cam.snap = true;
+  lap = new LapTracker(W.C.n); raceT = 0; cam.snap = true; leaderSnapshot = null;
   clearInputs();
   if (skids) skids.clear();
 }
@@ -99,12 +101,22 @@ function stepPlayer(dt, input) {
   ev.hit = Math.max(ev.hit, resolveWalls(P.body, previous, surfAt));
   ev.hit = Math.max(ev.hit, resolveCourseBarrier(P.body, previous, W.C, P.prog, dt));
   syncRacer(P);
-  P.flipT = P.body.up < .25 && P.body.contacts ? P.flipT + dt : 0;
+  P.recoveryT = Math.max(0, (P.recoveryT || 0) - dt);
+  P.recoveryRetry = Math.max(0, (P.recoveryRetry || 0) - dt);
+  P.flipT = input ? advanceRolloverTimer(P.body, P.flipT, dt) : 0;
+  if (input && P.flipT >= ROLLOVER_RECOVERY_SECONDS && !P.recoveryRetry) {
+    const recovered = recoverOverturned(P.body, W.C, P.prog, surfAt);
+    if (recovered.recovered) {
+      syncRacer(P); P.flipT = 0; P.steer = 0; reverseHold = 0; P.recoveryT = 1.5; P.recoveryRetry = 0; cam.snap = true;
+      // Race time, checkpoint times and the active record session continue.
+      // Recovery consumes the two overturned seconds; it is never a pause.
+    } else P.recoveryRetry = .25;
+  }
 }
 function trackProgress(dt) {
   const C = W.C;
   updateProgress(P, C);
-  lap.advance(P.prog);
+  lap.advance(timingProgress(P, C), raceT * 1000);
   const k = mod(Math.floor(P.prog), C.n);
   const along = Math.sin(P.th) * C.tx[k] + Math.cos(P.th) * C.tz[k];
   P.wrong = along < -.4 && P.vf > 3 ? P.wrong + dt : 0;
@@ -193,6 +205,31 @@ function buildHud() {
   $('chipLen').textContent = (C.len / 1000).toFixed(2) + ' km lap';
   $('chipBump').textContent = W.courseBumps.length + ' speed bumps';
 }
+const formatGap = ms => (ms > 0 ? '+' : ms < 0 ? '−' : '') + (Math.abs(ms) / 1000).toFixed(3) + ' s';
+const gapTrend = ms => ms < 0 ? 'ahead' : ms > 0 ? 'behind' : 'level';
+function updateSplitHud() {
+  show('splitPanel', state === 'race' || state === 'finish' || state === 'pause');
+  const splits = lap.splitsMs, count = splits.length;
+  setText('splitHeading', leaderSnapshot ? 'VS #1 AT START · ' + leaderSnapshot.name : 'LEADER COMPARISON');
+  setText('splitCheckpoint', 'CHECKPOINT ' + String(count).padStart(2, '0') + ' / 32');
+  const comparison = lap.valid ? compareSplit(splits, leaderSnapshot) : null;
+  $('splitPanel').dataset.trend = comparison ? gapTrend(comparison.gapMs) : 'neutral';
+  $('splitSector').dataset.trend = comparison ? gapTrend(comparison.sectorGapMs) : 'neutral';
+  if (!lap.valid) {
+    setText('splitDelta', '—'); setText('splitStatus', 'Invalid route'); setText('splitSector', 'Pause to restart');
+  } else if (comparison) {
+    setText('splitDelta', formatGap(comparison.gapMs));
+    setText('splitStatus', comparison.gapMs < 0 ? 'Ahead at this checkpoint' : comparison.gapMs > 0 ? 'Behind at this checkpoint' : 'Level at this checkpoint');
+    setText('splitSector', 'Last sector ' + formatGap(comparison.sectorGapMs));
+  } else if (leaderSnapshot) {
+    setText('splitDelta', '—'); setText('splitStatus', 'First comparison at checkpoint 1');
+    setText('splitSector', 'Leader lap ' + fmt(leaderSnapshot.timeMs / 1000));
+  } else {
+    setText('splitDelta', count ? fmt(splits[count - 1] / 1000) : '—');
+    setText('splitStatus', count ? 'Your time · no leader splits yet' : 'No leader splits yet');
+    setText('splitSector', count ? 'Last sector ' + fmt((splits[count - 1] - (splits[count - 2] || 0)) / 1000) : 'First ranked finish sets the reference');
+  }
+}
 function updateHud(dt) {
   const C = W.C, spd = Math.hypot(P.vx, P.vz) * 3.6;
   setText('spd', Math.round(spd));
@@ -202,6 +239,7 @@ function updateHud(dt) {
   setText('driverName', P.name);
   setText('runMode', practice ? 'PRACTICE' : 'TIME ATTACK');
   setText('checkpointStatus', 'CHECKPOINT ' + lap.checkpoints.length + ' / 32');
+  updateSplitHud();
   const leftM = Math.max(0, (C.n - P.prog) * (W.C.ds || DS));
   setText('left', leftM >= 1000 ? (leftM / 1000).toFixed(2) + ' km to go' : Math.round(leftM / 10) * 10 + ' m to go');
   hud.dots[0].style.left = clamp(P.prog / C.n * 100, 0, 100) + '%';
@@ -212,7 +250,7 @@ function updateHud(dt) {
   setText('contactLabel', P.body.contacts ? (P.body.driftActive ? 'DRIFT · ' : '') + 'Contact ' + P.body.load.toFixed(1) + ' × static load' : 'Airborne · no contact');
   if (telemetry) setText('telemetryText', 'Pitch ' + (P.body.p * 180 / Math.PI).toFixed(1) + '° · Roll ' + (P.body.r * 180 / Math.PI).toFixed(1) + '° · Vertical ' + P.body.vy.toFixed(2) + ' m/s · ' + Math.round(1000 / frameMs) + ' FPS');
   $('telemetry').dataset.state = JSON.stringify({ x:P.x, z:P.z, heading:P.th, speed:spd, progress:P.prog, up:P.body.up, fps:1000/frameMs, checkpoints:lap.checkpoints.length, valid:lap.valid, mode:practice?'practice':'ranked' });
-  setText('msg', state !== 'race' ? '' : !lap.valid ? 'Invalid route · pause to restart' : P.flipT > 1 ? 'Kart overturned · pause to restart' : P.wrong > .8 ? 'Wrong way' : '');
+  setText('msg', state !== 'race' ? '' : !lap.valid ? 'Invalid route · pause to restart' : P.flipT >= ROLLOVER_RECOVERY_SECONDS ? 'Recovering · clock keeps running' : P.flipT > .2 ? 'Auto recovery in ' + (ROLLOVER_RECOVERY_SECONDS - P.flipT).toFixed(1) + ' s · clock keeps running' : P.recoveryT > 0 ? 'Recovered · keep driving' : P.wrong > .8 ? 'Wrong way' : '');
   if (helpT > 0) { helpT -= dt; if (helpT <= 0) $('help').style.opacity = 0; }
   // minimap
   const c = $('mini').getContext('2d'), S = $('mini').width, m = hud.m;
@@ -246,18 +284,19 @@ async function refreshRecords() {
   try {
     const data = await records.list();
     leaderboardEntries = data.entries;
+    leaderboardLeader = snapshotLeader(data.leader);
     renderRecords();
     $('leaderboardStatus').textContent = 'Best time per nickname · visible to everyone';
   } catch (error) { $('leaderboardStatus').textContent = error.message; }
 }
 async function saveFinishedRun() {
   if (saving || recordSaved || !P.done || practice || !runSession) return;
-  const session = runSession, completedTime = Math.round(P.time * 1000), checkpoints = lap.checkpoints, name = P.name;
+  const session = runSession, completedTime = Math.round(P.time * 1000), checkpoints = lap.checkpoints, splits = lap.splitsMs, name = P.name;
   saving = true; show('retrySaveBtn', false);
   $('againBtn').disabled = true; $('titleBtn').disabled = true;
   $('resBest').textContent = 'Saving your lap time online…';
   try {
-    await records.finish(session, completedTime, checkpoints);
+    await records.finish(session, completedTime, checkpoints, splits);
     if (runSession !== session) return;
     recordSaved = true;
     $('resBest').textContent = 'Saved online · ' + name;
@@ -269,6 +308,7 @@ function showResults() {
   $('resTitle').textContent = 'FINISH';
   $('resSub').textContent = P.name + ' · ' + (W.C.len / 1000).toFixed(2) + ' KM';
   $('resTime').textContent = fmt(P.time);
+  $('resSplit').textContent = leaderSnapshot ? formatGap(Math.round(P.time * 1000) - leaderSnapshot.timeMs) + ' vs #1 ' + leaderSnapshot.name + ' at start' : 'No leader reference at the start of this run.';
   $('resBest').textContent = practice ? 'Practice complete · this time is not posted online.' : 'Saving your lap time online…';
   renderRecords(); show('retrySaveBtn', false);
   $('results').classList.remove('hidden');
@@ -291,6 +331,7 @@ async function startRace(isPractice = false) {
     try { localStorage.setItem('kaistcart-nickname', P.name); } catch {}
     runSession = session; practice = isPractice; recordSaved = false; saving = false;
     placeGrid();
+    leaderSnapshot = snapshotLeader(isPractice ? leaderboardLeader : session.leader);
     $('touch').style.display = touchMode ? 'block' : 'none';
     show('title', false); show('results', false); show('pause', false); show('hud', true); show('touch', touchMode);
     $('help').style.opacity = 1; helpT = 9;
@@ -350,7 +391,7 @@ function simulate(dt) {
   stepPlayer(dt, racing);
   if (racing) {
     trackProgress(dt);
-    if (lap.completed) { P.done = 1; P.time = raceT; state = 'finish'; finT = 0; show('touch', false); sfx.fanfare(); }
+    if (lap.completed) { P.done = 1; P.time = lap.splitsMs.at(-1) / 1000; raceT = P.time; state = 'finish'; finT = 0; show('touch', false); sfx.fanfare(); }
   } else if (state === 'finish') {
     finT += dt;
     if (finT > 2.4 && $('results').classList.contains('hidden')) showResults();

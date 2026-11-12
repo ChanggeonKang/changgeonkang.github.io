@@ -107,6 +107,17 @@
 #raceActions{position:fixed;right:20px;top:218px;display:flex;gap:8px}#raceActions button{background:rgba(13,24,34,.76);color:#d8edf7;border:1px solid rgba(208,228,240,.2);border-radius:5px;min-width:44px;min-height:38px;font:13px inherit;cursor:pointer}@media(max-width:760px){#raceActions{top:136px;right:16px}}
   #driverName{font-size:18px;font-weight:700;max-width:170px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin:5px 0 12px}
   #checkpointStatus{font-size:10px;letter-spacing:.06em;color:#9fbac8;margin-top:8px}
+  #splitPanel{left:50%;top:84px;transform:translateX(-50%);width:252px;box-sizing:border-box;padding:11px 15px;text-align:center;font-variant-numeric:tabular-nums}
+  #splitHeading{font-size:10px;letter-spacing:.07em;color:#b8cbd7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #splitCheckpoint{font-size:10px;letter-spacing:.08em;margin-top:6px;color:#9fbac8}
+  #splitDelta{font-size:29px;font-weight:750;line-height:1.2;margin-top:3px;color:#d8e6ed}
+  #splitStatus{font-size:11px;margin-top:2px;color:#bacbd5}
+  #splitSector{font-size:11px;margin-top:8px;padding-top:7px;border-top:1px solid rgba(200,220,235,.14);color:#bacbd5}
+  #splitPanel[data-trend="ahead"] #splitDelta,#splitSector[data-trend="ahead"]{color:#8de4b5}
+  #splitPanel[data-trend="behind"] #splitDelta,#splitSector[data-trend="behind"]{color:#ffb4a5}
+  #resSplit{font-variant-numeric:tabular-nums;color:#b1dcff;font-size:13px}
+  @media(max-width:760px){#splitPanel{left:14px;top:206px;transform:none;width:224px;padding:9px 12px}#splitDelta{font-size:25px}}
+  @media(max-height:520px){#splitPanel{left:50%;top:82px;transform:translateX(-50%);width:214px;padding:7px 10px}#splitDelta{font-size:23px}#splitSector{margin-top:4px;padding-top:4px}}
   .name-field{display:block;margin:18px 0 6px;font-size:12px;color:#c4d8e2}
   #playerName{display:block;box-sizing:border-box;width:100%;margin-top:8px;border:1px solid #617b8b;background:rgba(8,19,28,.75);border-radius:5px;padding:12px;color:#fff;font:16px inherit;user-select:text;-webkit-user-select:text;touch-action:auto}
   #nameError{color:#ffc2b3;font-size:12px;line-height:1.5;min-height:18px;margin:4px 0}
@@ -129,6 +140,10 @@
   </div>
   <div class="hud glass" id="next"><span class="lbl">NEXT</span>&nbsp; <span id="nextName">-</span><span id="nextDist"></span></div>
   <div class="hud" id="prog"></div>
+  <div class="hud glass hidden" id="splitPanel" aria-label="Checkpoint comparison with the leader" data-trend="neutral">
+    <div id="splitHeading">VS #1 AT START</div><div id="splitCheckpoint">CHECKPOINT 0 / 32</div>
+    <div id="splitDelta">—</div><div id="splitStatus">Waiting for the first checkpoint</div><div id="splitSector">Last sector —</div>
+  </div>
   <canvas class="hud glass" id="mini" width="380" height="380"></canvas>
   <div class="hud" id="speedo">
     <svg viewBox="0 0 190 190">
@@ -154,7 +169,7 @@
     <div class="logo">KAIST CAMPUS KART</div>
     <div class="tag">DAEJEON CAMPUS · SOLO TIME ATTACK</div>
     <div class="chips"><span id="chipLen">4.4 km lap</span><span id="chipBump">speed bumps</span><span>100 km/h · Shift to drift</span><span>Online leaderboard</span></div>
-    <p>Start near the Chung Moon Soul Building and lap the campus.<br>Drive solo and compete for the fastest time.</p>
+    <p>Start near the Chung Moon Soul Building and lap the campus.<br>Compare your checkpoint times with the leader as you drive.</p>
     <label class="name-field" for="playerName">Public nickname<input id="playerName" type="text" maxlength="20" placeholder="Enter your nickname" autocomplete="off" spellcheck="false" aria-describedby="nameError"></label>
     <div id="nameError" role="alert"></div>
     <div class="keys">
@@ -168,7 +183,7 @@
     <button class="alt" id="practiceBtn" disabled>Practice</button>
     <p class="record-note">Practice runs are not posted to the leaderboard.</p>
     <div id="loadBar"><i id="loadI"></i></div><div id="loadMsg"></div>
-    <div class="record-section"><div class="record-heading">SEASON 7 · ONLINE TOP 10<button class="alt" id="refreshRecordsBtn">Refresh</button></div><p class="record-note" id="leaderboardStatus" role="status">Loading online records…</p><table class="res" id="leaderboardTable" aria-label="Online best times"></table></div>
+    <div class="record-section"><div class="record-heading">SEASON 8 · ONLINE TOP 10<button class="alt" id="refreshRecordsBtn">Refresh</button></div><p class="record-note" id="leaderboardStatus" role="status">Loading online records…</p><table class="res" id="leaderboardTable" aria-label="Online best times"></table></div>
     <div class="fine">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> · Elevation: <a href="https://doi.org/10.5069/G9BV7DT1" target="_blank" rel="noopener">GEDTM30, Ho et al.</a> (<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>, resampled and smoothed)<br>Campus reconstructed from approximately 30 m terrain data and reference photos. Building dimensions and small road features are estimates.<br>Unofficial fan project adapting the KAIST Fun Run route to campus roads. Nubzuki is KAIST's mascot.</div>
   </div>
 </div>
@@ -186,6 +201,7 @@
     <div class="logo" id="resTitle" style="font-size:50px">FINISH!</div>
     <div class="tag" id="resSub"></div>
     <div class="big" id="resTime"></div>
+    <p id="resSplit"></p>
     <p id="resBest" role="status"></p>
     <button class="alt hidden" id="retrySaveBtn">Retry saving</button>
     <table class="res" id="resTable" aria-label="Online best times"></table>
