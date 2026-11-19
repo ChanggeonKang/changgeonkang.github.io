@@ -296,10 +296,12 @@ async function saveFinishedRun() {
   $('againBtn').disabled = true; $('titleBtn').disabled = true;
   $('resBest').textContent = 'Saving your lap time online…';
   try {
-    await records.finish(session, completedTime, checkpoints, splits);
+    const result = await records.finish(session, completedTime, checkpoints, splits);
     if (runSession !== session) return;
     recordSaved = true;
-    $('resBest').textContent = 'Saved online · ' + name;
+    $('resBest').textContent = result.ranked === false
+      ? 'Unranked lap · Your checkpoint times fall outside the course’s driving limits.'
+      : 'Saved online · ' + name;
     await refreshRecords();
   } catch (error) { if (runSession === session) { $('resBest').textContent = 'Your time was not saved. ' + error.message; show('retrySaveBtn', true); } }
   finally { if (runSession === session) { saving = false; $('againBtn').disabled = false; $('titleBtn').disabled = false; } }
