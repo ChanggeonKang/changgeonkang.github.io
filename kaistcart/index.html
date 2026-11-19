@@ -124,6 +124,8 @@
   .record-section{margin-top:24px;border-top:1px solid #43515c;padding-top:16px}.record-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:12px;letter-spacing:.12em}
   .record-heading button{margin:0;padding:6px 10px;font-size:11px}.record-note{font-size:11px!important;color:#9fbac8!important;line-height:1.6!important}
   table.res{table-layout:fixed;font-size:13px}table.res th{padding:8px 10px;text-align:left;color:#91adbc;font-size:11px;font-weight:500}table.res th:first-child{width:36px}table.res th:last-child{width:95px;text-align:right}table.res td{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  table.res th:nth-child(3){width:82px}table.res td:nth-child(3){font-size:12px;color:#b5c9d5}
+  @media(max-width:520px){table.res td,table.res th{padding:7px 4px}table.res th:first-child{width:28px}table.res th:nth-child(3){width:72px}table.res th:last-child{width:70px}}
   #retrySaveBtn{margin-left:0}button:disabled{opacity:.5;cursor:wait}.card .keys{margin:16px 0}#title .logo{font-size:36px}#title .tag{margin-bottom:14px}
   @media(max-width:760px){#pos{max-width:140px}#driverName{max-width:120px;font-size:15px}#time{font-size:24px}#title .logo{font-size:30px}.record-section{margin-top:18px}.card p{font-size:12px}.keys{gap:7px 10px}#next{bottom:120px}#prog{bottom:110px}}
   @media(max-width:520px){#next{left:14px;bottom:146px;transform:none;max-width:calc(100vw - 190px);white-space:normal;text-align:left;padding:8px 10px}#nextName{font-size:11px}#nextDist{display:block;margin-left:0;font-size:11px}#prog{left:14px;bottom:132px;transform:none;width:calc(100vw - 188px)}#telemetry{bottom:230px;font-size:10px}#speedo{transform:scale(.66)}.settings{margin:12px 0}.card{padding:18px}}
@@ -181,7 +183,7 @@
     <div class="settings"><label for="qualitySelect">Graphics quality</label><select id="qualitySelect"><option value="auto">Auto</option><option value="0">High</option><option value="1">Balanced</option><option value="2">Performance</option></select></div>
     <button class="go" id="startBtn" disabled>LOADING</button>
     <button class="alt" id="practiceBtn" disabled>Practice</button>
-    <p class="record-note">Practice runs are not posted to the leaderboard.</p>
+    <p class="record-note">In time attack, the server replays your driving inputs to calculate your official time. Practice is local.</p>
     <div id="loadBar"><i id="loadI"></i></div><div id="loadMsg"></div>
     <div class="record-section"><div class="record-heading">SEASON 8 · ONLINE TOP 10<button class="alt" id="refreshRecordsBtn">Refresh</button></div><p class="record-note" id="leaderboardStatus" role="status">Loading online records…</p><table class="res" id="leaderboardTable" aria-label="Online best times"></table></div>
     <div class="fine">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> · Elevation: <a href="https://doi.org/10.5069/G9BV7DT1" target="_blank" rel="noopener">GEDTM30, Ho et al.</a> (<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>, resampled and smoothed)<br>Campus reconstructed from approximately 30 m terrain data and reference photos. Building dimensions and small road features are estimates.<br>Unofficial fan project adapting the KAIST Fun Run route to campus roads. Nubzuki is KAIST's mascot.</div>
@@ -200,15 +202,15 @@
   <div class="card glass">
     <div class="logo" id="resTitle" style="font-size:50px">FINISH!</div>
     <div class="tag" id="resSub"></div>
-    <div class="big" id="resTime"></div>
+    <div class="lbl" id="resTimeLabel"></div><div class="big" id="resTime"></div>
     <p id="resSplit"></p>
     <p id="resBest" role="status"></p>
-    <button class="alt hidden" id="retrySaveBtn">Retry saving</button>
+    <button class="alt hidden" id="retrySaveBtn">Retry verification</button>
     <table class="res" id="resTable" aria-label="Online best times"></table>
     <button class="go" id="againBtn">Try again</button><button class="alt" id="titleBtn">Main menu</button>
   </div>
 </div>
 
-<script type="module" src="js/main.js"></script>
+<script type="module" src="js/main.js?replay=1"></script>
 </body>
 </html>
