@@ -18,7 +18,7 @@ function runs(bytes, length) {
 // The animation loop only records a byte. Encoding and network I/O run after
 // the current frame. Keep an unacknowledged packet intact for exact retries.
 export class ReplayUpload {
-  constructor(session, client, changed) {
+  constructor(session, client, changed, onSync = null) {
     if (session.replayVersion !== 1 || !Number.isSafeInteger(session.chunkTicks)
       || session.chunkTicks < 1 || session.chunkTicks > 65536) {
       throw new Error('This replay version has changed. Reload the game and try again.');
@@ -26,6 +26,7 @@ export class ReplayUpload {
     this.session = session;
     this.client = client;
     this.changed = changed;
+    this.onSync = onSync;
     this.buffer = new Uint8Array(session.chunkTicks);
     this.used = 0;
     this.total = 0;
@@ -43,14 +44,15 @@ export class ReplayUpload {
     this.result = null;
   }
 
-  capture(mask, final = false) {
+  capture(mask, final = false, predict = null) {
     if (this.disposed || this.closed || this.terminal) return;
     this.buffer[this.used++] = mask;
     this.total++;
     final ||= this.total >= this.maxTicks;
     if (this.used < this.buffer.length && !final) return;
     this.closed = final;
-    this.pending.push({fromTick: this.total - this.used, length: this.used, bytes: this.buffer, final});
+    const expected = this.onSync && predict ? predict() : null;
+    this.pending.push({fromTick: this.total - this.used, length: this.used, bytes: this.buffer, final, expected});
     this.buffer = final ? null : new Uint8Array(this.session.chunkTicks);
     this.used = 0;
     if (!this.sending && this.timer === null && !this.error) queueMicrotask(() => this.sendPending());
@@ -78,7 +80,7 @@ export class ReplayUpload {
       while (this.pending.length && !this.disposed && !this.terminal) {
         const packet = this.pending[0];
         packet.inputs ??= runs(packet.bytes, packet.length);
-        const result = await this.client.inputs(this.session, packet.fromTick, packet.inputs, packet.final);
+        const result = await this.client.inputs(this.session, packet.fromTick, packet.inputs, packet.final, Boolean(this.onSync));
         if (this.disposed) return;
         if (result.status === 'finished' || result.status === 'invalid') {
           if (result.status === 'finished' && (result.ranked !== true || !Number.isSafeInteger(result.run?.timeMs) || result.run.timeMs <= 0)) {
@@ -91,6 +93,20 @@ export class ReplayUpload {
         } else {
           if (result.status !== 'running' || result.nextTick !== packet.fromTick + packet.length) {
             throw new Error('The server returned an unexpected replay position.');
+          }
+          if (this.onSync && !packet.final) {
+            if (result.state?.ticks !== result.nextTick) throw new Error('The records server did not return the confirmed driving state.');
+            // When catching up after a network outage, reconcile a recent packet.
+            // No inputs are dropped: earlier packets are still verified in order.
+            if (this.total - result.nextTick <= 2 * this.session.chunkTicks) {
+              this.onSync(result.state, packet.expected, visit => {
+                for (let p = 1; p < this.pending.length; p++) {
+                  const later = this.pending[p];
+                  for (let i = 0; i < later.length; i++) visit(later.bytes[i]);
+                }
+                for (let i = 0; i < this.used; i++) visit(this.buffer[i]);
+              });
+            }
           }
           this.pending.shift();
           this.confirmed = result.nextTick;

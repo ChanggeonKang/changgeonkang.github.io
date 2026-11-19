@@ -38,9 +38,10 @@ export function createRecordsClient(origin = RECORDS_ORIGIN, fetcher = fetch) {
   return {
     list: () => request('/api/leaderboard?course=' + encodeURIComponent(COURSE_ID)),
     start: name => request('/api/runs/start', { name, course: COURSE_ID, replayVersion: REPLAY_VERSION, device: recordDevice() }),
-    inputs: (session, fromTick, inputs, final) => request('/api/runs/inputs', {
+    inputs: (session, fromTick, inputs, final, sync = false) => request('/api/runs/inputs', {
       runId: session.runId, token: session.token, replayVersion: session.replayVersion, fromTick, inputs,
       ...(final ? {final: true} : {}),
+      ...(sync ? {sync: true} : {}),
     }),
   };
 }

@@ -6,9 +6,10 @@ import { Vehicle, RIDE } from './vehicle-physics.js';
 import { FixedStepper, syncRacer, updateProgress, resolveWalls } from './race-sim.js';
 import { resolveCourseBarrier } from './course-barriers.js';
 import { LapTracker, normalizeName } from './time-attack.js';
-import { createRecordsClient, recordDevice } from './leaderboard.js';
+import { createRecordsClient, recordDevice } from './leaderboard.js?v=replay-sync-1';
 import { stabilizeVehicle } from './stabilize.js';
-import { FINISH_GRACE_TICKS, inputMask, ReplayUpload } from './replay-upload.js';
+import { inputMask, ReplayUpload } from './replay-upload.js?v=replay-sync-1';
+import { replayPrediction, matchesReplay, restoreReplayState } from './replay-sync.js?v=replay-sync-1';
 import { snapshotLeader, compareSplit, timingProgress } from './split-times.js';
 import { ROLLOVER_RECOVERY_SECONDS, advanceRolloverTimer, recoverOverturned } from './rollover-recovery.js';
 import { Particles, Skids, Post } from './fx.js';
@@ -74,7 +75,7 @@ const tmp = { x: 0, z: 0, th: 0 }, v3 = new THREE.Vector3(), v2 = new THREE.Vect
 let dust, glow, skids;
 const stepper = new FixedStepper();
 let reverseHold = 0, telemetry = false, frameMs = 16.7;
-let lap, replay = null, practice = false, starting = false, finishGrace = 0, localFinishAt = 0;
+let lap, replay = null, practice = false, starting = false, waitingAtBoundary = false, localFinishAt = 0;
 const records = createRecordsClient();
 let leaderboardEntries = [], leaderboardLeader = null, leaderSnapshot = null;
 
@@ -83,7 +84,7 @@ function placeGrid() {
   Object.assign(P, { x: tmp.x, z: tmp.z, th: tmp.th, vx: 0, vz: 0, vf: 0, vl: 0, wy: 0, steer: 0, drift: false, grip: 1,
     prog: 0, lost: false, off: false, wrong: 0, shake: 0, flipT: 0, recoveryT: 0, recoveryRetry: 0, done: 0, time: 0 });
   P.body.reset(P.x, P.z, P.th); stabilizeVehicle(P.body); syncRacer(P); reverseHold = 0; stepper.reset();
-  finishGrace = 0; localFinishAt = 0;
+  waitingAtBoundary = false; localFinishAt = 0;
   lap = new LapTracker(W.C.n); raceT = 0; cam.snap = true; leaderSnapshot = null;
   clearInputs();
   if (skids) skids.clear();
@@ -91,17 +92,17 @@ function placeGrid() {
 
 // ───────────────────────── driving physics ─────────────────────────
 const ev = { J: 0, hit: 0 };
-function stepPlayer(dt, input) {
-  const st = input ? (keys.right ? 1 : 0) - (keys.left ? 1 : 0) : 0;
+function stepPlayer(dt, input, buttons = keys) {
+  const st = input ? (buttons.right ? 1 : 0) - (buttons.left ? 1 : 0) : 0;
   P.steer += (st - P.steer) * (1 - Math.exp(-dt * 7));
-  reverseHold = input && keys.down && Math.abs(P.body.vf) < .7 ? reverseHold + dt : 0;
-  const reversing = reverseHold > .35 || (input && keys.down && P.body.vf < -.3);
+  reverseHold = input && buttons.down && Math.abs(P.body.vf) < .7 ? reverseHold + dt : 0;
+  const reversing = reverseHold > .35 || (input && buttons.down && P.body.vf < -.3);
   const controls = {
-    throttle: input && keys.up ? 1 : reversing ? -.45 : 0,
-    brake: input ? (keys.down && !reversing ? 1 : 0) : 1,
-    flip: Boolean(input && keys.down),
+    throttle: input && buttons.up ? 1 : reversing ? -.45 : 0,
+    brake: input ? (buttons.down && !reversing ? 1 : 0) : 1,
+    flip: Boolean(input && buttons.down),
     steer: P.steer,
-    drift: Boolean(input && keys.drift),
+    drift: Boolean(input && buttons.drift),
     handbrake: false,
   };
   const previous = { x: P.body.x, z: P.body.z, q: [...P.body.q] };
@@ -133,6 +134,31 @@ function trackProgress(dt) {
 }
 
 // ───────────────────────── effects ─────────────────────────
+function predictReplay() {
+  return replayPrediction(P, lap, reverseHold, raceT);
+}
+
+function reconcileReplay(server, prediction, replayAfter) {
+  if (matchesReplay(server, prediction)) return;
+  restoreReplayState(server, P, lap);
+  syncRacer(P);
+  reverseHold = server.driver.reverseHold;
+  raceT = server.raceT;
+  const dt = stepper.step;
+  const buttons = {};
+  replayAfter(mask => {
+    buttons.up = Boolean(mask & 1); buttons.down = Boolean(mask & 2);
+    buttons.left = Boolean(mask & 4); buttons.right = Boolean(mask & 8); buttons.drift = Boolean(mask & 16);
+    raceT += dt;
+    stepPlayer(dt, true, buttons);
+    trackProgress(dt);
+  });
+  if (!lap.completed && lap.valid) {
+    waitingAtBoundary = false;
+    localFinishAt = 0;
+  }
+}
+
 function effects(dt) {
   const b = P.body, s = Math.sin(P.th), c = Math.cos(P.th), spd = Math.hypot(P.vx, P.vz), gy = gAt(P.x, P.z), grounded = b.contacts > 0;
   const rx = P.x - s * 1.1, rz = P.z - c * 1.1, surf = surfAt(P.x, P.z);
@@ -270,7 +296,8 @@ function updateHud(dt) {
   setText('contactLabel', P.body.contacts ? (P.body.driftActive ? 'DRIFT · ' : '') + 'Contact ' + P.body.load.toFixed(1) + ' × static load' : 'Airborne · no contact');
   if (telemetry) setText('telemetryText', 'Pitch ' + (P.body.p * 180 / Math.PI).toFixed(1) + '° · Roll ' + (P.body.r * 180 / Math.PI).toFixed(1) + '° · Vertical ' + P.body.vy.toFixed(2) + ' m/s · ' + Math.round(1000 / frameMs) + ' FPS');
   $('telemetry').dataset.state = JSON.stringify({ x:P.x, z:P.z, heading:P.th, speed:spd, progress:P.prog, up:P.body.up, fps:1000/frameMs, checkpoints:lap.checkpoints.length, valid:lap.valid, mode:practice?'practice':'ranked' });
-  setText('msg', state !== 'race' ? '' : P.done ? 'Finish line' : !lap.valid ? 'Invalid route · pause to restart' : P.flipT >= ROLLOVER_RECOVERY_SECONDS ? 'Recovering · clock keeps running' : P.flipT > .2 ? 'Auto recovery in ' + (ROLLOVER_RECOVERY_SECONDS - P.flipT).toFixed(1) + ' s · clock keeps running' : P.recoveryT > 0 ? 'Recovered · keep driving' : P.wrong > .8 ? 'Wrong way' : '');
+  const verifying = waitingAtBoundary ? (replay?.error ? 'Connection interrupted · retrying verification…' : 'Checking your run with the server…') : '';
+  setText('msg', state !== 'race' ? '' : verifying || (P.done ? 'Finish line' : !lap.valid ? 'Invalid route · pause to restart' : P.flipT >= ROLLOVER_RECOVERY_SECONDS ? 'Recovering · clock keeps running' : P.flipT > .2 ? 'Auto recovery in ' + (ROLLOVER_RECOVERY_SECONDS - P.flipT).toFixed(1) + ' s · clock keeps running' : P.recoveryT > 0 ? 'Recovered · keep driving' : P.wrong > .8 ? 'Wrong way' : ''));
   if (helpT > 0) { helpT -= dt; if (helpT <= 0) $('help').style.opacity = 0; }
   // minimap
   const c = $('mini').getContext('2d'), S = $('mini').width, m = hud.m;
@@ -324,7 +351,8 @@ function finishRace() {
   raceT = P.time;
   state = 'finish';
   finT = localFinishAt ? Math.min(2.4, (performance.now() - localFinishAt) / 1000) : 0;
-  show('pause', false); show('touch', false); sfx.fanfare();
+  show('pause', false); show('touch', false);
+  if (practice || replay?.result?.status === 'finished') sfx.fanfare();
 }
 
 function updateResultTime() {
@@ -358,12 +386,15 @@ function replayChanged(upload) {
     P.time = upload.result.run.timeMs / 1000;
     finishRace();
     void refreshRecords();
+  } else if (upload.terminal && state !== 'finish') {
+    P.time = raceT;
+    finishRace();
   }
   if (!$('results').classList.contains('hidden')) updateResultTime();
 }
 
 function showResults() {
-  $('resTitle').textContent = 'FINISH';
+  $('resTitle').textContent = !practice && replay?.terminal && replay.result?.status !== 'finished' ? 'UNRANKED' : 'FINISH';
   $('resSub').textContent = P.name + ' · ' + (W.C.len / 1000).toFixed(2) + ' KM';
   updateResultTime(); renderRecords(); show('results', true);
 }
@@ -380,8 +411,10 @@ async function startRace(isPractice = false) {
   sfx.init();
   try {
     const session = isPractice ? null : await records.start(name.name);
-    const upload = session ? new ReplayUpload(session, records, replayChanged) : null;
-    if (replay && !replay.closed) replay.dispose();
+    const upload = session ? new ReplayUpload(session, records, replayChanged, (server, prediction, replayAfter) => {
+      if (replay === upload) reconcileReplay(server, prediction, replayAfter);
+    }) : null;
+    if (replay && !replay.closed && !waitingAtBoundary) replay.dispose();
     replay = upload;
     P.name = name.name; $('playerName').value = P.name;
     try { localStorage.setItem('kaistcart3-nickname', P.name); } catch {}
@@ -397,7 +430,7 @@ async function startRace(isPractice = false) {
   finally { starting = false; for (const id of ['startBtn', 'practiceBtn', 'againBtn', 'titleBtn', 'restartBtn', 'quitBtn']) $(id).disabled = false; $('startBtn').textContent = 'Start time attack'; }
 }
 function toTitle(refresh = true) {
-  if (replay && !replay.closed) replay.dispose();
+  if (replay && !replay.closed && !waitingAtBoundary) replay.dispose();
   replay = null; placeGrid(); state = 'title'; show('title', true); show('results', false); show('pause', false); show('hud', false); show('touch', false); sfx.quiet(); if (refresh) void refreshRecords();
 }
 let pausedState = 'race';
@@ -443,6 +476,7 @@ function simulate(dt) {
     if (countT <= 1) state = 'race';
   }
   const racing = state === 'race';
+  if (racing && waitingAtBoundary) return;
   if (racing) {
     if (countT > 0) { countT -= dt; if (countT <= 0) showCount(''); }
     raceT += dt;
@@ -451,16 +485,16 @@ function simulate(dt) {
   stepPlayer(dt, racing);
   if (racing) {
     trackProgress(dt);
-    if (lap.completed && !P.done) {
-      P.done = 1; P.time = lap.splitsMs.at(-1) / 1000;
-      localFinishAt = performance.now();
-      finishGrace = replay && !replay.terminal ? FINISH_GRACE_TICKS : 0;
-    } else if (finishGrace > 0) finishGrace--;
-    // Continue sampling real controls across the line for a short window.
-    // An acknowledgement may finish this race before the local crossing.
-    const final = Boolean(P.done && (finishGrace === 0 || replay?.terminal));
-    replay?.capture(mask, final);
-    if (final) finishRace();
+    if (lap.completed && !localFinishAt) localFinishAt = performance.now();
+    if (replay) {
+      replay.capture(mask, false, predictReplay);
+      // At a provisional finish the next packet confirms the result or lets
+      // the driver continue from the server's position.
+      if ((lap.completed || !lap.valid) && replay.used === 0) waitingAtBoundary = true;
+    } else if (lap.completed) {
+      P.time = lap.splitsMs.at(-1) / 1000;
+      finishRace();
+    }
   } else if (state === 'finish') {
     finT += dt;
     if (finT > 2.4 && $('results').classList.contains('hidden')) showResults();
