@@ -297,13 +297,13 @@ function renderRecords() {
       if (entry.name === P.name) row.className = 'me';
       for (const value of [entry.rank, entry.name, 'Server replay']) row.insertCell().textContent = String(value);
       const time = row.insertCell();
-      time.textContent = officialTime(entry.timeMs);
       if (entry.device === 'mobile') {
         const badge = document.createElement('span');
         badge.className = 'record-device';
         badge.textContent = 'Mobile';
         time.appendChild(badge);
       }
+      time.append(officialTime(entry.timeMs));
     }
     if (!leaderboardEntries.length) { const cell = body.insertRow().insertCell(); cell.colSpan = 4; cell.textContent = 'Be the first to set a lap time.'; }
   }

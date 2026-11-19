@@ -292,13 +292,13 @@ function renderRecords() {
       const timing = entry.verification === 'replay' ? 'Server replay' : 'Legacy';
       for (const value of [entry.rank, entry.name, timing]) row.insertCell().textContent = String(value);
       const time = row.insertCell();
-      time.textContent = officialTime(entry.timeMs);
       if (entry.device === 'mobile') {
         const badge = document.createElement('span');
         badge.className = 'record-device';
         badge.textContent = 'Mobile';
         time.appendChild(badge);
       }
+      time.append(officialTime(entry.timeMs));
     }
     if (!leaderboardEntries.length) { const cell = body.insertRow().insertCell(); cell.colSpan = 4; cell.textContent = 'Be the first to set a lap time.'; }
   }
