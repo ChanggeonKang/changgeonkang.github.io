@@ -1,0 +1,94 @@
+// Pure time-attack progress bookkeeping. Progress is an UNWRAPPED course-sample
+// index, updated once per physics step; rendering frame cadence is irrelevant.
+// This detects accidental shortcuts/teleports, not a malicious modified client.
+export class LapTracker {
+  constructor(n, { checkpointCount = 32, maxForwardStep = 5 } = {}) {
+    if (!Number.isFinite(n) || n <= 0) throw new RangeError('Course length must be positive and finite.');
+    if (!Number.isInteger(checkpointCount) || checkpointCount < 1) throw new RangeError('Checkpoint count must be a positive integer.');
+    if (!Number.isFinite(maxForwardStep) || maxForwardStep <= 0) throw new RangeError('Maximum progress step must be positive and finite.');
+    this.n = n;
+    this.checkpointCount = checkpointCount;
+    this.maxForwardStep = maxForwardStep;
+    this.reset();
+  }
+
+  get checkpoints() { return [...this._checkpoints]; }
+  get splitsMs() { return Object.freeze([...this._splitsMs]); }
+  get valid() { return this.invalidReason === null; }
+
+  reset() {
+    this.previousProgress = 0;
+    this.previousElapsedMs = 0;
+    this._checkpoints = [];
+    this._splitsMs = [];
+    this.completed = false;
+    this.invalidReason = null;
+    return this;
+  }
+
+  /** Returns persistent completion state; callers should emit a finish event once.
+   * Backward travel never credits gates. A skipped forward segment invalidates
+   * the current attempt permanently until reset(), including skips between gates.
+   */
+  advance(progress, elapsedMs) {
+    if (this.completed) return true;
+    if (!this.valid) return false;
+    if (!Number.isFinite(progress)) {
+      this.invalidReason = 'non_finite_progress';
+      return false;
+    }
+    const timed = elapsedMs !== undefined;
+    if (timed && (!Number.isFinite(elapsedMs) || elapsedMs < 0)) {
+      this.invalidReason = 'invalid_elapsed_time';
+      return false;
+    }
+    if (timed && this.previousElapsedMs !== null && elapsedMs < this.previousElapsedMs) {
+      this.invalidReason = 'elapsed_time_reversed';
+      return false;
+    }
+    const previous = this.previousProgress, delta = progress - previous;
+    const previousElapsedMs = this.previousElapsedMs;
+    if (delta > this.maxForwardStep + 1e-9) {
+      this.invalidReason = 'forward_progress_skip';
+      return false;
+    }
+    this.previousProgress = progress;
+    // Geometry-only callers can omit the clock. Never invent a crossing time
+    // across an update for which either endpoint's elapsed time is unknown.
+    this.previousElapsedMs = timed ? elapsedMs : null;
+    if (delta <= 0) return false;
+
+    while (this._checkpoints.length < this.checkpointCount) {
+      const index = this._checkpoints.length;
+      const gate = (index + 1) * this.n / this.checkpointCount;
+      if (previous >= gate || progress < gate) break;
+      if (timed && previousElapsedMs !== null && this._splitsMs.length === index) {
+        const fraction = (gate - previous) / delta;
+        const splitMs = Math.round(previousElapsedMs + (elapsedMs - previousElapsedMs) * fraction);
+        if (!Number.isSafeInteger(splitMs) || splitMs <= (this._splitsMs.at(-1) ?? 0)) {
+          this.invalidReason = 'non_increasing_split_time';
+          return false;
+        }
+        this._splitsMs.push(splitMs);
+      }
+      this._checkpoints.push(index);
+    }
+    this.completed = this._checkpoints.length === this.checkpointCount && progress >= this.n;
+    return this.completed;
+  }
+}
+
+/** Normalize a display name without truncating or silently removing characters.
+ * Accept Hangul, ASCII letters/digits, spaces, underscore, period and hyphen.
+ * The backend should apply the same checks independently before saving a score.
+ */
+export function normalizeName(value) {
+  if (typeof value !== 'string') return { valid: false, name: '', error: 'Enter a nickname.' };
+  const name = value.normalize('NFC').trim().replace(/ +/g, ' ');
+  if (name.length === 0) return { valid: false, name, error: 'Enter a nickname.' };
+  if ([...name].length > 20) return { valid: false, name, error: 'Use 20 characters or fewer for your nickname.' };
+  if (!/^[\p{Script=Hangul}A-Za-z0-9 _.\-]+$/u.test(name)) {
+    return { valid: false, name, error: 'Use Korean or English letters, numbers, spaces, underscores, periods or hyphens.' };
+  }
+  return { valid: true, name, error: null };
+}
