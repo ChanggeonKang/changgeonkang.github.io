@@ -11,6 +11,7 @@ import { snapshotLeader, compareSplit, timingProgress } from './split-times.js';
 import { ROLLOVER_RECOVERY_SECONDS, advanceRolloverTimer, recoverOverturned } from './rollover-recovery.js';
 import { Particles, Skids, Post } from './fx.js';
 import { Sfx } from './audio.js';
+import { createMobileWheel } from './mobile-wheel.js';
 
 const $ = id => document.getElementById(id);
 const Q = new URLSearchParams(location.search);
@@ -34,7 +35,8 @@ scene.add(sun, sun.target);
 const post = new Post(renderer);
 
 const QUAL = [{ pr: 1.5, shadow: 2048, msaa: 4 }, { pr: 1, shadow: 1024, msaa: 2 }, { pr: .8, shadow: 0, msaa: 0 }];
-let qual = clamp(parseInt(Q.get('q') || '0', 10) || 0, 0, 2), slowT = 0, ema = 16;
+let qual = clamp(parseInt(Q.get('q') || '1', 10), 0, 2), slowT = 0, ema = 16;
+if (!Number.isFinite(qual)) qual = 1;
 function applyQuality() {
   const q = QUAL[qual];
   renderer.setPixelRatio(Math.min(devicePixelRatio || 1, q.pr));
@@ -52,12 +54,23 @@ function resize() {
 addEventListener('resize', resize);
 
 // ───────────────────────── state ─────────────────────────
-const keys = { up: false, down: false, left: false, right: false, drift: false };
-const KEYMAP = { ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down', ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right', ShiftLeft: 'drift', ShiftRight: 'drift' };
-const heldCodes = new Set(), heldPointers = new Map();
-function updateKey(key) { keys[key] = [...heldCodes].some(code => KEYMAP[code] === key) || [...heldPointers.values()].includes(key); }
-function clearInputs() { heldCodes.clear(); heldPointers.clear(); for (const key in keys) keys[key] = false; }
-let touchMode = matchMedia('(pointer:coarse)').matches;
+const wheel = createMobileWheel();
+const landscape = matchMedia('(orientation: landscape)');
+let wheelSteer = 0;
+let sensorEpoch = 0;
+const keys = {up:false, down:false, drift:false};
+const heldPointers = new Map();
+const touchButtons = {up:$('tA'), down:$('tB'), drift:$('tD')};
+function updateKey(key) {
+  keys[key] = [...heldPointers.values()].includes(key);
+  touchButtons[key].classList.toggle('pressed', keys[key]);
+  touchButtons[key].setAttribute('aria-pressed', String(keys[key]));
+}
+function clearInputs() {
+  heldPointers.clear();
+  for (const key of Object.keys(keys)) updateKey(key);
+  wheelSteer = 0;
+}
 let state = 'load'; // load → title → count → race → finish (+ pause)
 let T = 0, raceT = 0, countT = 0, finT = 0, helpT = 0;
 const sfx = new Sfx();
@@ -84,7 +97,7 @@ function placeGrid() {
 // ───────────────────────── driving physics ─────────────────────────
 const ev = { J: 0, hit: 0 };
 function stepPlayer(dt, input) {
-  const st = input ? (keys.right ? 1 : 0) - (keys.left ? 1 : 0) : 0;
+  const st = input ? wheelSteer : 0;
   P.steer += (st - P.steer) * (1 - Math.exp(-dt * 7));
   reverseHold = input && keys.down && Math.abs(P.body.vf) < .7 ? reverseHold + dt : 0;
   const reversing = reverseHold > .35 || (input && keys.down && P.body.vf < -.3);
@@ -317,61 +330,160 @@ function showResults() {
 
 // ───────────────────────── flow ─────────────────────────
 function show(id, on) { $(id).classList.toggle('hidden', !on); }
+const wheelMessages = {
+  idle: 'Hold your phone like a steering wheel, facing you.',
+  requesting: 'Allow motion access to steer.',
+  waiting: 'Hold the phone steady while the motion sensor connects.',
+  denied: 'Motion access was denied. Allow motion in your browser settings and try again.',
+  unavailable: 'Motion steering is unavailable. Open this page in Safari or Chrome on a phone with motion sensors.',
+  flat: 'Raise the screen toward you, then tap to center the wheel.',
+  uncentered: 'Hold your phone level in both hands, then center the wheel.',
+  ready: 'Steering centered. Turn your phone like a wheel.',
+  stale: 'No fresh motion signal. Hold the screen facing you and try again.'
+};
+const sensorButtons = ['sensorBtn', 'startBtn', 'practiceBtn', 'againBtn', 'restartBtn', 'titleBtn', 'quitBtn', 'resumeBtn'];
+function lockSetup(locked) {
+  starting = locked;
+  for (const id of sensorButtons) $(id).disabled = locked;
+}
+function drivingView() { return !document.hidden && landscape.matches; }
+async function prepareWheel(statusElement, recenter) {
+  if (!drivingView()) throw Error('Rotate your phone to landscape to center the wheel.');
+  const epoch = sensorEpoch;
+  let status = wheel.read().status;
+  if (status === 'ready' && !recenter) return;
+  if (['idle','denied','unavailable','stale'].includes(status)) {
+    statusElement.textContent = wheelMessages.requesting;
+    // Both permission methods, when required, are called inside this tap.
+    await wheel.enable();
+  }
+  const deadline = performance.now() + 4200;
+  while (true) {
+    if (epoch !== sensorEpoch || !drivingView()) throw Error('Return to landscape, then center the wheel again.');
+    status = wheel.read().status;
+    if ((status === 'ready' || status === 'uncentered') && wheel.center()) {
+      statusElement.textContent = wheelMessages.ready;
+      $('sensorBtn').textContent = 'Center steering';
+      return;
+    }
+    statusElement.textContent = wheelMessages[status];
+    if (status === 'flat' || status === 'denied' || status === 'unavailable') throw Error(wheelMessages[status]);
+    if (performance.now() >= deadline) throw Error(wheelMessages.stale);
+    await new Promise(resolve => setTimeout(resolve, 40));
+  }
+}
+async function centerFromLobby() {
+  if (starting || saving || state !== 'title') return;
+  lockSetup(true);
+  try { await prepareWheel($('sensorStatus'), true); }
+  catch (error) { $('sensorStatus').textContent = error.message; }
+  finally { lockSetup(false); }
+}
 async function startRace(isPractice = false) {
-  if (starting || saving) return;
+  if (starting || saving || state === 'load') return;
   const name = normalizeName($('playerName').value);
   if (!name.valid) { $('nameError').textContent = name.error; toTitle(false); $('playerName').focus(); return; }
-  $('nameError').textContent = ''; starting = true;
-  for (const id of ['startBtn', 'practiceBtn', 'againBtn', 'titleBtn', 'restartBtn', 'quitBtn']) $(id).disabled = true;
-  $('startBtn').textContent = 'Connecting…';
-  sfx.init();
+  $('playerName').blur();
+  $('nameError').textContent = ''; lockSetup(true);
   try {
+    // From results/restart, show the setup feedback in the lobby as well.
+    if (state !== 'title') toTitle(false);
+    const steering = prepareWheel($('sensorStatus'), false);
+    sfx.init();
+    await steering;
+    if (!drivingView() || wheel.read().status !== 'ready') throw Error(wheelMessages.stale);
+    $('startBtn').textContent = 'Connecting…';
     const session = isPractice ? null : await records.start(name.name);
     P.name = name.name; $('playerName').value = P.name;
     try { localStorage.setItem('kaistcart2-nickname', P.name); } catch {}
     runSession = session; practice = isPractice; recordSaved = false; saving = false;
     placeGrid();
     leaderSnapshot = snapshotLeader(isPractice ? leaderboardLeader : session.leader);
-    $('touch').style.display = touchMode ? 'block' : 'none';
-    show('title', false); show('results', false); show('pause', false); show('hud', true); show('touch', touchMode);
+    show('title', false); show('results', false); show('pause', false); show('hud', true); show('touch', true);
     $('help').style.opacity = 1; helpT = 9;
     state = 'count'; countT = 4.2; hud.beep = 4; last = 0;
     showCount('');
+    if (!drivingView() || wheel.read().status !== 'ready') setPause(true, 'Center the wheel to begin the countdown.');
   } catch (error) { toTitle(false); $('nameError').textContent = error.message; }
-  finally { starting = false; for (const id of ['startBtn', 'practiceBtn', 'againBtn', 'titleBtn', 'restartBtn', 'quitBtn']) $(id).disabled = false; $('startBtn').textContent = 'Start time attack'; }
+  finally { lockSetup(false); $('startBtn').textContent = 'Start time attack'; }
 }
-function toTitle(refresh = true) { placeGrid(); state = 'title'; show('title', true); show('results', false); show('pause', false); show('hud', false); show('touch', false); sfx.quiet(); if (refresh) void refreshRecords(); }
+function toTitle(refresh = true) {
+  placeGrid(); state = 'title'; show('title', true); show('results', false); show('pause', false); show('hud', false); show('touch', false);
+  sfx.quiet();
+  if (refresh) void refreshRecords();
+}
 let pausedState = 'race';
-function setPause(on) { if (on && (state === 'race' || state === 'count')) { clearInputs(); pausedState = state; state = 'pause'; show('pause', true); show('touch', false); sfx.quiet(); } else if (!on && state === 'pause') { state = pausedState; last = 0; show('pause', false); show('touch', touchMode); } }
+function stopWheel() {
+  sensorEpoch++;
+  wheel.stop();
+  clearInputs();
+  P.steer = 0;
+  reverseHold = 0;
+}
+function setPause(on, reason = 'Hold the phone straight to center and resume.') {
+  if (!on || (state !== 'race' && state !== 'count')) return;
+  pausedState = state; state = 'pause';
+  stopWheel();
+  $('pauseSensorStatus').textContent = reason;
+  show('pause', true); show('touch', false); sfx.quiet();
+}
+async function resumeRace() {
+  if (state !== 'pause' || starting) return;
+  lockSetup(true);
+  try {
+    await prepareWheel($('pauseSensorStatus'), true);
+    if (!drivingView() || wheel.read().status !== 'ready') throw Error(wheelMessages.stale);
+    state = pausedState; last = 0; clearInputs();
+    show('pause', false); show('touch', true);
+  } catch (error) { $('pauseSensorStatus').textContent = error.message; }
+  finally { lockSetup(false); }
+}
+$('sensorBtn').onclick = centerFromLobby;
 $('startBtn').onclick = () => startRace(); $('againBtn').onclick = () => startRace(practice);
-$('restartBtn').onclick = () => { toTitle(false); void startRace(practice); };
+$('restartBtn').onclick = () => startRace(practice);
 $('practiceBtn').onclick = () => startRace(true);
 $('retrySaveBtn').onclick = saveFinishedRun;
 $('refreshRecordsBtn').onclick = refreshRecords;
 $('pauseBtn').onclick = () => setPause(true);
-$('titleBtn').onclick = () => toTitle(); $('quitBtn').onclick = () => toTitle(); $('resumeBtn').onclick = () => setPause(false);
-addEventListener('keydown', e => {
-  if (e.target instanceof HTMLElement && e.target.matches('input, textarea, select')) {
-    if (e.code === 'Enter' && state === 'title' && !$('startBtn').disabled && !e.isComposing) { e.preventDefault(); void startRace(); }
-    return;
+$('centerBtn').onclick = () => setPause(true, 'Hold the phone in your new straight-ahead position, then tap Center & resume.');
+$('titleBtn').onclick = () => toTitle(); $('quitBtn').onclick = () => toTitle(); $('resumeBtn').onclick = resumeRace;
+$('muteBtn').onclick = () => {
+  sfx.setMuted(!sfx.muted);
+  $('muteBtn').textContent = sfx.muted ? 'Unmute sound' : 'Mute sound';
+};
+function interruptDriving() {
+  if (state === 'race' || state === 'count') setPause(true);
+  else {
+    stopWheel();
+    $('sensorStatus').textContent = wheelMessages.idle;
   }
-  if (state !== 'race' && state !== 'count' && state !== 'pause') return;
-  if (KEYMAP[e.code]) { heldCodes.add(e.code); updateKey(KEYMAP[e.code]); e.preventDefault(); }
-  if (e.repeat) return;
-  if (e.code === 'KeyM') sfx.setMuted(!sfx.muted);
-  if (e.code === 'KeyT') { telemetry = !telemetry; $('telemetry').classList.toggle('hidden', !telemetry); }
-  if (e.code === 'Escape' || e.code === 'KeyP') setPause(state !== 'pause');
-});
-addEventListener('keyup', e => { if (KEYMAP[e.code]) { heldCodes.delete(e.code); updateKey(KEYMAP[e.code]); e.preventDefault(); } });
-addEventListener('blur', () => { clearInputs(); setPause(true); });
-document.addEventListener('visibilitychange', () => { if (document.hidden) setPause(true); });
-for (const [id, k] of [['tL', 'left'], ['tR', 'right'], ['tB', 'down'], ['tA', 'up'], ['tD', 'drift']]) {
-  const el = $(id);
-  el.addEventListener('pointerdown', e => { heldPointers.set(e.pointerId, k); updateKey(k); el.setPointerCapture(e.pointerId); e.preventDefault(); });
-  for (const evn of ['pointerup', 'pointercancel', 'lostpointercapture']) el.addEventListener(evn, e => { heldPointers.delete(e.pointerId); updateKey(k); });
 }
-$('qualitySelect').onchange = e => { qual = e.target.value === 'auto' ? 0 : Number(e.target.value); applyQuality(); };
-addEventListener('touchstart', () => { touchMode = true; if (state === 'race' || state === 'count') { $('touch').style.display = 'block'; show('touch', true); } }, { passive: true });
+// Permission sheets can blur the page in the middle of the user's setup tap.
+addEventListener('blur', () => { clearInputs(); setPause(true, 'The game lost focus. Center the wheel to resume.'); });
+document.addEventListener('visibilitychange', () => { if (document.hidden) interruptDriving(); });
+addEventListener('pagehide', interruptDriving);
+if (screen.orientation?.addEventListener) screen.orientation.addEventListener('change', interruptDriving);
+else addEventListener('orientationchange', interruptDriving);
+if (landscape.addEventListener) landscape.addEventListener('change', interruptDriving);
+else landscape.addListener(interruptDriving);
+for (const [key, el] of Object.entries(touchButtons)) {
+  el.addEventListener('pointerdown', event => {
+    if (state !== 'race' && state !== 'count') return;
+    heldPointers.set(event.pointerId, key);
+    updateKey(key);
+    el.setPointerCapture(event.pointerId);
+    event.preventDefault();
+  });
+  for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) {
+    el.addEventListener(type, event => {
+      if (heldPointers.get(event.pointerId) !== key) return;
+      heldPointers.delete(event.pointerId);
+      updateKey(key);
+    });
+  }
+  el.addEventListener('contextmenu', event => event.preventDefault());
+}
+$('qualitySelect').onchange = e => { qual = e.target.value === 'auto' ? 1 : Number(e.target.value); applyQuality(); };
 
 // ───────────────────────── main loop ─────────────────────────
 function simulate(dt) {
@@ -391,7 +503,7 @@ function simulate(dt) {
   stepPlayer(dt, racing);
   if (racing) {
     trackProgress(dt);
-    if (lap.completed) { P.done = 1; P.time = lap.splitsMs.at(-1) / 1000; raceT = P.time; state = 'finish'; finT = 0; show('touch', false); sfx.fanfare(); }
+    if (lap.completed) { P.done = 1; P.time = lap.splitsMs.at(-1) / 1000; raceT = P.time; state = 'finish'; finT = 0; stopWheel(); show('touch', false); sfx.fanfare(); }
   } else if (state === 'finish') {
     finT += dt;
     if (finT > 2.4 && $('results').classList.contains('hidden')) showResults();
@@ -418,11 +530,22 @@ let last = 0;
 function frame(now) {
   requestAnimationFrame(frame);
   const raw = last ? (now - last) / 1000 : 0; last = now;
+  if (state === 'race' || state === 'count') {
+    const sample = wheel.read();
+    if (sample.status === 'ready' && drivingView()) {
+      wheelSteer = sample.steer;
+      $('wheelNeedle').style.setProperty('--wheel-input', String(wheelSteer));
+    } else {
+      setPause(true, wheelMessages[sample.status] + ' Center the wheel to resume.');
+    }
+  }
   if (raw > 0 && raw < .5) frameMs += (raw * 1000 - frameMs) * .05;
-  if (raw > .5 && (state === 'race' || state === 'count')) setPause(true);
-  if (state === 'race' && raw < .5 && $('qualitySelect').value === 'auto') {
-    ema += (raw * 1000 - ema) * .05;
-    slowT = ema > 25 ? slowT + raw : 0;
+  if (raw > .5 && state === 'race') setPause(true, 'Rendering stalled. Center the wheel to resume.');
+  // Adapt while the campus is on screen, before the first timed physics step.
+  if (['title', 'count', 'race'].includes(state) && raw > 0 && $('qualitySelect').value === 'auto') {
+    const elapsed = Math.min(raw, .5);
+    ema += (elapsed * 1000 - ema) * .05;
+    slowT = ema > 25 ? slowT + elapsed : 0;
     if (slowT > 3 && qual < 2) { qual++; slowT = 0; ema = 16; applyQuality(); }
   }
   // Racing elapsed time is accumulated at 240 Hz, independent of rendering cadence.
