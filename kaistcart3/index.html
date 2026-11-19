@@ -159,12 +159,13 @@
   <div class="hud" id="msg"></div>
   <div class="hud" id="count"><div id="lights"><b></b><b></b><b></b></div><div id="countN"></div></div>
   <div class="hud glass" id="help"><kbd>W</kbd>/<kbd>↑</kbd> accelerate &nbsp; <kbd>S</kbd>/<kbd>↓</kbd> brake &nbsp; <kbd>A</kbd><kbd>D</kbd>/<kbd>←</kbd><kbd>→</kbd> steer<br>
+    In the air: <kbd>A</kbd>/<kbd>D</kbd> bank · tap <kbd>S</kbd> just after takeoff to flip<br>
     <kbd>Shift</kbd> hold to drift &nbsp; <kbd>Esc</kbd> pause &nbsp; <kbd>T</kbd> telemetry &nbsp; <kbd>M</kbd> mute</div>
   <div id="telemetry" class="hud glass hidden"><span class="lbl">VEHICLE</span><div id="telemetryText"></div></div>
   <div id="raceActions"><button id="pauseBtn" aria-label="Pause">Ⅱ</button></div>
 </div>
 
-<div id="touch" class="hidden"><button id="tL" aria-label="Steer left">◀</button><button id="tR" aria-label="Steer right">▶</button><button id="tB" aria-label="Brake and reverse">BRAKE</button><button id="tA" aria-label="Accelerate">THROTTLE</button><button id="tD" aria-label="Hold to drift">DRIFT</button></div>
+<div id="touch" class="hidden"><button id="tL" aria-label="Steer or bank left">◀</button><button id="tR" aria-label="Steer or bank right">▶</button><button id="tB" aria-label="Brake, reverse, or front flip in the air">BRAKE</button><button id="tA" aria-label="Accelerate">THROTTLE</button><button id="tD" aria-label="Hold to drift">DRIFT</button></div>
 
 <div class="panel" id="title">
   <div class="card glass">
@@ -177,8 +178,9 @@
     <div class="keys">
       <div><kbd>W</kbd> / <kbd>↑</kbd> &nbsp;Accelerate</div><div><kbd>S</kbd> / <kbd>↓</kbd> &nbsp;Brake · hold at rest to reverse</div>
       <div><kbd>A</kbd> / <kbd>←</kbd> &nbsp;Steer left</div><div><kbd>D</kbd> / <kbd>→</kbd> &nbsp;Steer right</div>
-      <div><kbd>Shift</kbd> &nbsp;Hold to drift · release for grip</div><div>Steer normally for full grip</div>
-      <div><kbd>Esc</kbd> &nbsp;Pause</div><div><kbd>M</kbd> &nbsp;Mute</div>
+      <div><kbd>Shift</kbd> &nbsp;Hold to drift</div><div><kbd>A</kbd> / <kbd>D</kbd> &nbsp;Bank in the air</div>
+      <div><kbd>S</kbd> / <kbd>↓</kbd> &nbsp;Tap just after takeoff for a front flip</div>
+      <div><kbd>Esc</kbd> &nbsp;Pause · <kbd>M</kbd> &nbsp;Mute</div>
     </div>
     <div class="settings"><label for="qualitySelect">Graphics quality</label><select id="qualitySelect"><option value="auto">Auto</option><option value="0">High</option><option value="1">Balanced</option><option value="2">Performance</option></select></div>
     <button class="go" id="startBtn" disabled>LOADING</button>
@@ -211,6 +213,16 @@
   </div>
 </div>
 
-<script type="module" src="js/main.js"></script>
+<script type="importmap">
+{"imports":{
+  "./js/world.js":"./js/world.js?v=jump2",
+  "./js/kart.js":"./js/kart.js?v=jump2",
+  "./js/vehicle-physics.js":"./js/vehicle-physics.js?v=jump2",
+  "./js/leaderboard.js":"./js/leaderboard.js?v=jump2",
+  "./js/replay-upload.js":"./js/replay-upload.js?v=jump2",
+  "./js/stabilize.js":"./js/stabilize.js?v=jump2"
+}}
+</script>
+<script type="module" src="js/main.js?v=jump2"></script>
 </body>
 </html>

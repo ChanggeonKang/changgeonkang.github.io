@@ -1,4 +1,5 @@
 export const FINISH_GRACE_TICKS = 240;
+export const REPLAY_VERSION = 2;
 
 export function inputMask(keys) {
   return (keys.up ? 1 : 0) | (keys.down ? 2 : 0) | (keys.left ? 4 : 0)
@@ -19,7 +20,7 @@ function runs(bytes, length) {
 // the current frame. Keep an unacknowledged packet intact for exact retries.
 export class ReplayUpload {
   constructor(session, client, changed) {
-    if (session.replayVersion !== 1 || !Number.isSafeInteger(session.chunkTicks)
+    if (session.replayVersion !== REPLAY_VERSION || !Number.isSafeInteger(session.chunkTicks)
       || session.chunkTicks < 1 || session.chunkTicks > 65536) {
       throw new Error('This replay version has changed. Reload the game and try again.');
     }

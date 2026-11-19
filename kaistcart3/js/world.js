@@ -654,14 +654,23 @@ function buildCourseBarriers(scene) {
 function buildBumps(scene) {
   const D = W.D, C = W.C;
   W.bumps = [];
+  // Keep both crests in each dense cluster, with a flat landing zone at
+  // top speed. Positive offsets follow the race direction in 2 m samples.
+  const trialOffsets = new Map([
+    [13901507646, -7], [13901507645, 4], // western 14 m double becomes 36 m
+    [13901505309, 5],                   // ordinary 8 m double becomes 18 m
+  ]);
   for (const b of D.bumps || []) {
     let best = 1e18, bi = -1;
     for (let i = 0; i < C.n; i++) { const d = (C.x[i] - b.x) ** 2 + (C.z[i] - b.z) ** 2; if (d < best) { best = d; bi = i; } }
     if (best < 49) {
+      const mappedCi = bi;
+      bi = mod(bi + (trialOffsets.get(b.id) || 0), C.n);
       const taggedWidth = b.dimensionSources?.width?.startsWith('osm:'), hw = Math.min(C.halfWidth[bi], taggedWidth ? b.width / 2 : C.halfWidth[bi]);
       const directionLength = Math.hypot(C.tx[bi], C.tz[bi]) || 1;
       W.bumps.push({ ...b, x: C.x[bi], z: C.z[bi], dx: C.tx[bi] / directionLength, dz: C.tz[bi] / directionLength, hw, width: hw * 2,
-        height: b.height ?? BUMP_H, length: b.length || BUMP_L * 2, ci: bi, snapDistanceM: Math.sqrt(best), sourceWidth: b.width,
+        height: b.height ?? BUMP_H, length: b.length || BUMP_L * 2, ci: bi, mappedCi,
+        snapDistanceM: Math.hypot(C.x[bi] - b.x, C.z[bi] - b.z), sourceWidth: b.width,
         dimensionSources: { ...b.dimensionSources, width: taggedWidth ? b.dimensionSources.width : 'assumed:rendered-road-width' } });
     } else {
       const R = ROAD[b.t]; if (!R || R[1] !== 2 || surfAt(b.x, b.z) === 3) continue;
@@ -680,6 +689,14 @@ function buildBumps(scene) {
       source: 'user-streetview-reference', photoNumbers: observed.photoNumbers, progressRange: observed.progressRange,
       evidence: observed.evidence, confidence: observed.confidence,
       dimensionSources: { height: 'assumed:0.10m', length: 'assumed:3.6m', width: 'assumed:rendered-road-width' } });
+  }
+  // Taller racing ramps on the apartment-lined western straight.
+  for (const bump of W.bumps) {
+    if (bump.ci < 893 || bump.ci > 1204) continue;
+    bump.height = bump.ci === 893 ? .37 : .38;
+    bump.length = 8;
+    bump.dimensionSources = { ...bump.dimensionSources,
+      height: 'gameplay:western-straight-jump', length: 'gameplay:western-straight-jump' };
   }
   W.courseBumps = W.bumps.filter(b => b.ci >= 0).map(b => b.ci).sort((a, b) => a - b);
   C.slow = new Uint8Array(C.n);

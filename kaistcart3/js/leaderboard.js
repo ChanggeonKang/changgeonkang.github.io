@@ -1,4 +1,5 @@
 // Public nickname/time records; no account credentials are bundled in the game.
+import { REPLAY_VERSION } from './replay-upload.js';
 export const COURSE_ID = 'kaist-splits-v8';
 export const RECORDS_ORIGIN = 'https://kaistcart3-records.almondcrown19.chatgpt.site';
 
@@ -27,7 +28,7 @@ export function createRecordsClient(origin = RECORDS_ORIGIN, fetcher = fetch) {
   }
   return {
     list: () => request('/api/leaderboard?course=' + encodeURIComponent(COURSE_ID)),
-    start: name => request('/api/runs/start', { name, course: COURSE_ID }),
+    start: name => request('/api/runs/start', { name, course: COURSE_ID, replayVersion: REPLAY_VERSION }),
     inputs: (session, fromTick, inputs, final) => request('/api/runs/inputs', {
       runId: session.runId, token: session.token, replayVersion: session.replayVersion, fromTick, inputs,
       ...(final ? {final: true} : {}),

@@ -98,6 +98,7 @@ function stepPlayer(dt, input) {
   const controls = {
     throttle: input && keys.up ? 1 : reversing ? -.45 : 0,
     brake: input ? (keys.down && !reversing ? 1 : 0) : 1,
+    flip: Boolean(input && keys.down),
     steer: P.steer,
     drift: Boolean(input && keys.drift),
     handbrake: false,
@@ -171,7 +172,10 @@ function updateCamera(dt) {
     return;
   }
   const spd = Math.hypot(P.vx, P.vz);
-  const ty = spd > 4 && P.vf > 0 ? P.th + angDiff(Math.atan2(P.vx, P.vz), P.th) * .55 : P.th; // lean toward the travel direction: drifts show their slip angle
+  const travelYaw = Math.atan2(P.vx, P.vz);
+  let ty = P.th;
+  if (!P.body.contacts) ty = spd > 1 ? travelYaw : cam.yaw;
+  else if (spd > 4 && P.vf > 0) ty += angDiff(travelYaw, P.th) * .55;
   if (cam.snap) { cam.yaw = P.th; cam.y = gy; }
   cam.yaw += angDiff(ty, cam.yaw) * (1 - Math.exp(-dt * 5.5));
   cam.y += (gy * .7 + (P.body.y - RIDE) * .3 - cam.y) * (1 - Math.exp(-dt * 5)); // follows the ground more than the kart, so a jump reads as a jump
@@ -245,6 +249,7 @@ function updateHud(dt) {
   setText('spd', Math.round(spd));
   $('arc').setAttribute('stroke-dasharray', (311 * clamp(spd / (P.body.parameters.maxSpeed * 3.6), 0, 1)).toFixed(1) + ' 415');
   $('arc').setAttribute('stroke', P.body.contacts ? '#7fd0ff' : '#ffd23f');
+  if (touchMode) setText('tB', P.body.contacts ? 'BRAKE' : 'FLIP');
   setText('time', fmt(P.done ? P.time : raceT));
   setText('driverName', P.name);
   setText('runMode', practice ? 'PRACTICE' : replay?.terminal && replay.result?.status !== 'finished' ? 'UNRANKED LAP' : 'TIME ATTACK');
@@ -265,7 +270,8 @@ function updateHud(dt) {
   // minimap
   const c = $('mini').getContext('2d'), S = $('mini').width, m = hud.m;
   c.clearRect(0, 0, S, S); c.drawImage(hud.base, 0, 0);
-  c.save(); c.translate(P.x * m.sc + m.ox, P.z * m.sc + m.oz); c.rotate(-P.th + Math.PI);
+  const mapHeading = !P.body.contacts && spd > 4 ? Math.atan2(P.vx, P.vz) : P.th;
+  c.save(); c.translate(P.x * m.sc + m.ox, P.z * m.sc + m.oz); c.rotate(-mapHeading + Math.PI);
   c.fillStyle = '#2f95e8'; c.strokeStyle = '#fff'; c.lineWidth = 3.5;
   c.beginPath(); c.moveTo(0, -15); c.lineTo(10, 10); c.lineTo(0, 5); c.lineTo(-10, 10); c.closePath(); c.fill(); c.stroke(); c.restore();
 }
