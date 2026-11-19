@@ -2,6 +2,15 @@
 export const COURSE_ID = 'kaist-splits-v8';
 export const RECORDS_ORIGIN = 'https://kaistcart-records.almondcrown19.chatgpt.site';
 
+export function recordDevice(nav = globalThis.navigator) {
+  const ua = nav?.userAgent || '';
+  if (nav?.userAgentData?.mobile || nav?.userAgentData?.platform === 'Android'
+    || /\b(?:Android|iPhone|iPad|iPod|Mobile)\b/i.test(ua)) return 'mobile';
+  // iPadOS can request desktop Safari pages with a Mac user agent.
+  const mac = nav?.platform === 'MacIntel' || ua.includes('Macintosh');
+  return mac && nav.maxTouchPoints > 1 ? 'mobile' : 'desktop';
+}
+
 export function createRecordsClient(origin = RECORDS_ORIGIN, fetcher = fetch) {
   async function request(path, body) {
     const controller = new AbortController();
@@ -27,7 +36,7 @@ export function createRecordsClient(origin = RECORDS_ORIGIN, fetcher = fetch) {
   }
   return {
     list: () => request('/api/leaderboard?course=' + encodeURIComponent(COURSE_ID)),
-    start: name => request('/api/runs/start', { name, course: COURSE_ID, replayVersion: 1 }),
+    start: name => request('/api/runs/start', { name, course: COURSE_ID, replayVersion: 1, device: recordDevice() }),
     inputs: (session, fromTick, inputs, final) => request('/api/runs/inputs', {
       runId: session.runId, token: session.token, replayVersion: session.replayVersion, fromTick, inputs,
       ...(final ? {final: true} : {}),

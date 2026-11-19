@@ -6,7 +6,7 @@ import { Vehicle, RIDE } from './vehicle-physics.js';
 import { FixedStepper, syncRacer, updateProgress, resolveWalls } from './race-sim.js';
 import { resolveCourseBarrier } from './course-barriers.js';
 import { LapTracker, normalizeName } from './time-attack.js';
-import { createRecordsClient } from './leaderboard.js';
+import { createRecordsClient, recordDevice } from './leaderboard.js';
 import { stabilizeVehicle } from './stabilize.js';
 import { FINISH_GRACE_TICKS, inputMask, ReplayUpload } from './replay-upload.js';
 import { snapshotLeader, compareSplit, timingProgress } from './split-times.js';
@@ -16,6 +16,7 @@ import { Sfx } from './audio.js';
 
 const $ = id => document.getElementById(id);
 const Q = new URLSearchParams(location.search);
+document.documentElement.classList.toggle('mobile-device', recordDevice() === 'mobile');
 const rnd = rng(99);
 const angDiff = (a, b) => { let d = a - b; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return d; };
 const fmt = t => { const m = Math.floor(t / 60), s = t - m * 60; return m + ':' + (s < 10 ? '0' : '') + s.toFixed(2); };
@@ -217,17 +218,21 @@ function buildHud() {
   $('chipLen').textContent = (C.len / 1000).toFixed(2) + ' km lap';
   $('chipBump').textContent = W.courseBumps.length + ' speed bumps';
 }
-const formatGap = ms => (ms > 0 ? '+' : ms < 0 ? '−' : '') + (Math.abs(ms) / 1000).toFixed(3) + ' s';
+const formatGap = (ms, unit = ' s') => (ms > 0 ? '+' : ms < 0 ? '−' : '') + (Math.abs(ms) / 1000).toFixed(3) + unit;
 const gapTrend = ms => ms < 0 ? 'ahead' : ms > 0 ? 'behind' : 'level';
 function updateSplitHud() {
-  show('splitPanel', state === 'race' || state === 'finish' || state === 'pause');
+  const visible = state === 'race' || state === 'finish' || state === 'pause';
+  show('splitPanel', visible);
   const officialSplits = replay?.result?.run?.splitsMs;
   const splits = officialSplits || lap.splitsMs, count = splits.length;
   setText('splitHeading', leaderSnapshot ? 'VS #1 AT START · ' + leaderSnapshot.name : 'LEADER COMPARISON');
   setText('splitCheckpoint', 'CHECKPOINT ' + String(count).padStart(2, '0') + ' / 32');
   const valid = Boolean(officialSplits) || lap.valid;
   const comparison = valid ? compareSplit(splits, leaderSnapshot) : null;
-  $('splitPanel').dataset.trend = comparison ? gapTrend(comparison.gapMs) : 'neutral';
+  const trend = comparison ? gapTrend(comparison.gapMs) : 'neutral';
+  $('splitPanel').dataset.trend = trend;
+  $('compactSplit').dataset.trend = trend;
+  setText('compactSplit', visible && comparison ? formatGap(comparison.gapMs, '') : '');
   $('splitSector').dataset.trend = comparison ? gapTrend(comparison.sectorGapMs) : 'neutral';
   if (!valid) {
     setText('splitDelta', '—'); setText('splitStatus', 'Invalid route'); setText('splitSector', 'Pause to restart');
@@ -290,7 +295,15 @@ function renderRecords() {
     for (const entry of leaderboardEntries.slice(0, 10)) {
       const row = body.insertRow();
       if (entry.name === P.name) row.className = 'me';
-      for (const value of [entry.rank, entry.name, 'Server replay', officialTime(entry.timeMs)]) row.insertCell().textContent = String(value);
+      for (const value of [entry.rank, entry.name, 'Server replay']) row.insertCell().textContent = String(value);
+      const time = row.insertCell();
+      time.textContent = officialTime(entry.timeMs);
+      if (entry.device === 'mobile') {
+        const badge = document.createElement('span');
+        badge.className = 'record-device';
+        badge.textContent = 'Mobile';
+        time.appendChild(badge);
+      }
     }
     if (!leaderboardEntries.length) { const cell = body.insertRow().insertCell(); cell.colSpan = 4; cell.textContent = 'Be the first to set a lap time.'; }
   }
@@ -319,6 +332,7 @@ function updateResultTime() {
   const ms = verified ? replay.result.run.timeMs : Math.round(P.time * 1000);
   $('resTimeLabel').textContent = verified ? 'Official time' : 'Local time';
   $('resTime').textContent = officialTime(ms);
+  show('resDevice', verified && replay.result.run.device === 'mobile');
   $('resSplit').textContent = leaderSnapshot ? formatGap(ms - leaderSnapshot.timeMs) + ' vs #1 ' + leaderSnapshot.name + ' at start' : 'No leader reference at the start of this run.';
   show('retrySaveBtn', Boolean(replay?.error && !replay.terminal));
   if (practice) {
