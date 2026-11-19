@@ -654,11 +654,12 @@ function buildCourseBarriers(scene) {
 function buildBumps(scene) {
   const D = W.D, C = W.C;
   W.bumps = [];
-  // Keep both crests in each dense cluster, with a flat landing zone at
-  // top speed. Positive offsets follow the race direction in 2 m samples.
+  // Leave enough road to settle at 130 km/h before the next ramp. Offsets
+  // from the mapped sites are in course samples (about 2 m each).
   const trialOffsets = new Map([
-    [13901507646, -7], [13901507645, 4], // western 14 m double becomes 36 m
-    [13901505309, 5],                   // ordinary 8 m double becomes 18 m
+    [13901507645, 16], [13901507644, 17], // first three big crests are 46 m apart
+    [13901507643, -6], [13901507642, -2], // middle cluster has 44 m spacing
+    [13901505309, 7],                    // ordinary pair has 22 m spacing
   ]);
   for (const b of D.bumps || []) {
     let best = 1e18, bi = -1;
@@ -692,8 +693,8 @@ function buildBumps(scene) {
   }
   // Taller racing ramps on the apartment-lined western straight.
   for (const bump of W.bumps) {
-    if (bump.ci < 893 || bump.ci > 1204) continue;
-    bump.height = bump.ci === 893 ? .37 : .38;
+    if (!(bump.mappedCi >= 900 && bump.mappedCi <= 1204)) continue;
+    bump.height = bump.mappedCi === 900 ? .37 : .38;
     bump.length = 8;
     bump.dimensionSources = { ...bump.dimensionSources,
       height: 'gameplay:western-straight-jump', length: 'gameplay:western-straight-jump' };

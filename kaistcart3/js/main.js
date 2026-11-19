@@ -290,8 +290,7 @@ function renderRecords() {
     for (const entry of leaderboardEntries.slice(0, 10)) {
       const row = body.insertRow();
       if (entry.name === P.name) row.className = 'me';
-      const timing = entry.verification === 'replay' ? 'Server replay' : 'Imported';
-      for (const value of [entry.rank, entry.name, timing, officialTime(entry.timeMs)]) row.insertCell().textContent = String(value);
+      for (const value of [entry.rank, entry.name, 'Server replay', officialTime(entry.timeMs)]) row.insertCell().textContent = String(value);
     }
     if (!leaderboardEntries.length) { const cell = body.insertRow().insertCell(); cell.colSpan = 4; cell.textContent = 'Be the first to set a lap time.'; }
   }
@@ -303,7 +302,7 @@ async function refreshRecords() {
     leaderboardEntries = data.entries;
     leaderboardLeader = snapshotLeader(data.leader);
     renderRecords();
-    $('leaderboardStatus').textContent = 'Best time per nickname. Imported times come from the original game.';
+    $('leaderboardStatus').textContent = 'Best verified lap per nickname on the 130 km/h course.';
   } catch (error) { $('leaderboardStatus').textContent = error.message; }
 }
 function finishRace() {
