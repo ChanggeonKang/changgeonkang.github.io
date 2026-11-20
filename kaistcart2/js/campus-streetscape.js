@@ -278,6 +278,14 @@ function plantWesternVerge(D,C,hAt,surfAt,templates){
     const h=(12.5+rand()*3.9)*(.64+.36*taper),w=9.1+rand()*2.1;
     plant(i,'pine',h,w,[7.55+rand()*1.85,6.65,6.05,10.3,12.5],.3+rand()*.055);
   }
+  // Behind the service turn, the front row alone frames the base of a
+  // distant building. Photo 97 shows another bank of foliage in that gap.
+  for(let i=967;i<=976;i++){
+    plant(i,'understory',5.0+rand()*1.15,6.8+rand(),[10.5,12.2,13.8,16.5,24.6],.28+rand()*.055);
+  }
+  for(const i of [968,972,974]){
+    plant(i,'pine',15.7+rand()*2.1,10.6,[12.9,15.1,16.6,24.9],.31+rand()*.04);
+  }
   return plants;
 }
 
