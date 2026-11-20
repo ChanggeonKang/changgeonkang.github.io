@@ -228,7 +228,7 @@ function e16(b, p, base, batches) {
   return { top, towerFootprint: tower, podiumFootprint: curved, podiumHeightM: 9.2, approximateHeightM: 41, capturePhotos:[52,53,54], features: ['curved pink podium', 'pale pink wall fields with small horizontal windows', 'teal corner cores and central glazing', 'dark vertical louvers', 'pale clock core', 'two open upper apertures'] };
 }
 
-function n3(b, p, base, batches) {
+function n3(b, p, base, batches, hAt) {
   const { stone, metal, glass } = batches;
   const silver = tint(0xcbd0d1), darkSilver = tint(0x778b90), teal = tint(0x407d8b), concrete = tint(0xb2b0a5);
   const shell = roundedRing(p, .27);
@@ -267,15 +267,48 @@ function n3(b, p, base, batches) {
     metal.quad([a[0], fascia0, a[1]], [q[0], fascia1, q[1]], [lb[0], base + 6.1, lb[1]], [la[0], base + 6.1, la[1]], tint(0x555e61));
     perimeter += L;
   });
-  // The photographed entry has large flared columns below the cantilever.
-  for (const [x, z, height, radius] of [[-51,-316,6.5,2.8],[-30,-303,7.1,2.6],[-19,-276,7.7,2.4],[-32,-245,8.1,2.5]]) {
-    const circle = Array.from({ length: 24 }, (_, k) => [x + Math.cos(k * Math.PI / 12) * radius, z + Math.sin(k * Math.PI / 12) * radius]);
-    if (ringInside(circle, p)) metal.geometry(new THREE.CylinderGeometry(radius, .9, height, 20), x, base + .32 + height / 2, z, silver);
+  // November street view from the red descent: the posts and steps occupy
+  // the space BETWEEN the upper rim and the recessed glazed lobby.
+  const arcadeColumns=[], entrySteps=[];
+  const underRim=(i,t,depth)=>{
+    const j=(i+1)%shell.length;
+    return [0,1].map(k=>mix(mix(shell[i][k],shell[j][k],t),mix(lower[i][k],lower[j][k],t),depth));
+  };
+  let facadeLength=0, nextPost=2.3, entryFace=-1, entryLength=0;
+  for (let i=0;i<shell.length;i++) {
+    const a=shell[i], q=shell[(i+1)%shell.length], normal=faceNormal(a,q,sign);
+    if ((a[1]+q[1])/2 < -271 || normal[0]<.07 || normal[2]<.09) continue;
+    const L=Math.hypot(q[0]-a[0],q[1]-a[1]);
+    if (normal[2]>.75 && L>entryLength) {entryFace=i;entryLength=L;}
+    for (;nextPost<facadeLength+L;nextPost+=9.2) {
+      const t=(nextPost-facadeLength)/L, depth=.19, [x,z]=underRim(i,t,depth);
+      const foot=Math.max(base+.31,hAt(x,z)-.09), edgeY=base+6+(mix(a[1],q[1],t)+330)/115*3.1;
+      const topY=mix(edgeY,base+6.1,depth)+.03, height=topY-foot;
+      if (height<1) continue;
+      metal.geometry(new THREE.CylinderGeometry(.43,.37,height,16),x,(topY+foot)/2,z,tint(0xd8d8ce));
+      metal.geometry(new THREE.CylinderGeometry(.46,.46,.14,16),x,foot+.11,z,darkSilver);
+      arcadeColumns.push({x,z,bottom:foot,top:topY});
+    }
+    facadeLength+=L;
   }
-  const stair = fitRectangle(p, [[16, 8], [12, 7]], 'north');
-  if (stair) for (let i = 0; i < 18; i++) volume(stone, sliceRect(stair, i / 18, 1), base + .32 + i * .26, base + .32 + (i + 1) * .26, concrete);
+  if (entryFace>=0) {
+    const i=entryFace, j=(i+1)%lower.length, near=.28, far=.81, halfSpan=Math.min(.36,5.6/entryLength);
+    const footprint=(a,b)=>[underRim(i,.5-halfSpan,a),underRim(i,.5+halfSpan,a),
+      underRim(i,.5+halfSpan,b),underRim(i,.5-halfSpan,b)];
+    const front=footprint(near,near), floor=Math.max(...front.map(v=>hAt(...v)));
+    const steps=9;
+    for (let k=0;k<=steps;k++) {
+      const d0=mix(near,far,k/steps), d1=k===steps?.985:mix(near,far,(k+1)/steps);
+      const stair=footprint(d0,d1), topY=floor+.16*(Math.min(k+1,steps));
+      volume(stone,stair,Math.min(topY-.16,...stair.map(v=>hAt(...v)))-.08,topY,k%2 ? tint(0xbcb8aa) : concrete);
+      entrySteps.push(stair);
+    }
+    const normal=faceNormal(lower[i],lower[j],sign), landing=floor+.16*steps;
+    for (let t=.22;t<=.8;t+=.075) facade(metal,lower[i],lower[j],t,t+.006,landing,base+6.48,silver,normal);
+    facade(metal,lower[i],lower[j],.20,.80,base+6.28,base+6.4,silver,normal);
+  }
   roof(metal, shell, top, silver);
-  return { top, approximateHeightM: 18.5, shellFootprint: shell, lowerFootprint: lower, capturePhotos:[50,51,52,53,54], features: ['rounded glass shell', 'S-shaped silver front ribbon', 'sweeping silver belt', 'inset lower storey', 'flared support columns', 'entry stair'] };
+  return { top, approximateHeightM: 18.5, shellFootprint: shell, lowerFootprint: lower, arcadeColumns, entrySteps, capturePhotos:[50,51,52,53,54], features: ['rounded glass shell', 'S-shaped silver front ribbon', 'sweeping silver belt', 'inset lower storey', 'silver columns beneath southeast cantilever', 'terraced entry stair and landing'] };
 }
 
 function e9(b, p, base, { stone, metal, glass }) {
@@ -505,7 +538,7 @@ export function buildLandmarks(scene, D, hAt) {
     const base = Math.min(...elevations) - .65;
     const batches = { stone: new Batch(), metal: new Batch(), glass: new Batch() };
     const builders = { E16: e16, N3: n3, E9: e9, E13: e13, 'W4-1':westDorm, 'W4-2':westDorm };
-    const detail = builders[b.ref](b, p, base, batches);
+    const detail = builders[b.ref](b, p, base, batches, hAt);
     const group = new THREE.Group(); group.name = `landmark-${b.ref}`;
     group.userData = { ref: b.ref, sourceFootprint: p, baseElevationM: base, ...detail,
       fidelity: 'photo-informed approximation; footprint from source data, heights and details not surveyed',

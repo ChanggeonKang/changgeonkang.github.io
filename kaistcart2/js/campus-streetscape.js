@@ -97,7 +97,7 @@ function crownLobe(seed) {
 }
 function foliageTemplate(kind){
   const lobes=kind==='sculpted'?[[0,.2,0,.38,.19,.31],[.03,.43,.02,.34,.18,.29],[-.04,.65,-.015,.31,.18,.28],[.015,.85,0,.28,.17,.25],[-.2,.35,.01,.19,.15,.23],[.17,.59,.02,.2,.16,.22]]:
-    [[0,.87,0,.29,.13,.27],[-.18,.68,.04,.27,.12,.24],[.19,.73,-.04,.27,.12,.25],[-.03,.99,-.04,.23,.1,.23],[.03,.58,.16,.24,.12,.22],[-.13,.82,-.18,.23,.11,.2],[.16,.89,.13,.22,.11,.2]];
+    [[0,.84,0,.29,.17,.27],[-.18,.64,.04,.28,.13,.24],[.19,.69,-.04,.29,.14,.25],[-.03,.96,-.04,.21,.13,.21],[.03,.53,.16,.26,.13,.24],[-.13,.78,-.18,.24,.15,.22],[.16,.85,.13,.22,.14,.21],[.05,.72,.13,.22,.14,.23],[0,1.03,0,.13,.12,.13]];
   return merge(lobes.map(([x,y,z,a,b,c],i)=>[crownLobe(i+.4),transform(x,y,z,a,b,c),i%2?0xe9edde:0xffffff]),true);
 }
 function trunkTemplate(kind){
@@ -149,18 +149,73 @@ function apartmentDetails(scene,D,hAt){
   const models=[glass.mesh('w4-background-apartment-glazing',new THREE.MeshStandardMaterial({vertexColors:true,roughness:.28,metalness:.28,polygonOffset:true,polygonOffsetFactor:-2,polygonOffsetUnits:-2})),frames.mesh('w4-background-apartment-panels',new THREE.MeshStandardMaterial({vertexColors:true,roughness:.83,metalness:.03,polygonOffset:true,polygonOffsetFactor:-3,polygonOffsetUnits:-3}))].filter(Boolean);models.forEach(m=>scene.add(m));return{models,records};
 }
 
+// In photos 99–100 the low stone wall follows the edge of the W4-1
+// parking lot behind the sidewalk. The driveways at either end stay open.
+function buildParkingWall(scene, D, C, hAt) {
+  const lot = D.parking?.find(p => p.id === 1258801990);
+  if (!lot || C.n <= 1046) return null;
+  const course = samples(C), stones = new Facades();
+  const front = lot.p.find((a, i) => {
+    const b = lot.p[(i + 1) % lot.p.length];
+    if (Math.hypot(b[0] - a[0], b[1] - a[1]) < 35) return false;
+    return [a, b].every(p => {
+      const s = nearest(...p, course);
+      return s && s.side < -s.half && s.side > -s.half - 4 && Math.abs(s.along) < 3;
+    });
+  });
+  if (!front) return null;
+  const back = lot.p[(lot.p.indexOf(front) + 1) % lot.p.length];
+  const length = Math.hypot(back[0] - front[0], back[1] - front[1]);
+  const tx = (back[0] - front[0]) / length, tz = (back[1] - front[1]) / length;
+  const station = nearest(...front, course);
+  const sign = (C.x[station.i] - front[0]) * tz - (C.z[station.i] - front[1]) * tx > 0 ? 1 : -1;
+  const nx = sign * tz, nz = -sign * tx;
+  const face = [nx, 0, nz], reverse = [-nx, 0, -nz];
+  const at = (s, depth, height) => {
+    const x = front[0] + tx*s, z = front[1] + tz*s;
+    return [x + nx*depth, hAt(x, z) + height, z + nz*depth];
+  };
+  const start = 1.8, end = length - 1.8, cap = .92;
+  const colours = [0x5c584d, 0x635f52, 0x56584e, 0x6e685a];
+  const count = Math.ceil((end - start) / 1.4), span = (end - start) / count;
+  for (let i = 0; i < count; i++) {
+    const a = start + i*span, b = a + span;
+    stones.quad(at(a,0,.17), at(b,0,.17), at(b,0,cap), at(a,0,cap), face, 0x45473e);
+    stones.quad(at(b,-.29,.17), at(a,-.29,.17), at(a,-.29,cap), at(b,-.29,cap), reverse, 0x59594f);
+    stones.quad(at(a,.025,cap), at(b,.025,cap), at(b,-.315,cap), at(a,-.315,cap), [0,1,0], 0x888476);
+  }
+  for (let row = 0; row < 3; row++) {
+    const bottom = .20 + row*.245, top = bottom + .225;
+    for (let i = 0; i <= count; i++) {
+      const s = start + (i - (row % 2)*.5)*span;
+      const a = Math.max(start,s + .013), b = Math.min(end,s + span - .013);
+      if (a >= b) continue;
+      stones.quad(at(a,.012,bottom), at(b,.012,bottom), at(b,.012,top), at(a,.012,top), face, colours[(i*7 + row*5) % colours.length]);
+    }
+  }
+  for (const [s, direction] of [[start,-1],[end,1]]) {
+    stones.quad(at(s,0,.17), at(s,-.29,.17), at(s,-.29,cap), at(s,0,cap), [direction*tx,0,direction*tz], 0x625f53);
+  }
+  const wall = stones.mesh('W4-1 parking lot stone wall',new THREE.MeshStandardMaterial({vertexColors:true,roughness:.95}));
+  wall.castShadow = true;
+  scene.add(wall);
+  return wall;
+}
+
 export function buildStreetscape(scene,D,C,hAt,surfAt){
   const list=samples(C),rand=random(20260426),plants={sculpted:[],pine:[]},models=[];
   const templates={sculpted:foliageTemplate('sculpted'),pine:foliageTemplate('pine')}, leafMap=evergreenTexture();
   for(const[kind,stride]of[['sculpted',2],['pine',4]]){
     const template=templates[kind],unitRadius=radiusOf(template);
-    for(let k=kind==='pine'?1:0;k<list.length;k+=stride){const a=list[k],height=kind==='sculpted'?4.7+rand()*1.25:11.5+rand()*3.7,width=height*(kind==='sculpted'?.96:.69),radius=unitRadius*width;
-      const off=a.half+radius+(kind==='sculpted'?1.25:7.3),along=(rand()-.5)*.9,x=a.x+a.tz*off+a.tx*along,z=a.z-a.tx*off+a.tz*along;
+    for(let k=kind==='pine'?1:0;k<list.length;k+=stride){const a=list[k],height=kind==='sculpted'?4.45+rand()*1.5:11.5+rand()*3.7,width=height*(kind==='sculpted'?1.09:.69),radius=unitRadius*width;
+      const off=a.half+radius+(kind==='sculpted'?.94:7.3),along=(rand()-.5)*.9,x=a.x+a.tz*off+a.tx*along,z=a.z-a.tx*off+a.tz*along;
       if(!permitted(x,z,radius,C,surfAt))continue;const y=hAt(x,z);if(!Number.isFinite(y))continue;
-      plants[kind].push({x,y,z,height,width,radius,rotation:rand()*Math.PI*2,light:kind==='sculpted'?.255+rand()*.045:.27+rand()*.05,courseClearanceM:courseMargin(x,z,C)-radius,estimated:true});
+      plants[kind].push({x,y,z,height,width,radius,rotation:rand()*Math.PI*2,light:kind==='sculpted'?.315+rand()*.06:.28+rand()*.045,courseClearanceM:courseMargin(x,z,C)-radius,estimated:true});
     }models.push(...addPlants(scene,plants[kind],kind,template,trunkTemplate(kind),leafMap));
   }
   const apartments=apartmentDetails(scene,D,hAt);models.push(...apartments.models);
-  const metadata={area:'W4-1/W4-2 western approach',source:'User streetview frame and OSM building footprints/levels',nearbyReferenceLink:'https://naver.me/xIF5lerm',referenceDates:'Attached frame appears to show clipped 2026-04; separate linked panoramas were reported by root as 2025-04. They are not treated as the same capture.',treePositions:'Estimated roadside rows; not individual surveyed trees',sculptedEvergreens:plants.sculpted.length,pines:plants.pine.length,drawCalls:models.length,minimumCourseClearanceM:Math.min(...Object.values(plants).flat().map(a=>a.courseClearanceM)),collisionAdded:false};
+  const wall = buildParkingWall(scene,D,C,hAt);
+  if(wall)models.push(wall);
+  const metadata={area:'W4-1/W4-2 western approach',source:'User spring captures, November 2026 W4-1 side and forward panoramas, OSM building and parking footprints',nearbyReferenceLink:'https://map.naver.com/p?c=17.00,0,0,0,adh&p=eHoxrH85VcgXrs-quPz5Wg,-26,10,80,Float',treePositions:'Estimated roadside rows; not individual surveyed trees',sculptedEvergreens:plants.sculpted.length,pines:plants.pine.length,drawCalls:models.length,minimumCourseClearanceM:Math.min(...Object.values(plants).flat().map(a=>a.courseClearanceM)),collisionAdded:false};
   models.forEach(m=>{m.userData.streetscape=metadata;});return{models,plants,apartments:apartments.records,zones:getStreetscapeZones(C),metadata};
 }

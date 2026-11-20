@@ -180,7 +180,13 @@ export function buildParking(scene, D, hAt, surfAt, TEX = {}) {
         line(inner[0],inner[3]);line(inner[1],inner[2]);line(row%2?inner[2]:inner[0],row%2?inner[3]:inner[1]);
         const center=point(centerU,centerV), s={lotId:lot.id,x:center[0],z:center[1],u:A.u,v:A.v,facing:row%2?1:-1,corners:q};stalls.push(s);record.stalls++;
         const slope=Math.max(Math.abs(hAt(s.x+1,s.z)-hAt(s.x-1,s.z)),Math.abs(hAt(s.x,s.z+1)-hAt(s.x,s.z-1)))/2;
-        const choice=rand();if(choice<.48&&Number.isFinite(slope)&&slope<.12)candidates.push({...s,colour:Math.floor(rand()*8),priority:rand(),record});
+        // The November W4-1 panorama shows the row of filled bays behind the
+        // low wall. Prioritise its verified parking spaces within the same fleet.
+        const westDormFront = lot.id === 1258801990;
+        const choice=rand();
+        if ((westDormFront || choice<.48) && Number.isFinite(slope) && slope<.12) {
+          candidates.push({...s,colour:Math.floor(rand()*8),priority:rand()-(westDormFront?1:0),record});
+        }
       }
     }
     record.paintVertexCount=paint.positions.length/3-paintStart;

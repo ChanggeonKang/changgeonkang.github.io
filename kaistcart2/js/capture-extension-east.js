@@ -23,8 +23,8 @@ export const eastBumps=Object.freeze([
 const CONFIG={
  E11:{style:'glassPiers',height:19.4,floors:4,color:0xd8d5c9,photos:[56,57]},
  'E6-5':{style:'labTower',height:26,floors:7,color:0xd3d0c2,photos:[58]},
- 'E6-4':{style:'brick',height:12.2,floors:3,color:0x916051,photos:[58,59,63]},
- 'E6-6':{style:'ribs',height:23.6,floors:6,color:0xa7ada9,photos:[59,60,62]},
+ 'E6-4':{style:'chemistryBrick',height:20.2,floors:5,color:0xa56850,photos:[58,59,63]},
+ 'E6-6':{style:'ribs',height:23.6,floors:6,color:0xc3c9cd,photos:[59,60,62]},
  E12:{style:'energy',height:7.4,floors:1,color:0xd8d9d0,photos:[59,60]},
  E10:{style:'framedBrick',height:8.4,floors:2,color:0x865b52,photos:[61]},
  E8:{style:'dorm',height:13.3,floors:4,color:0xc3b9a1,photos:[62]},
@@ -58,8 +58,8 @@ function roof(B,p,y,c){for(const t of THREE.ShapeUtils.triangulateShape(p.map(q=
 function interior(p,r){const xs=p.map(a=>a[0]),zs=p.map(a=>a[1]);let best=null,clear=r;for(let x=Math.min(...xs)+r;x<Math.max(...xs)-r;x+=2)for(let z=Math.min(...zs)+r;z<Math.max(...zs)-r;z+=2){if(inPoly(x,z,p)){const d=boundary(x,z,p);if(d>clear){best=[x,z];clear=d;}}}return best;}
 // KAIST's E3-5 exterior (news.kaist.ac.kr/news/html/news/?mode=V&mng_no=46670)
 // and captures 71–72 show four rows of punched upper windows above two glazed
-// levels. Its blue end glazing wraps the corner. The detached parking shade
-// in those views is a separate structure with an unresolved ground position.
+// levels. Its blue end glazing wraps the corner. The separate solar carports
+// are oriented to the mapped parking bays, not the building.
 function socFacade(B, p, base, height) {
  const axis = ([x,z]) => x * .53 + z * .85;
  const endBay = Math.max(...p.map(axis)) - 9;
@@ -99,10 +99,34 @@ function building(B,b,cfg,hAt){
  }
  faces(p,(a,b,L,n)=>{
   if(L<1.2)return;const slots=Math.max(1,Math.round(L/(style==='ibsFins'?1.35:style==='ribs'?.85:3.1)));
-  if(['ribs','ibsFins','parkingFins'].includes(style)){
-   panel(B.glass,a,b,.012,.988,base+.45,top-.4,style==='ribs'?0x505d60:0x477481,n);
+  if(style==='ribs'){
+   // E6-6's street-facing screen is silver, with glazing recessed in thin
+   // horizontal bands and fine metal ribs continuing over the openings.
+   const step=H/cfg.floors;
+   for(let f=0;f<cfg.floors;f++){
+    const sill=base+(f+.28)*step;
+    panel(B.glass,a,b,0,1,sill,sill+step*.28,0x4c5c64,n);
+   }
+   for(let j=0;j<slots;j++){
+    const t=(j+.5)/slots;
+    panel(B.detail,a,b,t-.043/L,t+.043/L,base+.15,top-.12,j%5===0?0x99a6af:0xabb5bd,n);
+   }
+  }else if(['ibsFins','parkingFins'].includes(style)){
+   panel(B.glass,a,b,.012,.988,base+.45,top-.4,0x477481,n);
    for(let j=0;j<slots;j++){const t=(j+.5)/slots,w=(style==='parkingFins'?.48:.19)/slots;panel(B.detail,a,b,t-w/2,t+w/2,base+.5,top-.3,style==='parkingFins'?[0xb9c6d0,0xe1e0d3,0x829aaf,0xd1c69b][j%4]:cfg.color,n);}
    for(let f=0;f<=cfg.floors;f++){const y=base+f*H/cfg.floors;panel(B.detail,a,b,0,1,y,Math.min(top,y+(style==='ibsFins'?.65:.3)),cfg.color,n);}
+  }else if(style==='chemistryBrick'){
+   const floor=H/cfg.floors, bays=Math.max(1,Math.round(L/7.4));
+   panel(B.glass,a,b,0,1,base+.12,base+floor-.22,0x33464a,n);
+   for(let f=1;f<cfg.floors;f++){
+    const sill=base+f*floor+.44;
+    for(let j=0;j<bays;j++){
+     const left=(j+.08)/bays,right=(j+.92)/bays;
+     panel(B.glass,a,b,left,right,sill,sill+1.86,0x354448,n);
+     for(let m=1;m<=2;m++){const t=mix(left,right,m/3);panel(B.detail,a,b,t-.035/L,t+.035/L,sill,sill+1.86,0x596366,n);}
+    }
+    for(const lift of [0,.25])panel(B.detail,a,b,0,1,sill+2.03+lift,sill+2.07+lift,0xc18a70,n);
+   }
   }else if(style==='glassPiers'){
    panel(B.glass,a,b,.025,.975,base+.8,top-1,0x4c7889,n);
    const bays=Math.max(1,Math.round(L/9));for(let j=0;j<=bays;j++){const t=j/bays;panel(B.detail,a,b,Math.max(0,t-.8/L),Math.min(1,t+.8/L),base,top-3,cfg.color,n);}
@@ -163,6 +187,72 @@ let managed=[];
 // Suppress generic tree centres only in the actual accepted photographic plant
 // crowns. This avoids blanket removal of the surrounding campus woodland.
 export function isCaptureEastManaged(x,z){return managed.some(p=>(x-p.x)**2+(z-p.z)**2<(p.radius+2.5)**2);}
+
+// November 2026 street views at 58–59 show an opaque silver link, its blue
+// forked steelwork and a timber bench on the lawn beside the mapped footway.
+function e6Courtyard(B,D,C,hAt,surfAt){
+ const chemistry=D.buildings.find(b=>b.ref==='E6-4'), science=D.buildings.find(b=>b.ref==='E6-6');
+ if(!chemistry||!science)return null;
+ // These two attachment lines sit just inside the facing source footprints.
+ const start=[231.7,-53.4],end=[236.1,-74.8],width=4.1;
+ const dx=end[0]-start[0],dz=end[1]-start[1],length=Math.hypot(dx,dz);
+ const angle=Math.atan2(dx,dz);
+ const at=(along,across)=>[start[0]+(dx*along+dz*across)/length,start[1]+(dz*along-dx*across)/length];
+ if(![-1,1].every(sign=>inPoly(...at(0,sign*width/2),chemistry.p)&&inPoly(...at(length,sign*width/2),science.p)))return null;
+ const soffit=(hAt(...start)+hAt(...end))*.5+8.4, wallHeight=3.35;
+ function box(along,across,y,w,h,d,color){
+  const [x,z]=at(along,across);
+  B.detail.box(x,y,z,w,h,d,color,null,angle);
+ }
+ box(length/2,0,soffit+wallHeight/2,width,wallHeight,length,0xb4bec5);
+ box(length/2,0,soffit,width+.14,.23,length,0x495866);
+ box(length/2,0,soffit+wallHeight,width+.14,.14,length,0xc4cdd0);
+ const panels=Math.ceil(length/1.8);
+ for(const side of [-1,1]){
+  for(let j=1;j<panels;j++){
+   box(j*length/panels,side*width/2,soffit+wallHeight/2,.035,wallHeight-.12,.04,0x9ea9b2);
+  }
+ }
+ const supports=[];
+ function steel(from,to,width){
+  const a=new THREE.Vector3(...from),b=new THREE.Vector3(...to),axis=b.clone().sub(a);
+  const geometry=new THREE.BoxGeometry(width,axis.length(),width);
+  const rotation=new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),axis.normalize());
+  B.detail.add(geometry,new THREE.Matrix4().compose(a.lerp(b,.5),rotation,new THREE.Vector3(1,1,1)),0x35759c);
+ }
+ for(const across of [-1.38,1.38]){
+  const station=length*.48,[x,z]=at(station,across),ground=hAt(x,z),joint=[x,soffit-3.6,z];
+  box(station,across,ground+.08,.63,.24,.73,0x8f9692);
+  steel([x,ground+.12,z],joint,.29);
+  for(const ahead of [-3.25,3.25]){
+   const [ex,ez]=at(station+ahead,across);
+   steel(joint,[ex,soffit-.06,ez],.29);
+  }
+  supports.push([x,z]);
+ }
+ // The central grass and paved approach are already drawn from the map.
+ // The bench stands behind the roadside path and faces the course.
+ const bench=[197.3,-73],heading=.18;
+ if(free(...bench,1.3,D,C,surfAt)){
+  const [x,z]=bench,y=hAt(x,z);
+  const benchPoint=(u,v)=>[x+Math.cos(heading)*u+Math.sin(heading)*v,z-Math.sin(heading)*u+Math.cos(heading)*v];
+  for(const u of [-.74,.74]){
+   const [px,pz]=benchPoint(u,0);
+   const base=Math.min(...[-.045,.045].flatMap(du=>[-.215,.215].map(v=>hAt(...benchPoint(u+du,v)))))-.04;
+   B.detail.box(px,(base+y+.44)*.5,pz,.09,y+.44-base,.43,0x424b4d,null,heading);
+   const [bx,bz]=benchPoint(u,.22);
+   B.detail.box(bx,y+.65,bz,.08,.52,.07,0x424b4d,null,heading);
+  }
+  for(const off of [-.17,0,.17]){
+   const [px,pz]=benchPoint(0,off);
+   B.detail.box(px,y+.46,pz,2.05,.065,.145,0x704f41,null,heading);
+  }
+  const [bx,bz]=benchPoint(0,.24);
+  for(const lift of [.67,.82])B.detail.box(bx,y+lift,bz,2.05,.115,.06,0x795647,null,heading);
+ }
+ return {attachments:[{ref:chemistry.ref,point:start},{ref:science.ref,point:end}],width,length,soffit,wallHeight,supports,
+  sourceViews:['2026-11-20-B-midpoint','2026-11-20-B-e6-right'],dimensions:'Estimated from two street views and the mapped building outlines.'};
+}
 function courseMargin(x,z,C){let d=Infinity;for(let i=0;i<C.n;i++){const j=(i+1)%C.n;d=Math.min(d,distance(x,z,[C.x[i],C.z[i]],[C.x[j],C.z[j]])-Math.max(C.halfWidth[i],C.halfWidth[j]));}return d;}
 function free(x,z,r,D,C,surfAt,grass=true){
  if(grass&&surfAt(x,z)!==0||courseMargin(x,z,C)<r+1)return false;
@@ -194,6 +284,74 @@ function vegetation(scene,D,C,hAt,surfAt){
  for(const kind of kinds){const a=plants.filter(p=>p.kind===kind),t=templates[kind];for(const [name,g]of Object.entries(t)){if(name==='radius'||!g)continue;if(!a.length){g.dispose();continue;}const m=new THREE.InstancedMesh(g,material,a.length);m.name=`east-${kind}-${name}`;a.forEach((p,i)=>m.setMatrixAt(i,new THREE.Matrix4().compose(new THREE.Vector3(p.x,p.y,p.z),new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0),p.rotation),new THREE.Vector3(p.width,p.height,p.width))));m.instanceMatrix.needsUpdate=true;m.computeBoundingSphere();m.castShadow=true;m.receiveShadow=true;scene.add(m);models.push(m);}}
  const stakes=details.mesh('east-tree-support-stakes',material);if(stakes){scene.add(stakes);models.push(stakes);}managed=plants;return{models,plants,zoneCounts:counts};
 }
+// November 2026 E3 street views, facing the parking lot from photos 71–72.
+// Two separate curved roofs are visible. The dimensions and post spacing are
+// estimates. The front row follows the southeast edge of OSM lot 504338839.
+function e3SolarParking(batch, data, hAt) {
+ if (!data.parking?.some(lot => lot.id === 504338839)) return [];
+ const anchor = new THREE.Vector2(368.8, 300.8);
+ const along = new THREE.Vector2(323.5, 291.4).sub(anchor).normalize();
+ const inward = new THREE.Vector2(-along.y, along.x);
+ const world = (u, v) => [anchor.x + u * along.x + v * inward.x, anchor.y + u * along.y + v * inward.y];
+ const rows = [
+  {name:'verge', panorama:'cbTYSEqsy7psd9LCN8hziA', start:2, end:44, front:-1.1, back:5.2, postsAt:-.25, bays:6},
+  {name:'interior', panorama:'76nJgVy54Z3xDQc7SjFM1g', start:-16, end:11, front:18.4, back:24.05, postsAt:18.23, bays:4}
+ ];
+ const steel = 0x78858a, underside = 0x485256, edge = 0xb2bdc0;
+ const up = new THREE.Vector3(0,1,0);
+ function tube(a,b,radius,color,sides) {
+  const start = new THREE.Vector3(...a), end = new THREE.Vector3(...b);
+  const delta = end.clone().sub(start);
+  const transform = new THREE.Matrix4().compose(start.add(end).multiplyScalar(.5),
+   new THREE.Quaternion().setFromUnitVectors(up,delta.clone().normalize()),new THREE.Vector3(1,1,1));
+  batch.add(new THREE.CylinderGeometry(radius,radius,delta.length(),sides),transform,color);
+ }
+ return rows.map(row => {
+  const {start,end,front,back,postsAt,bays} = row;
+  const middle = (front+back)/2, width = back-front;
+  const groundStart = hAt(...world(start,postsAt)), groundEnd = hAt(...world(end,postsAt));
+  const roofY = (u,v) => mix(groundStart,groundEnd,(u-start)/(end-start)) + 3.82 - .49*((v-middle)/(width/2))**2;
+  const surface = (u,v,offset=0) => {const [x,z]=world(u,v); return [x,roofY(u,v)+offset,z];};
+  const sections = 4, panelColumns = Math.round((end-start)/2.1);
+  for (let section=0; section<sections; section++) {
+   const v0 = mix(front,back,section/sections), v1 = mix(front,back,(section+1)/sections);
+   // Winding faces the underside towards the driver. The top panel faces use
+   // the opposite winding; inset seams expose the lighter backing between them.
+   batch.quad(surface(start,v0,-.095),surface(end,v0,-.095),surface(end,v1,-.095),surface(start,v1,-.095),underside);
+   batch.quad(surface(start,v1),surface(end,v1),surface(end,v0),surface(start,v0),edge);
+   // Interpolate on the flat facet so the modules cannot intersect the substrate.
+   const panelPoint = (u,t) => {
+    const a=surface(u,v0,.018), b=surface(u,v1,.018);
+    return a.map((coord,i)=>mix(coord,b[i],t));
+   };
+   for (let col=0; col<panelColumns; col++) {
+    const u0=mix(start,end,col/panelColumns)+.027, u1=mix(start,end,(col+1)/panelColumns)-.027;
+    batch.quad(panelPoint(u0,.982),panelPoint(u1,.982),panelPoint(u1,.018),panelPoint(u0,.018),(section+col)%5 ? 0x354658 : 0x3e4d60);
+   }
+   for (const u of [start,end]) batch.quad(surface(u,v0,-.095),surface(u,v1,-.095),surface(u,v1),surface(u,v0),edge,
+    [along.x*(u===start?-1:1),0,along.y*(u===start?-1:1)]);
+  }
+  for (const v of [front,back]) batch.quad(surface(start,v,-.095),surface(end,v,-.095),surface(end,v),surface(start,v),edge,
+   [inward.x*(v===front?-1:1),0,inward.y*(v===front?-1:1)]);
+  const supports = [];
+  for (let i=0;i<=bays;i++) {
+   const u = mix(start+.7,end-.7,i/bays), [x,z] = world(u,postsAt), ground = hAt(x,z);
+   const postTop = surface(u,postsAt,-.13);
+   tube([x,ground+.02,z],postTop,.122,steel,8);
+   tube([x,ground+.02,z],[x,ground+.25,z],.23,0x9c9e95,8);
+   const knee = [x,postTop[1]-.88,z];
+   tube(knee,surface(u,middle+.49,-.11),.069,steel,6);
+   if (i<bays) tube(knee,surface(u+1.18,postsAt,-.12),.05,steel,6);
+   if (i>0) tube(knee,surface(u-1.18,postsAt,-.12),.05,steel,6);
+   tube(surface(u,front,-.17),surface(u,middle,-.17),.08,steel,6);
+   tube(surface(u,middle,-.17),surface(u,back,-.17),.08,steel,6);
+   supports.push([x,z]);
+  }
+  return {kind:'solar-parking-roof',row:row.name,photos:[71,72],panorama:row.panorama,captureMonth:'2026-11',supports,
+   footprint:[world(start,front),world(end,front),world(end,back),world(start,back)],estimated:true};
+ });
+}
+
 function roadside(scene,D,C,hAt,surfAt){
  const B=new Batch(),items=[];
  // Pink/grey paving follows the actual terrain at vertices and is omitted at
@@ -202,16 +360,19 @@ function roadside(scene,D,C,hAt,surfAt){
  for(const[from,to,side]of ranges)for(let i=from;i<to;i+=2){const j=Math.min(to,i+2),q=[];let ok=true;for(const[k,extra]of[[i,1.05],[j,1.05],[j,3.8],[i,3.8]]){const off=(C.halfWidth[k]+extra)*side,x=C.x[k]+C.tz[k]*off,z=C.z[k]-C.tx[k]*off,s=surfAt(x,z);if([2,3,8,9].includes(s)||D.buildings.some(b=>inPoly(x,z,b.p)))ok=false;q.push([x,hAt(x,z)+.08,z]);}if(!ok)continue;B.quad(...q,i%4?0xb5b4ac:0xa5aaa7,[0,1,0]);const m=q.map(a=>[...a]);m[0]=q[0].map((v,k)=>mix(v,q[3][k],.64));m[1]=q[1].map((v,k)=>mix(v,q[2][k],.64));B.quad(...m.map(a=>[a[0],a[1]+.004,a[2]]),0xbba39b,[0,1,0]);items.push({kind:'sidewalk',progress:i,points:q,photos:from<200?[56,57]:from<347?[61,62,63,64,65,66]:[67,68,69,70,71,72,73,74,75,76,77,78]});}
  // The visible curved bicycle roofs are represented as small open shelters.
  for(const spec of[{i:455,side:-1,photos:[71]},{i:558,side:1,photos:[75]}]){const i=spec.i,off=spec.side*(C.halfWidth[i]+8),x=C.x[i]+C.tz[i]*off,z=C.z[i]-C.tx[i]*off,r=5.2;if(!free(x,z,r,D,C,surfAt,false))continue;const y=hAt(x,z),angle=Math.atan2(C.tx[i],C.tz[i]);for(const d of[-3.8,0,3.8]){const px=x+C.tx[i]*d,pz=z+C.tz[i]*d;B.box(px,y+1.15,pz,.08,2.3,.08,0x64867b,null,angle);}B.box(x,y+2.38,z,2.5,.12,8.8,0x719d96,null,angle);items.push({kind:'bicycle-shelter',x,z,radius:r,photos:spec.photos,estimated:true});}
- const m=B.mesh('east-paving-and-shelters',new THREE.MeshStandardMaterial({vertexColors:true,roughness:.9}));if(m)scene.add(m);return{models:m?[m]:[],items};
+ const solarParkingRows=e3SolarParking(B,D,hAt);
+ const m=B.mesh('east-paving-and-shelters',new THREE.MeshStandardMaterial({vertexColors:true,roughness:.9}));if(m)scene.add(m);return{models:m?[m]:[],items,solarParkingRows};
 }
 
 export function buildCaptureEast(scene,D,C,hAt,surfAt){
  const B={wall:new Batch(),glass:new Batch(),detail:new Batch()},handledIds=new Set(),labels=[],buildings=[],ranges=[];
  for(const b of D.buildings){const cfg=CONFIG[b.ref]||ID_CONFIG[b.id];if(!cfg)continue;const starts=Object.fromEntries(Object.entries(B).map(([k,v])=>[k,v.p.length/3]));const info=building(B,b,cfg,hAt);for(const[k,v]of Object.entries(B))ranges.push({batch:k,id:b.id,start:starts[k],count:v.p.length/3-starts[k]});handledIds.add(b.id);const x=b.p.reduce((s,p)=>s+p[0],0)/b.p.length,z=b.p.reduce((s,p)=>s+p[1],0)/b.p.length;const name=campusName(b);if(b.ref)labels.push({ref:b.ref,name,en:name,x,y:info.top+1,z});buildings.push({id:b.id,ref:b.ref,...info});}
+ const e6Link=e6Courtyard(B,D,C,hAt,surfAt);
  // Glass and facade ribs share the exact source boundary with the wall.
  // Bias depth, not x/z, so grazing-angle precision cannot produce stippling.
  const models=[];for(const[k,v]of Object.entries(B)){const layer=k==='glass'?-2:k==='detail'?-3:0;const m=v.mesh(`east-buildings-${k}`,new THREE.MeshStandardMaterial({vertexColors:true,roughness:k==='glass'?.3:.84,metalness:k==='glass'?.18:0,polygonOffset:layer!==0,polygonOffsetFactor:layer,polygonOffsetUnits:layer}));if(m){m.renderOrder=k==='glass'?1:k==='detail'?2:0;scene.add(m);models.push(m);}}
  const nature=vegetation(scene,D,C,hAt,surfAt),road=roadside(scene,D,C,hAt,surfAt);models.push(...nature.models,...road.models);
- const metadata={source:'Direct review of 25 user April 2025 captures, audit/capture-review-56-78.json',sourceImages:[...Array.from({length:23},(_,i)=>`${i+56}.png`),'77_left.png','77_right.png'],buildingCount:buildings.length,buildings,buildingVertexRanges:ranges,plantCounts:Object.fromEntries(['cherry','bare','pine','sculpted','conifer','shrub'].map(k=>[k,nature.plants.filter(p=>p.kind===k).length])),zoneCounts:nature.zoneCounts,drawCalls:models.length,triangles:models.reduce((s,m)=>s+(m.geometry.index?.count||m.geometry.attributes.position.count)/3*(m.isInstancedMesh?m.count:1),0),assumptions:'All facade heights, decorative equipment and individual vegetation positions are estimated. Source footprints retained. No photograph pixels distributed.',retainedModels:['E16-1 existing capture architecture','E9 official landmark model','existing gate pylons/guardhouse','W16 west-extension ownership'],notReconstructed:['E6-6 external bridge: exact connector footprint unresolved','Detached E3 parking shade in 71–72: supporting posts and parking bay not mapped','Bicycle shelters: candidate locations rejected by mapped pavement/road clearance; images retained as evidence','Some parking-edge tree rows: conservative crown tests reject mapped parking overlap; see zero-count zones','77_right central avenue median: off race alignment; preserve source road geometry'],physicalSurfaceChanged:false,courseGeometryChanged:false};
+ const metadata={source:'Direct review of 25 user April 2025 captures, audit/capture-review-56-78.json',sourceImages:[...Array.from({length:23},(_,i)=>`${i+56}.png`),'77_left.png','77_right.png'],buildingCount:buildings.length,buildings,buildingVertexRanges:ranges,plantCounts:Object.fromEntries(['cherry','bare','pine','sculpted','conifer','shrub'].map(k=>[k,nature.plants.filter(p=>p.kind===k).length])),zoneCounts:nature.zoneCounts,drawCalls:models.length,triangles:models.reduce((s,m)=>s+(m.geometry.index?.count||m.geometry.attributes.position.count)/3*(m.isInstancedMesh?m.count:1),0),assumptions:'All facade heights, decorative equipment and individual vegetation positions are estimated. Source footprints retained. No photograph pixels distributed.',retainedModels:['E16-1 existing capture architecture','E9 official landmark model','existing gate pylons/guardhouse','W16 west-extension ownership'],e6Link,notReconstructed:['Bicycle shelters: candidate locations rejected by mapped pavement/road clearance; images retained as evidence','Some parking-edge tree rows: conservative crown tests reject mapped parking overlap; see zero-count zones','77_right central avenue median: off race alignment; preserve source road geometry'],physicalSurfaceChanged:false,courseGeometryChanged:false};
+ metadata.solarParkingRows=road.solarParkingRows;
  return{handledIds,labels,metadata,models,plants:nature.plants,roadsideItems:road.items,zones:ZONES};
 }

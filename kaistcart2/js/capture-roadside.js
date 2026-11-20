@@ -71,6 +71,86 @@ class Batch {
   }
 }
 
+// Course sample ranges are half-open. A missing side keeps the ordinary race rail.
+// Left/right follow the driver. Walls and fences behind a sidewalk stay in scenery.
+export const campusBoundaryRanges = [
+  { from: 0, to: 74, left: 'curb', right: 'curb', photos: [55,56,57] },
+  { from: 96, to: 149, left: 'curb', right: 'curb', photos: [58,59] },
+  { from: 457, to: 481, left: 'curb', right: 'curb', photos: [71,72] },
+  { from: 972, to: 1108, left: 'curb', right: 'curb', photos: [97,98,99,100,101,1,2] },
+  { from: 1327, to: 1393, left: 'curb', photos: [10,11,12,13,14] },
+  { from: 1450, to: 1506, left: 'picket', right: 'curb', photos: [17,18,19] },
+  { from: 1622, to: 1642, left: 'curb', right: 'curb', photos: [25,26] },
+  { from: 2140, to: 2180, left: 'medallion', right: 'medallion', photos: [53,54] },
+  { from: 2180, to: 2193, left: 'curb', right: 'curb', photos: [54,55] },
+];
+
+// Model one two-metre panel of each design; the renderer instances it along
+// the actual collision faces, including the longitudinal slope at each end.
+export function buildCampusBoundaryRail(parent, style, segments, groundY) {
+  if (!segments.length) return;
+  const batch = new Batch(), metal = style === 'picket' ? 0x282c2a : 0x473f3b;
+  const rod = (x0,y0,x1,y1,r) => {
+    const start = new THREE.Vector3(x0,y0,0), end = new THREE.Vector3(x1,y1,0);
+    const direction = end.clone().sub(start), length = direction.length();
+    batch.add(unitCylinder, start.lerp(end,.5), new THREE.Quaternion().setFromUnitVectors(UP,direction.divideScalar(length)),
+      new THREE.Vector3(2*r,length,2*r), metal);
+  };
+  if (style === 'picket') {
+    for (const y of [.24,1.12]) rod(0,y,2,y,.029);
+    for (let k=0;k<10;k++) {
+      const x=.045+k*.2, post=k===0, top=post?1.47:1.32, radius=post?.044:.018;
+      rod(x,.11,x,top,radius);
+      batch.add(unitBox,new THREE.Vector3(x,1.06,0),new THREE.Quaternion(),
+        new THREE.Vector3(radius*2.4,.055,radius*2.4),post?0xa29264:metal);
+    }
+  } else {
+    // The November N3 side view shows paired end posts, two scalloped rails,
+    // and three pale medallions with small curved links in each panel.
+    for (const x of [.044,1.956]) rod(x,.11,x,1.035,.038);
+    for (const y of [.24,.91]) {
+      let last=y;
+      for (let k=1;k<=10;k++) {
+        const next=y+.14*Math.sin(Math.PI*k/10)**2;
+        rod((k-1)*.2,last,k*.2,next,.028);
+        last=next;
+      }
+    }
+    for (const y of [.395,.82]) rod(.04,y,1.96,y,.018);
+    const axisToFront = new THREE.Quaternion().setFromUnitVectors(UP,FORWARD);
+    for (const x of [.29,1,1.71]) {
+      const center=new THREE.Vector3(x,.605,0);
+      batch.add(mirrorCylinder,center,axisToFront,new THREE.Vector3(.335,.025,.335),0xc4c5bb);
+      batch.add(rimGeometry,center,new THREE.Quaternion(),new THREE.Vector3(.61,.61,.9),metal);
+    }
+    for (const x of [.645,1.355]) for (const sign of [-1,1]) {
+      rod(x,.805,x+sign*.046,.688,.012);
+      rod(x+sign*.046,.688,x+sign*.122,.605,.012);
+      rod(x+sign*.122,.605,x+sign*.046,.522,.012);
+      rod(x+sign*.046,.522,x,.405,.012);
+    }
+  }
+  const material=new THREE.MeshStandardMaterial({vertexColors:true,roughness:.75,metalness:.24});
+  const template=batch.finish(style,material);
+  const mesh=new THREE.InstancedMesh(template.geometry,material,segments.length);
+  mesh.name='Campus boundary: '+style;
+  mesh.castShadow=mesh.receiveShadow=true;
+  const matrix=new THREE.Matrix4();
+  segments.forEach(({a,b,nx,nz,length},i)=>{
+    const ax=b[0]-a[0], az=b[1]-a[1], ay=groundY(a[0],a[1]), by=groundY(b[0],b[1]);
+    // The forward side of the thickest post sits on the closed inner face.
+    // Local X spans [0,2], Y stays vertical, and Z is normal to the panel.
+    matrix.set(ax/2,0,-az/length,a[0]-nx*.045,
+      (by-ay)/2,1,0,ay,
+      az/2,0,ax/length,a[1]-nz*.045,
+      0,0,0,1);
+    mesh.setMatrixAt(i,matrix);
+  });
+  mesh.instanceMatrix.needsUpdate=true;
+  mesh.computeBoundingSphere();
+  parent.add(mesh);
+}
+
 /** Visual-only props. The course, terrain, surface grid and collision solver are not mutated. */
 export function buildCapturedRoadside(scene, D, C, hAt, surfAt) {
   const solid = new Batch(), translucent = new Batch(), reflective = new Batch();
@@ -151,20 +231,6 @@ export function buildCapturedRoadside(scene, D, C, hAt, surfAt) {
     for(const a of[-1.5,1.5]){const lo=point(f,a,-2.2,y+.9),hi=point(f,a,2.0,y+2.3);rod(solid,lo,hi,.035,0x525d5b);}
   }}
 
-  function fence(from,to,side,extra,decorative,photos){
-    for(let i=from;i<to;i++){const f=frame(i,side,extra),h=decorative?1.02:1.5,length=1.94;
-      if(!register(`${decorative?'pedestrian-rail':'boundary-fence'}-${i}-${side}`,decorative?'circle-motif-pedestrian-rail':'black-boundary-fence',photos,f,length,.12))continue;
-      const y=ground(f.x,f.z); for(const a of[-.97,.97])rod(solid,point(f,a,0,y),point(f,a,0,y+h+.06),.035,0x3d4845);
-      for(const yy of[.18,h])rod(solid,point(f,-.97,0,y+yy),point(f,.97,0,y+yy),.027,0x454f4b);
-      if(decorative){const q=new THREE.Quaternion().setFromUnitVectors(FORWARD,new THREE.Vector3(f.nx,0,f.nz));
-        solid.add(rimGeometry,point(f,0,0,y+.58),q,scale(1,1,1),0x69746e);
-        for(const a of[-.62,.62])rod(solid,point(f,a,0,y+.18),point(f,a,0,y+h),.018,0x68716a);
-      }else for(let a=-.72;a<.9;a+=.24)rod(solid,point(f,a,0,y+.18),point(f,a,0,y+h-.12),.016,0x3e4b42);
-    }
-  }
-  fence(1450,1506,1,1.15,false,[17,18,19]);
-  for(const s of[-1,1])fence(2140,2180,s,1.25,true,[53,54]);
-
   function bicycle(f,along,lateral,y,seed){
     const paint=[0x557579,0x795a4d,0x6c7273,0x9b845b][seed%4],q=new THREE.Quaternion().setFromUnitVectors(FORWARD,new THREE.Vector3(f.tx,0,f.tz));
     // The bicycle plane faces across the shelter, leaving the circulation side open.
@@ -198,8 +264,8 @@ export function buildCapturedRoadside(scene, D, C, hAt, surfAt) {
   canopy(1659,1674,1,2.9,[27,28,29]);
   canopy(1696,1702,-1,3.4,[30,31]);
 
-  // N14/N11 passage: piers preserve the full playable width; original apparent
-  // opening (6–8 m) is not imposed on the existing race corridor.
+  // Looking back from the north exit in November, the covered flight rises
+  // on the viewer's right (driver's left), beyond the cross-road brick piers.
   {const f=frame(1633), pierOff=C.halfWidth[f.i]+1.2, depth=4.3;
     let deck=-Infinity; for(const a of[-depth/2,0,depth/2])for(const d of[-pierOff,0,pierOff]){const p=point(f,a,d,0);deck=Math.max(deck,hAt(p.x,p.z)+.45);}
     const soffit=deck+4.65; let accepted=true;
@@ -208,10 +274,40 @@ export function buildCapturedRoadside(scene, D, C, hAt, surfAt) {
       box(solid,p.x,y+h/2,p.z,.82,h,.82,0x8a5446,f.angle);box(solid,p.x,y+.16,p.z,1.02,.32,1.02,0xb4b3a6,f.angle);
       for(let yy=y+.35;yy<soffit;yy+=.23)box(solid,p.x,yy,p.z,.83,.012,.83,0x766d5f,f.angle);
     }
-    box(solid,f.x,soffit+.18,f.z,2*pierOff+1.45,.36,depth,0xd1d1c2,f.angle);
-    box(solid,f.x,soffit+.43,f.z,2*pierOff+1.7,.16,depth+.30,0x854b36,f.angle);
-    for(let d=-pierOff-.8;d<=pierOff+.8;d+=.23){for(const a of[-depth/2-.08,depth/2+.08])rod(solid,point(f,a-.14,d,soffit+.55),point(f,a+.14,d,soffit+.55),.085,0x9a5e42);}
-    for(const a of[-.8,.8]){const p=point(f,a,0,soffit-.03);box(solid,p.x,p.y,p.z,.6,.07,.22,0xe3dcc1,f.angle);}
+    function tiledSpan(near,far,underside,halfDepth,rise) {
+      const mid=(near+far)/2, p=point(f,0,mid,underside+.19);
+      box(solid,p.x,p.y,p.z,far-near,.38,2*halfDepth,0xd4cdbb,f.angle);
+      const eave=underside+.39, edge=halfDepth+.13;
+      for (const [a0,y0,a1,y1] of [[-edge,eave,0,eave+rise],[0,eave+rise,edge,eave]]) {
+        solid.quad(point(f,a0,near,y0),point(f,a1,near,y1),point(f,a1,far,y1),point(f,a0,far,y0),0x7b4e41);
+        for (let d=near+.09;d<far-.04;d+=.24) {
+          rod(solid,point(f,a0,d,y0+.025),point(f,a1,d,y1+.025),.067,0x96574a);
+        }
+      }
+      rod(solid,point(f,0,near,eave+rise+.04),point(f,0,far,eave+rise+.04),.09,0x754639);
+    }
+    const mainEdge=pierOff+.84;
+    tiledSpan(-mainEdge,mainEdge,soffit,depth/2,.42);
+    const stairStart=mainEdge+.08, stairEnd=stairStart+6.38;
+    const mid=point(f,0,(stairStart+stairEnd)/2,0);
+    const wing={...f,x:mid.x,z:mid.z};
+    if (register('n14-west-covered-stair','covered-stair',[25,26],wing,depth+.3,stairEnd-stairStart,
+        {side:'driver-left',sourceView:'2026-11 north exit facing south',roofStepM:.94})) {
+      const lower=point(f,0,stairStart,0), floor=ground(lower.x,lower.z), step=.38, rise=.155, steps=11;
+      for (let k=0;k<steps;k++) {
+        const d=stairStart+(k+.5)*step, p=point(f,0,d,0), base=ground(p.x,p.z)-.1;
+        const top=floor+(k+1)*rise;
+        box(solid,p.x,(base+top)/2,p.z,step,top-base,2.25,0x92594b,f.angle);
+      }
+      const landingStart=stairStart+steps*step, landing=point(f,0,(landingStart+stairEnd)/2,0);
+      const landingTop=floor+steps*rise;
+      box(solid,landing.x,landingTop-.10,landing.z,stairEnd-landingStart,.2,2.25,0xa29682,f.angle);
+      for (const d of [stairStart+.45,stairEnd-.48]) for (const a of [-1.48,1.48]) {
+        const p=point(f,a,d,0), bottom=ground(p.x,p.z), top=soffit+.94;
+        box(solid,p.x,(bottom+top)/2,p.z,.57,top-bottom,.57,0x875447,f.angle);
+      }
+      tiledSpan(mainEdge-.37,stairEnd,soffit+.94,depth/2-.22,.32);
+    }
     metadata.overheadClearanceM=4.65;metadata.models.push({id:'n14-n11-covered-passage',kind:'overhead-portico',photos:[25,26],progress:1633,x:f.x,z:f.z,
       minimumOverheadClearanceM:4.65,clearOpeningWidthM:2*pierOff-.82,estimated:true,adaptation:'Opening widened to existing course plus pier margin; upper beam raised to conservative 4.65m clearance. Photo apparent 6–8m width/3.5–4.5m height not surveyed.'});
     }
