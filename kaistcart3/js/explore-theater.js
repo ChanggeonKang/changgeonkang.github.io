@@ -13,7 +13,7 @@ export function buildOutdoorTheater(scene,D,height,MB) {
   const footprint=theater.p.map(toLocal),shade=c=>new THREE.Color(c);
   const stone=shade(0xb7ad99),face=shade(0x888374),wood=shade(0x897763),roof=shade(0xb6bcb1);
   const up=[0,1,0],uv=[0,0],quad=(a,b,c,d,n,color)=>solid.quad(a,b,c,d,n,uv,uv,uv,uv,color);
-  const floor=height(...center)+.78;
+  const floor=Math.max(...stage.p.map(q=>height(...q)))+.22;
   const ground=(u,v)=>{const q=p(u,v,0);return height(q[0],q[2]);};
   function bounds(u) {
     const cross=[];
@@ -39,13 +39,21 @@ export function buildOutdoorTheater(scene,D,height,MB) {
     // Dark rows separated by the pale stair aisles visible in the handbook.
     if(Math.abs(l)>1.0 && Math.abs(l-13)>1 && Math.abs(l+13)>1) {
       const u=l0+(l1-l0)*.58,v=r0+(r1-r0)*.58;
-      quad(p(l,u,yl+.05),p(r,v,yr+.05),p(r,r1-.08,yr+.05),p(l,l1-.08,yl+.05),up,wood);
+      quad(p(l,u,yl+.085),p(r,v,yr+.085),p(r,r1-.08,yr+.085),p(l,l1-.08,yl+.085),up,wood);
     }
   }
   const stageSurface=shade(0xb4a796),steel=shade(0x526572),rear=shade(0x8b968e);
   const frontRoof=9.4,backRoof=-5.0,halfU=10.6;
-  quad(p(-12,-5.2,floor),p(12,-5.2,floor),p(12,11.4,floor),p(-12,11.4,floor),up,stageSurface);
-  quad(p(-12,11.4,floor-.9),p(12,11.4,floor-.9),p(12,11.4,floor),p(-12,11.4,floor),[vx,0,vz],face);
+  const rim=stage.p,polygonArea=rim.reduce((sum,q,i)=>{const r=rim[(i+1)%rim.length];return sum+q[0]*r[1]-r[0]*q[1];},0);
+  for(const triangle of THREE.ShapeUtils.triangulateShape(rim.map(q=>new THREE.Vector2(...q)),[])){
+    const corners=triangle.map(i=>[rim[i][0],floor,rim[i][1]]);
+    solid.tri(...corners,up,uv,uv,uv,stageSurface);
+  }
+  for(let i=0;i<rim.length;i++){
+    const a=rim[i],b=rim[(i+1)%rim.length],nx=b[1]-a[1],nz=a[0]-b[0],len=Math.hypot(nx,nz)||1;
+    quad([a[0],height(...a)-.20,a[1]],[b[0],height(...b)-.20,b[1]],[b[0],floor,b[1]],[a[0],floor,a[1]],
+      [Math.sign(polygonArea)*nx/len,0,Math.sign(polygonArea)*nz/len],face);
+  }
   // A curved barrel canopy with a visible open mouth and slender frames.
   const arch=(u,t,lift=0)=>p(u,backRoof+(frontRoof-backRoof)*t,floor+4.65+2.85*Math.sin(Math.PI*t)+lift);
   for(let k=0;k<18;k++){
