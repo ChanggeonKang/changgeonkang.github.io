@@ -250,11 +250,15 @@ function updateSplitHud() {
   const valid = visible && (Boolean(official) || lap.valid) && !(replay?.terminal && replay.result?.status !== 'finished');
   if (hud.tower) {
     hud.tower(valid ? hud.standings?.[splits.length - 1] : null, splits.length, P.name, splits.at(-1));
-    return;
   }
-  const comparison = valid ? compareSplit(splits, leaderSnapshot) : null;
+  const elapsed = valid ? splits.at(-1) : null;
+  if (hud.splitCount === splits.length && hud.splitElapsed === elapsed && hud.splitLeader === leaderSnapshot) return;
+  hud.splitCount = splits.length; hud.splitElapsed = elapsed; hud.splitLeader = leaderSnapshot;
+  const comparison = elapsed ? compareSplit(splits, leaderSnapshot) : null;
+  $('leaderComparison').hidden = !comparison;
+  setText('leaderReference', comparison && hud.tower ? leaderSnapshot.name : '');
   $('compactSplit').dataset.trend = comparison ? gapTrend(comparison.gapMs) : 'neutral';
-  setText('compactSplit', comparison ? formatGap(comparison.gapMs, '') : '');
+  setText('compactSplit', comparison ? formatGap(comparison.gapMs, hud.tower ? ' s' : '') : '');
 }
 function updateHud(dt) {
   const C = W.C, spd = Math.hypot(P.vx, P.vz) * 3.6;
@@ -406,7 +410,9 @@ async function startRace(isPractice = false) {
       if (isPractice) {
         const startedLap = lap;
         void records.list(P.name).then(data => {
-          if (lap === startedLap) hud.standings = data.checkpointStandings;
+          if (lap !== startedLap) return;
+          hud.standings = data.checkpointStandings;
+          if (!leaderSnapshot) leaderSnapshot = snapshotLeader(data.leader);
         }).catch(() => {}); // Offline practice still starts immediately.
       }
     }

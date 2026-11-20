@@ -6,7 +6,7 @@ import { buildParking } from './campus-parking.js';
 import { buildStreetscape, isStreetscapeManaged } from './campus-streetscape.js';
 import { buildCapturedLandscape, isCaptureLandscapeManaged } from './capture-landscaping.js';
 import { buildCapturedArchitecture } from './capture-architecture.js';
-import { buildCapturedRoadside, capturedRoadStyles, capturedSpeedMarks, capturedBumps } from './capture-roadside.js';
+import { buildCapturedRoadside, buildCampusBoundaryRail, campusBoundaryRanges, capturedRoadStyles, capturedSpeedMarks, capturedBumps } from './capture-roadside.js';
 import { buildGate } from './campus-gate.js';
 import { applyObservedGrades } from './capture-elevation.js';
 import { buildCaptureEast, isCaptureEastManaged, eastRoadStyles, eastSpeedMarks, eastBumps } from './capture-extension-east.js';
@@ -626,28 +626,56 @@ function buildCourseMesh(scene) {
 function buildCourseBarriers(scene) {
   const geometry = getCourseBarriers(W.C), mb = new MB(), topColor = col(0xa6ada9), backColor = col(0x626d68);
   const frontColor = col(0x89928c), height = COURSE_BARRIER.height;
+  const ordinaryBands = [[-.12,.12],[.36,.48],[.78,height]], curbBand = [[-.07,CURB_H]];
+  const rails = new Map();
+  const styles = [Array(W.C.n), Array(W.C.n)];
+  for (const {from,to,left,right} of campusBoundaryRanges) {
+    if (left) styles[0].fill(left,from,to);
+    if (right) styles[1].fill(right,from,to);
+  }
+  const groundY = (x,z) => hAt(x,z)+ROAD_LIFT;
+  const groundByPoint = new Map();
+  const at = (p, lift) => {
+    if (!groundByPoint.has(p)) groundByPoint.set(p, groundY(p[0],p[1]));
+    return [p[0],groundByPoint.get(p)+lift,p[1]];
+  };
+  const curbTop = col(0xb6b6ad), curbFace = col(0x9c9d95);
   for (const segment of geometry.segments) {
-    const { a, b, outerA, outerB, nx, nz, index } = segment;
-    // A more open temporary race railing keeps the unchanged physical boundary
-    // visible while letting the photographed sidewalks and planting show through.
-    // It is race infrastructure, not claimed to exist in the source street views.
-    const at = (p, lift) => [p[0], hAt(p[0], p[1]) + ROAD_LIFT + lift, p[1]];
-    const v0 = index * W.C.ds, v1 = (index + 1) * W.C.ds;
-    for (const [low, high] of [[-.12, .12], [.36, .48], [.78, height]]) {
-      const a0=at(a,low),b0=at(b,low),a1=at(a,high),b1=at(b,high),oa0=at(outerA,low),ob0=at(outerB,low),oa1=at(outerA,high),ob1=at(outerB,high);
-      mb.quad(a0,b0,b1,a1,[nx,0,nz],[v0,0],[v1,0],[v1,1],[v0,1],frontColor);
-      mb.quad(ob0,oa0,oa1,ob1,[-nx,0,-nz],[v1,0],[v0,0],[v0,1],[v1,1],backColor);
-      mb.quad(a1,b1,ob1,oa1,UP,[v0,0],[v1,0],[v1,.28],[v0,.28],topColor);
+    const { a, b, outerA, outerB, nx, nz, index, side } = segment;
+    const appearance = styles[side][index];
+    if (appearance) {
+      if (!rails.has(appearance)) rails.set(appearance, []);
+      rails.get(appearance).push(segment);
     }
-    if (index % 2 === 0) {
+    // buildCourseMesh already draws a stone curb on this exact inner face when
+    // both sidewalk samples exist. Continue that base beneath the fence when
+    // a junction or driveway interrupts the sidewalk.
+    if (appearance && W.C.side[side][index] && W.C.side[side][(index + 1) % W.C.n]) continue;
+    const v0 = index * W.C.ds, v1 = (index + 1) * W.C.ds;
+    for (const [low, high] of appearance ? curbBand : ordinaryBands) {
+      const a0=at(a,low),b0=at(b,low),a1=at(a,high),b1=at(b,high),oa0=at(outerA,low),ob0=at(outerB,low),oa1=at(outerA,high),ob1=at(outerB,high);
+      mb.quad(a0,b0,b1,a1,[nx,0,nz],[v0,0],[v1,0],[v1,1],[v0,1],appearance ? curbFace : frontColor);
+      mb.quad(ob0,oa0,oa1,ob1,[-nx,0,-nz],[v1,0],[v0,0],[v0,1],[v1,1],backColor);
+      mb.quad(a1,b1,ob1,oa1,UP,[v0,0],[v1,0],[v1,.28],[v0,.28],appearance ? curbTop : topColor);
+      // Close the exposed cross-section where the race rail gives way to a
+      // lower curb or a narrower campus fence at either end of a run.
+      if (!appearance && styles[side][mod(index-1,W.C.n)]) {
+        mb.quad(a0,oa0,oa1,a1,[(a[0]-b[0])/segment.length,0,(a[1]-b[1])/segment.length],[0,0],[1,0],[1,1],[0,1],backColor);
+      }
+      if (!appearance && styles[side][mod(index+1,W.C.n)]) {
+        mb.quad(ob0,b0,b1,ob1,[(b[0]-a[0])/segment.length,0,(b[1]-a[1])/segment.length],[0,0],[1,0],[1,1],[0,1],backColor);
+      }
+    }
+    if (!appearance && index % 2 === 0) {
       const t = Math.min(.075, .14 / segment.length), c = [lerp(a[0],b[0],t),lerp(a[1],b[1],t)], oc = [lerp(outerA[0],outerB[0],t),lerp(outerA[1],outerB[1],t)];
       mb.quad(at(a,.1),at(c,.1),at(c,height),at(a,height),[nx,0,nz],[0,0],[1,0],[1,1],[0,1],backColor);
       mb.quad(at(oc,.1),at(outerA,.1),at(outerA,height),at(oc,height),[-nx,0,-nz],[0,0],[1,0],[1,1],[0,1],backColor);
     }
   }
   const mesh = new THREE.Mesh(mb.geo(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .83, metalness: .08 }));
-  mesh.name = 'Closed temporary race barriers'; mesh.castShadow = true; mesh.receiveShadow = true;
-  mesh.userData = { purpose: 'Temporary race boundary, not surveyed campus infrastructure', continuous: true, collision: 'course-barriers.js shared inner faces' };
+  mesh.name = 'Course boundaries'; mesh.castShadow = true; mesh.receiveShadow = true;
+  mesh.userData = { continuous: true, collision: 'course-barriers.js shared inner faces', appearanceRanges: campusBoundaryRanges };
+  for (const [style, segments] of rails) buildCampusBoundaryRail(mesh,style,segments,groundY);
   W.barriers = mesh; scene.add(mesh);
 }
 
@@ -931,6 +959,25 @@ function buildNature(scene) {
 function buildProps(scene) {
   const C = W.C, m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), one = new THREE.Vector3(1, 1, 1);
   const poleM = new THREE.MeshStandardMaterial({ color: 0x8d949c, roughness: .5, metalness: .6 });
+  // Green and white delineators beside E11 and the E10 bend, seen at driver
+  // height. The short runs end before the entrances; bases clear the race lane.
+  const green = col(0x18824b), reflective = col(0xdfebe1);
+  const coneShape = merged([
+    [new THREE.BoxGeometry(.33,.045,.33),M4(0,.023,0),green],
+    [new THREE.CylinderGeometry(.075,.128,.23,8),M4(0,.16,0),green],
+    [new THREE.CylinderGeometry(.061,.075,.075,8),M4(0,.3125,0),reflective],
+    [new THREE.CylinderGeometry(.035,.061,.115,8),M4(0,.4075,0),green]
+  ]);
+  const coneStations = [66,69,73,97,128,131,135,181,184,187,190];
+  const cones = new THREE.InstancedMesh(coneShape,new THREE.MeshStandardMaterial({vertexColors:true,roughness:.82}),coneStations.length);
+  coneStations.forEach((i,j)=>{
+    const offset = C.halfWidth[i]+.37;
+    const x=C.x[i]-C.tz[i]*offset, z=C.z[i]+C.tx[i]*offset;
+    const curb=C.side[1][i] && C.side[1][(i+1)%C.n];
+    const y=hAt(x,z)+(curb ? ROAD_LIFT+CURB_H : liftAt(x,z));
+    cones.setMatrixAt(j,m4.compose(new THREE.Vector3(x,y,z),q.setFromEuler(e.set(0,Math.atan2(C.tx[i],C.tz[i]),0)),one));
+  });
+  cones.name='Science road curb delineators'; cones.castShadow=true; scene.add(cones);
   // speed-bump warning signs, 30 m ahead of each bump
   const signTex = canvasTex(128, 128, (x) => {
     x.translate(64, 64);

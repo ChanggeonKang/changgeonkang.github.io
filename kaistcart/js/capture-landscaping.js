@@ -1,4 +1,4 @@
-// April 2025 vegetation form and roadside composition from user captures 1–55.
+// Spring vegetation and roadside composition from user captures 1–55 and 98–101.
 // Positions, species, crown sizes and heights are visual estimates, not a tree survey.
 // Source images are not used as textures. This module changes no ground/collision data.
 import * as THREE from '../lib/three.module.min.js';
@@ -39,7 +39,10 @@ const ZONES = [
   {id:'e15-entrance-evergreen',from:2070,to:2094,side:1,kind:'sculpted',spacing:10,gap:3.5,height:[2.5,3.4],width:[3,4],photos:[48,49],outer:18},
   {id:'n3-east-open-lawn',from:2093,to:2124,side:-1,kind:'bare',spacing:17,gap:6,height:[6.8,8.7],width:[4.4,6],photos:[50,51],outer:26},
   {id:'n3-south-terrace-pines',from:2130,to:2182,side:-1,kind:'pine',spacing:22,gap:6,height:[10.5,14],width:[7.7,9.5],photos:[53,54],outer:29},
-  {id:'n3-south-low-hedges',from:2132,to:2180,side:-1,kind:'shrub',spacing:7.5,gap:3,height:[.6,1],width:[2,2.8],photos:[53,54],outer:29}
+  {id:'n3-south-low-hedges',from:2132,to:2180,side:-1,kind:'shrub',spacing:7.5,gap:3,height:[.6,1],width:[2,2.8],photos:[53,54],outer:29},
+  // Kiwoom's lawn and entrance in 98 are open. In 99–101 the row is beyond
+  // the next driveway, on the slim paving strip between the sidewalk and parking.
+  {id:'w4-parking-edge',from:1015,to:1043,side:-1,kind:'cherry',spacing:14,curbOffset:1.72,height:[4.9,5.6],width:[1.55,1.68],photos:[98,99,100,101],outer:2.35}
 ];
 
 function random(seed){let s=seed>>>0;return()=>((s=(Math.imul(s,1664525)+1013904223)>>>0)/4294967296);}
@@ -56,17 +59,27 @@ export function isCaptureLandscapeManaged(x,z,C){
   if(!C?.n)return false;const a=closest(x,z,C);if(!a)return false;
   return ZONES.some(v=>a.i>=v.from&&a.i<=v.to&&a.side*v.side>a.half+.25&&a.side*v.side<a.half+v.outer);
 }
-export function getCaptureLandscapeZones(){return ZONES.map(a=>({...a,photos:[...a.photos],estimated:true,source:'User April 2025 captures; see audit/capture-review-*.json'}));}
+export function getCaptureLandscapeZones(){return ZONES.map(a=>({...a,photos:[...a.photos],estimated:true,source:'User spring captures; see audit/capture-review-*.json'}));}
 function inPoly(x,z,p){let c=false;for(let i=0,j=p.length-1;i<p.length;j=i++)if((p[i][1]>z)!==(p[j][1]>z)&&x<(p[j][0]-p[i][0])*(z-p[i][1])/(p[j][1]-p[i][1])+p[i][0])c=!c;return c;}
 function segmentDistance(x,z,a,b){const dx=b[0]-a[0],dz=b[1]-a[1],l=dx*dx+dz*dz,t=l?Math.max(0,Math.min(1,((x-a[0])*dx+(z-a[1])*dz)/l)):0;return Math.hypot(x-a[0]-dx*t,z-a[1]-dz*t);}
 function margin(x,z,C){let m=Infinity;for(const i of nearby(x,z,C)){const j=(i+1)%C.n,d=segmentDistance(x,z,[C.x[i],C.z[i]],[C.x[j],C.z[j]]);m=Math.min(m,d-Math.max(C.halfWidth[i],C.halfWidth[j]));}return m;}
-function allowed(x,z,r,D,C,surfAt){
-  if(surfAt(x,z)!==0||isStreetscapeManaged(x,z,C)||margin(x,z,C)<r+.8)return false;
+function allowed(x,z,r,D,C,surfAt,pavedRow=false){
+  const surface = surfAt(x,z);
+  if((surface!==0 && !(pavedRow && surface===1))||isStreetscapeManaged(x,z,C)||margin(x,z,C)<r+.8)return false;
+  if(pavedRow){
+    // Check mapped polygons and widths for roots in this narrow paving strip.
+    // Upper branches may overhang the lot; aisles and paths stay open.
+    for(const lot of D.parking) if(inPoly(x,z,lot.p) || lot.p.some((a,i)=>segmentDistance(x,z,a,lot.p[(i+1)%lot.p.length])<.20)) return false;
+    for(const road of D.roads){
+      const setback = road.t==='footway' || road.t==='path' ? .12 : r+.18;
+      if(road.p.slice(1).some((b,i)=>segmentDistance(x,z,road.p[i],b)<road.width/2+setback)) return false;
+    }
+  }
   // Exact footprint tests complement the 1 m raster at narrow building corners.
   for(const b of D.buildings){const p=b.p;if(inPoly(x,z,p))return false;for(let i=0;i<p.length;i++)if(segmentDistance(x,z,p[i],p[(i+1)%p.length])<r+.4)return false;}
   for(const a of D.areas)if((a.k==='water'||a.k==='pitch')&&inPoly(x,z,a.p))return false;
   for(let iz=Math.floor(z-r);iz<=Math.floor(z+r);iz++)for(let ix=Math.floor(x-r);ix<=Math.floor(x+r);ix++){
-    const s=surfAt(ix+.5,iz+.5);if(s!==2&&s!==3&&s!==8&&s!==9)continue;
+    const s=surfAt(ix+.5,iz+.5);if(s!==3&&s!==8&&s!==9&&(s!==2||pavedRow))continue;
     const nx=Math.max(ix,Math.min(ix+1,x)),nz=Math.max(iz,Math.min(iz+1,z));if(Math.hypot(nx-x,nz-z)<r+.05)return false;
   }
   return true;
@@ -121,14 +134,14 @@ function instances(scene,kind,plants,t){
 export function buildCapturedLandscape(scene,D,C,hAt,surfAt){
   const kinds=['cherry','bare','pine','sculpted','shrub'],templates=Object.fromEntries(kinds.map(k=>[k,template(k)])),plants=Object.fromEntries(kinds.map(k=>[k,[]])),models=[],rand=random(20250455),zoneCounts={};
   for(const zone of ZONES){let count=0;const t=templates[zone.kind],step=Math.max(1,Math.round(zone.spacing/(C.ds||2)));
-    for(let i=zone.from;i<=Math.min(zone.to,C.n-1);i+=step){const height=zone.height[0]+rand()*(zone.height[1]-zone.height[0]),width=zone.width[0]+rand()*(zone.width[1]-zone.width[0]),radius=t.radius*width,off=(C.halfWidth[i]+radius+zone.gap)*zone.side,along=(rand()-.5)*1.3;
-      const x=C.x[i]+C.tz[i]*off+C.tx[i]*along,z=C.z[i]-C.tx[i]*off+C.tz[i]*along;if(!allowed(x,z,radius,D,C,surfAt))continue;
+    for(let i=zone.from;i<=Math.min(zone.to,C.n-1);i+=step){const height=zone.height[0]+rand()*(zone.height[1]-zone.height[0]),width=zone.width[0]+rand()*(zone.width[1]-zone.width[0]),radius=t.radius*width,off=(C.halfWidth[i]+(zone.curbOffset??(radius+zone.gap)))*zone.side,along=(rand()-.5)*1.3;
+      const x=C.x[i]+C.tz[i]*off+C.tx[i]*along,z=C.z[i]-C.tx[i]*off+C.tz[i]*along;if(!allowed(x,z,radius,D,C,surfAt,zone.curbOffset!==undefined))continue;
       // Suppress cross-zone duplicates while allowing intentionally joined hedge lobes.
       if(zone.kind!=='shrub'&&zone.kind!=='sculpted'&&Object.values(plants).flat().some(a=>a.kind!=='shrub'&&Math.hypot(a.x-x,a.z-z)<Math.min(a.radius,radius)*1.15))continue;
       const y=hAt(x,z);if(!Number.isFinite(y))continue;plants[zone.kind].push({kind:zone.kind,zone:zone.id,progress:i,x,y,z,height,width,radius,rotation:rand()*Math.PI*2,courseClearanceM:margin(x,z,C)-radius,photos:[...zone.photos],estimated:true});count++;
     }zoneCounts[zone.id]=count;
   }
   for(const k of kinds)models.push(...instances(scene,k,plants[k],templates[k]));
-  const all=Object.values(plants).flat(),metadata={source:'User-supplied Naver captures 1–55, April 2025; per-image audits retain location uncertainty',positions:'Estimated composition on existing course/OSM footprints, not individual surveyed trees',season:'Early spring: airy pale blossoms, visible deciduous branches, dark pines and clipped evergreen shrubs',counts:Object.fromEntries(kinds.map(k=>[k,plants[k].length])),zoneCounts,drawCalls:models.length,triangles:models.reduce((n,m)=>n+(m.geometry.index?m.geometry.index.count:m.geometry.attributes.position.count)/3*m.count,0),minimumCourseClearanceM:Math.min(...all.map(a=>a.courseClearanceM)),existingW4StreetscapePreserved:true,physicalSurfaceChanged:false,collisionAdded:false};
+  const all=Object.values(plants).flat(),metadata={source:'User-supplied Naver captures 1–55 and 98–101, April 2025/2026; per-image audits retain location uncertainty',positions:'Estimated composition on existing course/OSM footprints, not individual surveyed trees',season:'Early spring: airy pale blossoms, visible deciduous branches, dark pines and clipped evergreen shrubs',counts:Object.fromEntries(kinds.map(k=>[k,plants[k].length])),zoneCounts,drawCalls:models.length,triangles:models.reduce((n,m)=>n+(m.geometry.index?m.geometry.index.count:m.geometry.attributes.position.count)/3*m.count,0),minimumCourseClearanceM:Math.min(...all.map(a=>a.courseClearanceM)),existingW4StreetscapePreserved:true,physicalSurfaceChanged:false,collisionAdded:false};
   models.forEach(m=>m.userData.captureLandscape=metadata);return{models,plants,metadata,zones:getCaptureLandscapeZones()};
 }

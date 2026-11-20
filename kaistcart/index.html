@@ -129,11 +129,17 @@
     html:not(.mobile-device) #timingSidebar:has(#checkpointTower:not([hidden])) #checkpointStatus{display:none}
     html:not(.mobile-device) #driverName{margin:2px 0 4px}
   }
-  #timerLabel{display:flex;align-items:baseline;justify-content:space-between;gap:6px;margin-top:8px}
-  #compactSplit{display:none;font-size:14px;line-height:1;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+  #timingReadout{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:baseline;margin-top:8px}
+  #time{grid-column:1/-1;grid-row:2}
+  #leaderComparison{grid-column:1/-1;grid-row:3;display:flex;align-items:center;justify-content:space-between;gap:6px;max-width:170px;margin:5px 0;padding:5px 0 0;border-top:1px solid rgba(202,222,234,.2)}
+  #leaderComparison[hidden]{display:none}
+  .leader-target{min-width:0;font-size:9px;font-weight:650;letter-spacing:.04em;color:#b8cbd7}
+  #leaderReference{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;letter-spacing:0;color:#edf6f9}
+  #compactSplit{font-size:14px;line-height:1;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
   .mobile-device #timingSidebar{left:max(18px,env(safe-area-inset-left));top:max(16px,env(safe-area-inset-top))}
   .mobile-device #checkpointTower{display:none}
-  .mobile-device #compactSplit:not(:empty){display:inline}
+  .mobile-device #leaderComparison{grid-column:2;grid-row:1;margin:0;padding:0;border:0}
+  .mobile-device .leader-target{display:none}
   #resSplit{font-variant-numeric:tabular-nums;color:#b1dcff;font-size:13px}
   .name-field{display:block;margin:18px 0 6px;font-size:12px;color:#c4d8e2}
   #playerName{display:block;box-sizing:border-box;width:100%;margin-top:8px;border:1px solid #617b8b;background:rgba(8,19,28,.75);border-radius:5px;padding:12px;color:#fff;font:16px inherit;user-select:text;-webkit-user-select:text;touch-action:auto}
@@ -158,7 +164,10 @@
   <div class="hud" id="timingSidebar">
   <div class="glass" id="pos">
     <div class="lbl" id="runMode">TIME ATTACK</div><div id="driverName"></div>
-    <div id="timerLabel"><span class="lbl">TIME</span><output id="compactSplit" aria-label="Gap to first place in seconds"></output></div><div id="time">0:00.00</div>
+    <div id="timingReadout">
+      <span class="lbl">TIME</span><div id="time">0:00.00</div>
+      <div id="leaderComparison" hidden><span class="leader-target">VS LAP #1<span id="leaderReference"></span></span><output id="compactSplit" aria-label="Your checkpoint gap to the fastest lap, in seconds"></output></div>
+    </div>
     <div id="left">4.39 km to go</div><div id="checkpointStatus">CHECKPOINT 0 / 32</div>
   </div>
   <section id="checkpointTower" aria-label="Checkpoint standings" hidden>
@@ -234,6 +243,22 @@
   </div>
 </div>
 
-<script type="module" src="js/main.js?v=checkpoint-standings-1"></script>
+<script type="importmap">
+{
+  "imports": {
+    "./js/campus-gate.js": "./js/campus-gate.js?v=kart1-campus-1",
+    "./js/campus-parking.js": "./js/campus-parking.js?v=kart1-campus-1",
+    "./js/campus-streetscape.js": "./js/campus-streetscape.js?v=kart1-campus-1",
+    "./js/capture-architecture.js": "./js/capture-architecture.js?v=kart1-campus-1",
+    "./js/capture-extension-east.js": "./js/capture-extension-east.js?v=kart1-campus-1",
+    "./js/capture-extension-west.js": "./js/capture-extension-west.js?v=kart1-campus-1",
+    "./js/capture-landscaping.js": "./js/capture-landscaping.js?v=kart1-campus-1",
+    "./js/capture-roadside.js": "./js/capture-roadside.js?v=kart1-campus-1",
+    "./js/landmarks.js": "./js/landmarks.js?v=kart1-campus-1",
+    "./js/world.js": "./js/world.js?v=kart1-campus-1"
+  }
+}
+</script>
+<script type="module" src="js/main.js?v=checkpoint-leader-2"></script>
 </body>
 </html>
