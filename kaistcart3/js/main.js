@@ -190,7 +190,7 @@ function frame(now){
 }
 async function init(){
   applyQuality();let count=0;
-  const views=fetch(new URL('../data/road-views.json?v=campus-survey-20261121',import.meta.url)).then(r=>{if(!r.ok)throw Error('Street view index unavailable');return r.json();});
+  const views=fetch(new URL('../data/road-views.json?v=campus-survey-20261121-frontages',import.meta.url)).then(r=>{if(!r.ok)throw Error('Street view index unavailable');return r.json();});
   const [,panoramas]=await Promise.all([loadWorld(scene,renderer,msg=>{$('loadMsg').textContent=msg+'…';$('loadProgress').value=Math.min(94,8+count++*12);}),views]);
   cameraClearance=createCameraClearance(W.D.buildings,W.G,hAt);
   dust=new Particles(scene,420,false);skids=new Skids(scene);

@@ -82,7 +82,22 @@ export function locateHumps(network, campusFeatures, index, course, observations
     placed.push(hump);
     if (feature.id) byId.set(feature.id,hump);
   }
-  for (const feature of network.trafficCalming ?? campusFeatures) {
+  const features=network.trafficCalming ?? campusFeatures;
+  // The two mapped hump nodes straddle a single zebra on Daehak-ro 291beonga-gil.
+  // Both November 2026 approaches show yellow entry ramps and a shared deck.
+  const westRamps=features.filter(f=>f.roadWayId===456970374 && [13901505309,13901505310].includes(f.id));
+  if(westRamps.length===2){
+    const [a,b]=westRamps,centre=index.nearest((a.x+b.x)/2,(a.z+b.z)/2,1,r=>r.id===a.roadWayId);
+    if(centre){
+      const rampSpacing=Math.hypot(a.x-b.x,a.z-b.z),plateau=4;
+      attach(centre,{id:'west-raised-crossing',sourceIds:[a.id,b.id],type:'table',paint:'yellow-crossing',height:.10,
+        plateau,length:2*rampSpacing-plateau,panorama:'s0bOQ3dzY2ZAy-RhBSLyzw',
+        source:'November 2026 north and south views of the raised west crossing'},-1);
+      for(const ramp of westRamps)byId.set(ramp.id,placed.at(-1));
+    }
+  }
+  for (const feature of features) {
+    if(byId.has(feature.id))continue;
     const hostId=feature.roadWayId ?? feature.provenance?.roadWayId;
     const onHost = r => isMotorRoad(r) && r.id===hostId && r.nodes.includes(feature.id);
     attach(index.nearest(feature.x,feature.z,1,onHost), {...old.get(feature.id),...feature}, -1);

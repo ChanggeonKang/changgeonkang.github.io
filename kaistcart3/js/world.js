@@ -617,7 +617,7 @@ function buildBumps(scene) {
     const V = (ia, il) => bumpSurfaceVertex(b, ia, il, NA, nl);
     // Positive one is the red raised zebra. Other surveyed paint codes
     // carry their half length so the yellow margin follows the actual lip.
-    const style=b.paint==='red-crossing'?1:b.paint==='longitudinal-bars'?-b.length*.5:b.paint==='diagonal-bars'?2+b.length*.5:0;
+    const style=b.paint==='yellow-crossing'?1.5:b.paint==='red-crossing'?1:b.paint==='longitudinal-bars'?-b.length*.5:b.paint==='diagonal-bars'?2+b.length*.5:0;
     for (let ia = 0; ia < NA; ia++) for (let il = 0; il < nl; il++) {
       const a = V(ia, il), c = V(ia + 1, il), e = V(ia + 1, il + 1), d = V(ia, il + 1);
       mb.quad(a, c, e, d, UP, [a[3], a[4]], [c[3], c[4]], [e[3], e[4]], [d[3], d[4]], one);
@@ -641,6 +641,14 @@ function buildBumps(scene) {
         white*=1.-smoothstep(halfLength-.24,halfLength-.11,abs(p.y));
         float grain=vnoise(vWp.xz*17.);
         diffuseColor.rgb=mix(vec3(.80,.50,.065),vec3(.83,.81,.70),white)*(.83+.23*grain);
+      }else if(vCrossing.z>1.25){
+        vec2 p=vCrossing.xy;
+        float ramp=smoothstep(1.97,2.03,abs(p.y));
+        float across=abs(fract(p.x/.90+.5)-.5)*.90;
+        float aa=clamp(fwidth(p.x),.009,.12);
+        float white=1.-smoothstep(.22-aa,.22+aa,across);
+        vec3 pavement=mix(vec3(.079,.081,.080),vec3(.72,.51,.075),ramp);
+        diffuseColor.rgb=mix(pavement,vec3(.83,.83,.78),white)*(.92+.12*vnoise(vWp.xz*16.));
       }else if(vCrossing.z>.5){
         vec2 p=vCrossing.xy;
         float ramp=abs(p.y)-1.675;
@@ -735,6 +743,32 @@ function buildBuildings(scene) {
         const end=ring===p && doors.find(d=>d.vertex===(i+1)%ring.length);
         const u=start?start.half/len:0,v=end?1-end.half/len:1;
         panel(u,v,base,top);
+        // The footpath dips below the southeast wall of this outer apartment
+        // block between its corner elevations. Extend just its exposed plinth.
+        if(b.id===970797757&&ring===p&&nr[0]>.4&&nr[2]>.5){
+          const segments=Math.ceil(len/.45);
+          const bottom=t=>{
+            const x=a[0]+dx*t,z=a[1]+dz*t;
+            const px=x+.10*nr[0],pz=z+.10*nr[2],surface=pavement.heightAt(px,pz);
+            return Math.min(base,(Number.isFinite(surface)?surface:hAt(px,pz))-.05);
+          };
+          const levels=Array.from({length:segments+1},(_,j)=>bottom(j/segments));
+          const inset=new Float64Array(segments+1);
+          for(let j=0;j<segments;j++)for(let k=1;k<12;k++){
+            const f=k/12,required=levels[j]*(1-f)+levels[j+1]*f-bottom((j+f)/segments);
+            if(required>0){
+              inset[j]=Math.max(inset[j],required);
+              inset[j+1]=Math.max(inset[j+1],required);
+            }
+          }
+          for(let j=0;j<segments;j++){
+            const l=j/segments,r=(j+1)/segments,y0=levels[j]-inset[j],y1=levels[j+1]-inset[j+1];
+            if(y0<base||y1<base)mb.quad(
+              [a[0]+dx*l,y0,a[1]+dz*l],[a[0]+dx*r,y1,a[1]+dz*r],
+              [a[0]+dx*r,base,a[1]+dz*r],[a[0]+dx*l,base,a[1]+dz*l],
+              nr,[len*l,y0-base],[len*r,y1-base],[len*r,0],[len*l,0],wc,ex);
+          }
+        }
         for(const [door,l,r] of [[start,0,u],[end,v,1]])if(door){
           panel(l,r,base,door.threshold);panel(l,r,door.y+door.height,top);
         }

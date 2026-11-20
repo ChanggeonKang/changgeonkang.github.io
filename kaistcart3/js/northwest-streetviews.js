@@ -672,6 +672,81 @@ function facadeLetters(scene,text,pos,yaw,width,height,color) {
   return m;
 }
 
+function industrialDesignSouthEntrance(scene,world,ground,terrain){
+  const hall=world.D.buildings.find(b=>b.ref==='N25');
+  if(!hall)return;
+  // The number is on the south wing, between the upper two rows of windows.
+  // Both the May 2023 view at the end of the service lane and the older view
+  // across the forecourt put the boardwalk west of the accessible parking.
+  const signX=17.8,wallZ=-403.0;
+  const elevations=hall.p.map(([x,z])=>terrain(x,z));
+  const roof=(Math.min(...elevations)+Math.max(...elevations))*.5+hall.h;
+  facadeLetters(scene,'N25',[signX,roof-2.73,wallZ+.14],0,11.20,2.50,'#ac3549');
+
+  const west=-11.85,east=2.59,front=-390.20,back=-402.99,run=.43;
+  const trees=(world.treeLods||[]).flatMap(lod=>lod.instances)
+    .filter(t=>t.x>west-1&&t.x<east+1&&t.z>back-1&&t.z<front+1);
+  const vertices=[],colors=[],tint=new THREE.Color();
+  function quad(a,b,c,d,color){
+    vertices.push(...a,...b,...c,...a,...c,...d);
+    tint.setHex(color);
+    for(let i=0;i<6;i++)colors.push(tint.r,tint.g,tint.b);
+  }
+  // Fit the upper platform to one plane. The shallow approach treads follow
+  // the forecourt's crossfall so neither end begins with a tall first step.
+  const cx=(west+east)/2,cz=(front+back)/2;
+  const gradeX=(ground(east,cz)-ground(west,cz))/(east-west);
+  const gradeZ=(ground(cx,back)-ground(cx,front))/(back-front);
+  const plane=(x,z)=>gradeX*(x-cx)+gradeZ*(z-cz);
+  let support=-Infinity;
+  for(let i=0;i<=14;i++)for(let j=0;j<=13;j++){
+    const x=west+(east-west)*i/14,z=front+(back-front)*j/13;
+    support=Math.max(support,ground(x,z)-plane(x,z));
+  }
+  const level=(x,z,offset)=>{
+    const soil=ground(x,z),platform=support+plane(x,z);
+    const blend=Math.max(0,Math.min(1,(front-z-1.4)/4.5));
+    const toe=Math.min(platform,soil+.028);
+    return [x,offset<0?soil+offset:toe+(platform-toe)*blend+offset,z];
+  };
+  const shades=[0x665346,0x6d594a,0x645044,0x715d50,0x6b5647];
+  for(let stair=0;stair<3;stair++){
+    const near=front-stair*run,far=stair===2?back:near-run;
+    const top=.13+stair*.125,rows=Math.ceil((near-far)/.19);
+    for(let row=0;row<rows;row++){
+      const a=near+(far-near)*row/rows,b=near+(far-near)*(row+1)/rows;
+      const openings=trees.filter(t=>t.z-.76<a&&t.z+.76>b).sort((p,q)=>p.x-q.x);
+      const edges=[west];
+      for(const tree of openings){
+        const left=Math.max(west,tree.x-.76),right=Math.min(east,tree.x+.76);
+        if(right<=left)continue;
+        if(left>edges.at(-1))edges.push(left,right);
+        else edges[edges.length-1]=Math.max(edges.at(-1),right);
+      }
+      edges.push(east);
+      for(let s=0;s<edges.length;s+=2){
+        const left=edges[s],right=edges[s+1];
+        if(right-left<.04)continue;
+        const pieces=Math.ceil((right-left)/(stair<2?1.1:2.8));
+        for(let k=0;k<pieces;k++){
+          const l=left+(right-left)*k/pieces,r=left+(right-left)*(k+1)/pieces;
+          quad(level(l,a,top),level(r,a,top),level(r,b,top),level(l,b,top),shades[(row*3+k)%shades.length]);
+          const seam=b+Math.min(.012,(a-b)*.10);
+          quad(level(l,seam,top+.003),level(r,seam,top+.003),level(r,b,top+.003),level(l,b,top+.003),0x443b34);
+          if(!row)quad(level(l,a,-.03),level(r,a,-.03),level(r,a,top),level(l,a,top),0x483a31);
+        }
+        for(const x of [left,right])quad(level(x,a,-.03),level(x,b,-.03),level(x,b,top),level(x,a,top),0x534338);
+      }
+    }
+  }
+  const geometry=new THREE.BufferGeometry();
+  geometry.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3));
+  geometry.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));
+  geometry.computeVertexNormals();geometry.computeBoundingSphere();
+  const deck=new THREE.Mesh(geometry,new THREE.MeshStandardMaterial({vertexColors:true,side:THREE.DoubleSide,roughness:.95}));
+  deck.name='N25 south entrance timber deck and three treads';deck.receiveShadow=true;scene.add(deck);
+}
+
 function dormitoryEnds(scene,world,terrain){
   for(const [ref,x,z,w,top,step] of [['N18',-223.90,-524.8,6.85,14.10,3.05],['N21',-278.80,-647.12,7.10,15.30,3.32]]){
     const b=world.D.buildings.find(v=>v.ref===ref);
@@ -1557,6 +1632,7 @@ function studentSportsGround(scene,world,terrain){
 
 export function buildNorthwestStreetviewDetails(scene,world,ground,terrain) {
   buildDesignCentre(scene,world,terrain,ground,pavedMarkings);
+  industrialDesignSouthEntrance(scene,world,ground,terrain);
   areumShelter(scene,world,ground);
   areumWestWall(scene,world,terrain);
   metaConvergenceHall(scene,world,terrain);

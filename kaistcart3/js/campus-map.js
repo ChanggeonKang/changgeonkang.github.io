@@ -6,6 +6,14 @@ const searchNames = {E9:'library art museum academic cultural complex',N11:'Kaim
 const clamp = (v,min,max) => Math.min(max,Math.max(min,v));
 const favoriteRefs = ['E1','E9','N3','N11','E4','E14','W2','W4-2','N25','W6','N1','N7','E16','N0'];
 const latScale=110574;
+// Positions are the registered camera locations. Snap the kart onto their
+// vehicle lane and turn the camera independently toward the signed entrance.
+const entranceViews={
+  'W8-3':{x:-88.62,z:40.02,road:979941424,bearing:-127,panorama:'Frxk_CXjE5yLDmxgK0asXw'},
+  'W2-1':{x:-43.08,z:283.28,road:504338833,bearing:-96,panorama:'ee-VYddyHSWmhwDxiNZSzQ'},
+  E14:{x:-80.49,z:-88.38,road:220224547,bearing:147,panorama:'1FqELypBaeo_s6fyF50QuQ'},
+  N25:{x:3.20,z:-385.22,road:224319933,bearing:0,panorama:'rfWGyXlbH-XFgWeKy0yYRQ'},
+};
 
 export function segmentsFor(roads) {
   const segments=[];
@@ -76,6 +84,12 @@ function distanceToPlace(place,x,z){
 }
 
 export function vehicleApproach(place,segments,access){
+  const entrance=entranceViews[place.ref];
+  if(entrance){
+    const arrival=snapToStreet(segments.filter(s=>s.road.id===entrance.road),entrance.x,entrance.z,access);
+    if(arrival)return {...arrival,distance:distanceToPlace(place,arrival.x,arrival.z),panoramaId:entrance.panorama,
+      viewHeading:Math.PI*(1-entrance.bearing/180),approachLabel:place.ref+' · '+place.name+' approach'};
+  }
   if(place.name==='Duck Pond'){
     const pin=[24.13,239.68];
     const bridge=snapToStreet(segments.filter(s=>s.road.id===426204521),...pin,access);

@@ -31,7 +31,7 @@ const CONFIG={
   N1:{style:'itc',photos:[40,41,42,43],color:0xd4d9d4,accent:0xb9a952},
   N2:{style:'deepEave',photos:[48,49],height:12.4,color:0x855c50},
   E15:{style:'auditorium',photos:[47,48,49,50,51,52],height:10.2,color:0x79594c},
-  E14:{style:'academic',photos:[55],color:0xceccc0,confidence:'medium; footprint-relative image match, label not legible'},
+  E14:{style:'academic',photos:[55],roadviews:['1FqELypBaeo_s6fyF50QuQ'],floors:4,height:13.7,labelClearance:7.8,color:0xc8c4bd,confidence:'four visible storeys in the October 2026 northwest entrance view; dimensions estimated'},
   'E16-1':{style:'academicGlass',photos:[55],height:18.2,color:0xcac9c1,confidence:'medium; footprint-relative image match, label not legible'}
 };
 const sign=p=>Math.sign(p.reduce((s,a,i)=>{const b=p[(i+1)%p.length];return s+a[0]*b[1]-b[0]*a[1];},0))||1;
@@ -260,7 +260,9 @@ function buildOne(B,b,p,base,cfg){
   }else if(style==='itc'){
     windows(B,wall,base,H,{floors,width:4.3,ratio:.54,windowHeight:1.65});faces(wall,(a,b,L,n)=>{if(n[0]<-.7){panel(B.glass,a,b,.45,.65,base+3,top-2,PALETTE.blue,n);for(let f=2;f<floors;f++)panel(B.detail,a,b,.42,.68,base+f*3.6,base+f*3.6+.32,C(cfg.accent),n);}for(let s=3;s<L;s+=13)panel(B.detail,a,b,s/L,Math.min(1,(s+.7)/L),base+5,top-1,PALETTE.white,n);});feature.push('pale irregular footprint','yellow window-core accents','blue grouped glazing');
   }else if(style==='academic'||style==='academicGlass'){
-    windows(B,wall,base,H,{floors:style==='academicGlass'?5:floors,width:2.7,band:true,windowHeight:1.6});if(style==='academicGlass')faces(wall,(a,b,L,n)=>{if(L>20)panel(B.glass,a,b,.35,.6,base+1,top-.7,PALETTE.blue,n);});feature.push('pale academic facade','horizontal dark glazing bands');
+    windows(B,wall,base,H,{floors:style==='academicGlass'?5:floors,width:2.7,band:true,windowHeight:1.6,
+      skip:(_a,_b,_length,n)=>b.ref==='E14'&&n[0]<-.48&&n[2]<-.75});
+    if(style==='academicGlass')faces(wall,(a,b,L,n)=>{if(L>20)panel(B.glass,a,b,.35,.6,base+1,top-.7,PALETTE.blue,n);});feature.push('pale academic facade','horizontal dark glazing bands');
   }else{
     const dorm=['brickDorm','yellowDorm','brickHall'].includes(style);
     const isFaculty=style==='faculty';
@@ -305,7 +307,7 @@ export function buildCapturedArchitecture(scene,D={},hAt=()=>0){
     const detail=dome?buildDome(B,b,p,base):buildOne(B,b,p,base,cfg),ranges=Object.fromEntries(Object.entries(B).map(([k,v])=>[k,[start[k],v.p.length/3]]));
     const model={id:b.id,ref:b.ref||'',name:campusName(b),sourceFootprint:p,baseElevationM:base,...detail,capturePhotos:dome?[32,33]:cfg.photos,matchConfidence:cfg?.confidence||'high route/building identification; approximate facade dimensions',geometryRanges:ranges};
     if(cfg?.roadviews)model.roadviewStations=cfg.roadviews;
-    result.models.push(model);result.metadata.models.push(model);result.handledIds.add(b.id);if(b.ref)result.labels.push({ref:b.ref,name:campusName(b),en:campusName(b),x:p.reduce((s,a)=>s+a[0],0)/p.length,z:p.reduce((s,a)=>s+a[1],0)/p.length,y:detail.top+5});
+    result.models.push(model);result.metadata.models.push(model);result.handledIds.add(b.id);if(b.ref)result.labels.push({ref:b.ref,name:campusName(b),en:campusName(b),x:p.reduce((s,a)=>s+a[0],0)/p.length,z:p.reduce((s,a)=>s+a[1],0)/p.length,y:detail.top+(cfg?.labelClearance??5)});
   }
   for(const [kind,b]of Object.entries(B)){if(!b.p.length)continue;const material=new THREE.MeshStandardMaterial({vertexColors:true,roughness:kind==='glass'?.24:kind==='detail'?.64:.86,metalness:kind==='glass'?.35:kind==='detail'?.14:.01,polygonOffset:true,polygonOffsetFactor:kind==='glass'?-2:kind==='detail'?-3:0,polygonOffsetUnits:kind==='glass'?-2:kind==='detail'?-3:0});const mesh=b.mesh(material,`captured-architecture-${kind}`);mesh.userData={captureArchitecture:true,kind};scene.add(mesh);result.metadata.drawCalls++;}
   result.metadata.triangles=Object.values(B).reduce((s,b)=>s+b.p.length/9,0);return result;

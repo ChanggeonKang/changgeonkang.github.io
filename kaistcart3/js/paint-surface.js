@@ -14,7 +14,7 @@ function paintSignature(meshes,hash){
 }
 export async function loadBakedPaint(){
   try{
-    const response=await fetch(new URL('../data/road-paint.bin.gz?v=campus-survey-20261121',import.meta.url));
+    const response=await fetch(new URL('../data/road-paint.bin.gz?v=campus-survey-20261121-frontages',import.meta.url));
     if(!response.ok)return null;
     const raw=await response.arrayBuffer(),bytes=new Uint8Array(raw);
     if(bytes[0]!==31 || bytes[1]!==139)return raw;

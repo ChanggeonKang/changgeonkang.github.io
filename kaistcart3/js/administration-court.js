@@ -50,6 +50,7 @@ for(const [a,b,v] of [[-54,-31,-149.20],[-65,-31,-130.75],[-11,20,-149.75],[-12,
 
 export function buildAdministrationCourt(scene,W,ground){
   const frames=new FixtureInstances(),leaves=[],o=new T.Object3D();
+  buildNorthwestEntrance(scene,W,ground,leaves);
   function hedge(x,z,rx,rz,shade){
     if(W.access.isDrivable(x,z))return;
     o.position.set(x,ground(x,z)+.39,z);o.rotation.set(0,.58,0);o.scale.set(rx,.66,rz);o.updateMatrix();
@@ -92,4 +93,107 @@ export function buildAdministrationCourt(scene,W,ground){
   const tip=opp(6.84).add(new T.Vector3(.71,.05,1.08));
   frames.rod(opp(6.70),tip,.067,0x51564f);frames.box(tip,.23,.093,.5,.58,0x4c514b);
   frames.put(scene,'N3 west crossing masts');plantBatch(scene,'N3 to E14 clipped verge',foliage(),leaves,true);
+}
+
+// The 147-degree view from the parking aisle (1FqELyp, October 2026)
+// looks at E14's second mapped door. The blue rectangle on the opposite
+// frontage is a different entrance. Both share the same building outline.
+function buildNorthwestEntrance(scene,W,ground,leaves){
+  const hall=W.D.buildings.find(b=>b.ref==='E14');
+  if(!hall)return;
+  const [x,z]=[-70.6,-68.6],dx=.8336,dz=-.5524,nx=dz,nz=-dx;
+  const yaw=-Math.atan2(dz,dx),grade=ground(x,z),top=Math.min(...hall.p.map(p=>ground(...p)))-.65+13.7;
+  const frames=new FixtureInstances(),dummy=new T.Object3D();
+  const at=(s,h,v)=>new T.Vector3(x+s*dx+v*nx,h,z+s*dz+v*nz);
+  const box=(s,h,v,w,t,d,col)=>frames.box(at(s,h,v),w,t,d,yaw,col);
+  const stone=0xc8c4bd,grey=0x777978,iron=0x41474b,blue=0x1864a2;
+  const glass=[0x3c464d,0x4e575c,0x434c51];
+  const pitch=(top-grade-1.25)/3.45;
+  function windows(s,y,w,h,v,count){
+    box(s,y,v,w+.11,h+.12,.12,iron);
+    const pitch=w/count;
+    for(let k=0;k<count;k++){
+      const u=s+(k+.5)*pitch-w/2;
+      box(u,y,v+.085,pitch-.073,h-.055,.066,glass[k%glass.length]);
+      if(k>0)box(u-pitch/2,y,v+.133,.052,h,.046,0x282f32);
+    }
+    box(s,y-h*.26,v+.13,w,.055,.04,iron);
+  }
+  // The side wings combine long, mullioned panes with narrow stair lights.
+  // Keep the middle clear at grade for the glazed entrance.
+  for(let level=0;level<4;level++){
+    const y=grade+1.32+level*pitch;
+    for(const side of [-1,1]){
+      for(const [s,w] of [[4.92,4.92],[8.63,.56],[12.85,.69],[17.37,1.1],[22.32,4.18],[27.04,4.25],[33,3.9]]){
+        windows(side*s,y,w,1.38,.105,w<1.2?1:3);
+      }
+    }
+  }
+  // A shallow rounded bay stacks three strips of glazing above the door.
+  // Each face follows the same arc so that the stone spandrels wrap the bay.
+  const bay=(u,h)=>at(u,h,.16+.58*(1-(u/2.45)**2));
+  for(let i=0;i<5;i++){
+    const a=-2.45+i*.98,b=a+.98,p=bay(a,0),q=bay(b,0);
+    const theta=-Math.atan2(q.z-p.z,q.x-p.x),width=p.distanceTo(q)+.015;
+    const panel=(h,height,depth,tint,extra=0)=>{
+      const m=p.clone().lerp(q,.5);m.y=h;m.x+=nx*extra;m.z+=nz*extra;
+      frames.box(m,width,height,depth,theta,tint);
+    };
+    panel((grade+3.35+top)/2,top-grade-3.35,.22,stone);
+    for(let level=1;level<4;level++){
+      const h=grade+1.32+level*pitch;
+      panel(h,1.49,.10,iron,.16);panel(h,1.32,.075,glass[i%3],.24);
+      panel(h-.35,.065,.08,iron,.29);
+    }
+  }
+  box(0,top+.29,-.9,14.4,.59,2.1,stone);
+  // The photographed porch has blue posts and two sloping blue rafters.
+  // Glazed doors and their transom close the rear of the shallow vestibule.
+  windows(0,grade+1.4,3.45,2.78,.26,4);
+  for(const s of [-1.68,-.83,0,.83,1.68])box(s,grade+1.39,.42,.063,2.78,.072,0x839295);
+  box(0,grade+1.89,.42,3.46,.075,.071,0x839295);
+  box(0,grade+2.94,.56,3.89,.25,.91,grey);
+  const eave=grade+2.98,ridge=grade+4.26,sp=1.76;
+  for(const v of [.64,1.59]){
+    box(0,eave-.06,v,3.70,.15,.14,blue);
+    for(const side of [-1,1]){
+      frames.rod(at(side*sp,eave,v),at(0,ridge,v),.12,blue);
+      box(side*sp,grade+1.48,v,.18,2.96,.17,blue);
+    }
+  }
+  for(const s of [-sp,0,sp]){
+    const h=s===0?ridge:eave;frames.rod(at(s,h,.64),at(s,h,1.59),.077,blue);
+  }
+  const slab=at(0,grade+.055,.89);frames.box(slab,3.94,.11,1.79,yaw,0x989891);
+  function plant(s,v,style){
+    const root=at(s,0,v);
+    if(W.access.isDrivable(root.x,root.z))return;
+    const h=ground(root.x,root.z);
+    const crown=(u,vv,y,rx,ry,rz,tint)=>{
+      dummy.position.copy(at(s+u,h+y,v+vv));dummy.rotation.set(0,yaw+s*.03,0);
+      dummy.scale.set(rx,ry,rz);dummy.updateMatrix();leaves.push([dummy.matrix.clone(),tint]);
+    };
+    if(style==='shade'){
+      for(const [u,spread] of [[-.21,-1],[.15,1],[.02,.2]]){
+        frames.rod(at(s+u,h+.02,v),at(s+spread*.87,h+5.6,v+.22*spread),.14,0x5a5144);
+        crown(spread*.85,.22*spread,5.51,1.47,1.77,1.37,0x52613e);
+        crown(spread*1.21,.2*spread,6.8,1.84,1.52,1.55,0x596644);
+      }
+    }else if(style==='pine'){
+      frames.rod(at(s,h,v),at(s+.28,h+4.96,v),.18,0x69594b);
+      for(const [u,y,w] of [[-1.48,3.5,1.83],[1.31,4.05,2.35],[-.91,4.86,2.13],[.32,5.47,1.57]]){
+        frames.rod(at(s+.13,h+y-.96,v),at(s+u,h+y,v+.15),.085,0x60564a);
+        crown(u,.12,y,w,.52,w*.61,0x425940);
+      }
+    }else if(style==='tiered'){
+      frames.rod(at(s,h+.03,v),at(s,h+2.75,v),.12,0x605448);
+      crown(0,0,.65,1.81,.50,1.19,0x3b5335);crown(-.16,0,1.48,1.55,.43,1.04,0x415837);
+      crown(.12,0,2.21,1.29,.37,.83,0x435c39);crown(-.07,0,2.79,.98,.39,.68,0x445d39);
+    }else crown(0,0,.47,1.33,.59,.88,0x62693b);
+  }
+  for(const side of [-1,1]){
+    plant(side*8.8,3.3,'tiered');plant(side*5.35,5.32,'low');plant(side*5.75,6.75,'low');
+  }
+  plant(5.56,3.14,'shade');plant(-16.8,3.84,'pine');
+  frames.put(scene,'E14 northwest bow windows and blue entrance');
 }
