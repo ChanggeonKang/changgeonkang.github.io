@@ -1,10 +1,12 @@
-// OSM parking polygons, with illustrative stalls and parked cars. Individual
-// spaces, occupancy, colours and vehicle positions are NOT surveyed references.
-// No downloaded images or additional collision geometry are used here.
+// Mapped parking polygons use surveyed bay rows where a street/overhead view
+// resolves their layout. Occupancy, colours and unsurveyed bays are estimates.
+// Campus Drive uses the rendered placements to keep the occupied bays solid.
 import * as THREE from '../lib/three.module.min.js';
 import { isCaptureWestParkingOverride } from './capture-extension-west.js';
+import { makeParkedCar, varyRoof } from './parked-car-model.js';
+import { administrationPaving } from './administration-court.js';
 
-const WIDTH = 2.6, DEPTH = 5, AISLE = 6, CAR_CAP = 120;
+const WIDTH = 2.6, DEPTH = 5, AISLE = 6, CAR_CAP = 380;
 const ASPHALT_LIFT = .186, PAINT_LIFT = .214;
 const mix = (a, b, t) => a + (b - a) * t;
 const midpoint = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
@@ -48,6 +50,30 @@ function rectangleInside(q, p) {
 }
 function random(seed) { let s = seed >>> 0; return () => ((s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296); }
 function hash(text) { let h = 2166136261; for (const c of String(text)) h = Math.imul(h ^ c.charCodeAt(0), 16777619); return h >>> 0; }
+
+function observedRows(lot,record,line,rand,stalls,candidates){
+  for(const row of lot.surveyRows){
+    const [ax,az]=row.first,[bx,bz]=row.last,length=Math.hypot(bx-ax,bz-az);
+    const u=[(bx-ax)/length,(bz-az)/length],v=[-u[1],u[0]],pitch=length/(row.count-1);
+    for(let i=0;i<row.count;i++){
+      const x=ax+u[0]*pitch*i,z=az+u[1]*pitch*i;
+      const q=[[-1,-1],[1,-1],[1,1],[-1,1]].map(([a,b])=>
+        [x+a*u[0]*pitch/2+b*v[0]*2.42,z+a*u[1]*pitch/2+b*v[1]*2.42]);
+      const kind=row.kindByBay?.[i]||row.kind;
+      if(kind==='normal'){
+        line(q[0],q[3]);line(q[1],q[2]);
+        if(row.facing===1||row.bothEndLines)line(q[0],q[1]);
+        if(row.facing!==1||row.bothEndLines)line(q[2],q[3]);
+      }
+      const bay={lotId:lot.id,x,z,u,v,facing:row.facing,corners:q,kind,observed:true};
+      stalls.push(bay);record.stalls++;
+      // The two short drop-off spurs in front of W3 reach the edge of these
+      // bays in the OSM network. Leave both manoeuvring areas and blue bays open.
+      if(row.clear || kind==='accessible' || rand()>(row.occupancy??.70))continue;
+      candidates.push({...bay,colour:Math.floor(rand()*8),priority:rand()-1.0,record});
+    }
+  }
+}
 
 class GroundBatch {
   constructor() { this.positions = []; this.normals = []; this.uv = []; }
@@ -107,22 +133,23 @@ function merged(parts) {
   }
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(colours, 3)); g.computeBoundingSphere(); return g;
 }
-function box(w, h, l, x, y, z, colour = 0xffffff) { return [new THREE.BoxGeometry(w, h, l), new THREE.Matrix4().makeTranslation(x, y, z), colour]; }
-function canopy() {
-  const p = [[-.79,1.01,-1.23],[.79,1.01,-1.23],[.79,1.01,1.2],[-.79,1.01,1.2],[-.66,1.62,-.83],[.66,1.62,-.83],[.66,1.62,.58],[-.66,1.62,.58]];
-  const triangles = [[0,1,5],[0,5,4],[1,2,6],[1,6,5],[2,3,7],[2,7,6],[3,0,4],[3,4,7],[4,5,6],[4,6,7]];
-  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(triangles.flatMap(t => [...t].reverse().flatMap(i => p[i])), 3)); g.computeVertexNormals(); return g;
-}
-function cars(scene, placements, hAt) {
+export function addParkedCars(scene, placements, hAt) {
   if (!placements.length) return [];
-  const bodyGeo = merged([box(1.8,.57,4.28,0,.72,0),box(1.34,.11,1.48,0,1.65,-.12),box(.09,.55,.1,-.76,1.3,-.08),box(.09,.55,.1,.76,1.3,-.08)]);
-  const trimGeo = merged([box(1.64,.13,.08,0,.5,2.15,0x596268),box(1.64,.13,.08,0,.5,-2.15,0x596268),box(.44,.14,.055,-.57,.84,2.16,0xdce4d8),box(.44,.14,.055,.57,.84,2.16,0xdce4d8),box(.4,.12,.055,-.57,.84,-2.16,0x824a48),box(.4,.12,.055,.57,.84,-2.16,0x824a48)]);
-  const body = new THREE.InstancedMesh(bodyGeo, new THREE.MeshStandardMaterial({vertexColors:true,roughness:.36,metalness:.32}), placements.length);
-  const glass = new THREE.InstancedMesh(canopy(), new THREE.MeshStandardMaterial({color:0x344a54,roughness:.18,metalness:.55}), placements.length);
-  const trim = new THREE.InstancedMesh(trimGeo, new THREE.MeshStandardMaterial({vertexColors:true,roughness:.48,metalness:.35}), placements.length);
-  const wheelGeo = new THREE.CylinderGeometry(.32,.32,.2,10); wheelGeo.rotateZ(Math.PI / 2);
-  const wheels = new THREE.InstancedMesh(wheelGeo, new THREE.MeshStandardMaterial({color:0x222729,roughness:.92}), placements.length * 4);
-  const palette = [0xd3d5d3,0xb8bfc1,0x6e7c87,0x354651,0x737879,0xe6e4dc,0x495b63,0x7b5550];
+  const model=makeParkedCar(),paint=(roughness,metalness)=>varyRoof(new THREE.MeshStandardMaterial({vertexColors:true,roughness,metalness}));
+  const body=new THREE.InstancedMesh(model.body,paint(.32,.32),placements.length);
+  const glass=new THREE.InstancedMesh(model.glass,paint(.19,.42),placements.length);
+  const trim=new THREE.InstancedMesh(model.trim,paint(.48,.28),placements.length);
+  const depth=varyRoof(new THREE.MeshDepthMaterial({depthPacking:THREE.RGBADepthPacking}),'shadow');
+  for(const mesh of [body,glass,trim])mesh.customDepthMaterial=depth;
+  const tyre=new THREE.CylinderGeometry(.32,.32,.194,16).rotateZ(Math.PI/2);
+  const hub=new THREE.CylinderGeometry(.215,.215,.197,16).rotateZ(Math.PI/2);
+  const wheelParts=[[tyre,new THREE.Matrix4(),0x25282a],[hub,new THREE.Matrix4(),0x596268]];
+  for(let i=0;i<5;i++){
+    const spoke=new THREE.BoxGeometry(.202,.33,.042),m=new THREE.Matrix4().makeRotationX(i*Math.PI/5);
+    wheelParts.push([spoke,m,0x929a9b]);
+  }
+  const wheels=new THREE.InstancedMesh(merged(wheelParts),new THREE.MeshStandardMaterial({vertexColors:true,roughness:.77}),placements.length*4);
+  const palette=[0xe5e7e5,0xc4c7c8,0x63727f,0x343e44,0x818587,0xf3f1e9,0x596269,0x70494b];
   placements.forEach((a, i) => {
     const sign = a.facing, u = a.u.map(v => v * sign), v = a.v.map(n => n * sign), x = a.x, z = a.z;
     const du = (hAt(x + u[0], z + u[1]) - hAt(x - u[0], z - u[1])) / 2, dv = (hAt(x + v[0], z + v[1]) - hAt(x - v[0], z - v[1])) / 2;
@@ -144,10 +171,52 @@ function vehiclesOverlap(a,b) {
   return true;
 }
 
+/** Seat the parked wheels on the displayed surface, including changes of
+ * crossfall between the front and rear axles of an individual parking space. */
+export function fitParkedVehicles(parking,ground){
+  if(!parking.cars.length)return;
+  const [body,glass,trim,wheels]=parking.models.slice(-4);
+  const attr=wheels.geometry.getAttribute('position'),rimPoints=[],seen=new Set();
+  for(let i=0;i<attr.count;i++){
+    const p=new THREE.Vector3().fromBufferAttribute(attr,i);
+    // The bottom half supports the vehicle. Ignore duplicated side/cap vertices.
+    const id=p.toArray().map(x=>x.toFixed(4)).join(',');
+    if(p.y>0 || seen.has(id))continue;
+    seen.add(id);rimPoints.push(p);
+  }
+  const wheelOffsets=[[-.87,-1.39],[.87,-1.39],[-.87,1.39],[.87,1.39]];
+  const sample=new THREE.Vector3();
+  parking.cars.forEach((car,i)=>{
+    const [ux,uz]=car.u.map(k=>k*car.facing),[vx,vz]=car.v.map(k=>k*car.facing);
+    const h=wheelOffsets.map(([u,v])=>ground(car.x+u*ux+v*vx,car.z+u*uz+v*vz));
+    if(!h.every(Number.isFinite))return;
+    const du=(h[1]+h[3]-h[0]-h[2])/(4*.87),dv=(h[2]+h[3]-h[0]-h[1])/(4*1.39);
+    const right=new THREE.Vector3(ux,du,uz).normalize();
+    const up=new THREE.Vector3(vx,dv,vz).cross(right).normalize(),fwd=right.clone().cross(up).normalize();
+    const basis=new THREE.Matrix4().makeBasis(right,up,fwd).setPosition(car.x,h.reduce((a,b)=>a+b,0)*.25,car.z);
+    for(const mesh of [body,glass,trim])mesh.setMatrixAt(i,basis);
+    car.matrix=basis.toArray();
+    wheelOffsets.forEach(([u,v],k)=>{
+      const wheel=basis.clone().multiply(new THREE.Matrix4().makeTranslation(u,.32,v));
+      let lift=-Infinity;
+      for(const local of rimPoints){
+        sample.copy(local).applyMatrix4(wheel);
+        const surface=ground(sample.x,sample.z);
+        if(Number.isFinite(surface))lift=Math.max(lift,surface-sample.y);
+      }
+      if(Number.isFinite(lift))wheel.elements[13]+=lift;
+      wheels.setMatrixAt(i*4+k,wheel);
+    });
+  });
+  for(const mesh of [body,glass,trim,wheels]){mesh.instanceMatrix.needsUpdate=true;mesh.computeBoundingSphere();}
+}
+
 /** Returns render meshes and approximation metadata; creates no collision objects. */
 export function buildParking(scene, D, hAt, surfAt, TEX = {}) {
   const asphalt = new GroundBatch(), paint = new GroundBatch(), lots = [], stalls = [], candidates = [], models = [];
+  const blockRanges=[];
   for (const lot of D?.parking || []) {
+    if(lot.id==='sejong-turning-court')continue; // The driveway supplies the continuous block-paved surface.
     if (!Array.isArray(lot.p) || lot.p.length < 3 || lot.p.some(a=>!Array.isArray(a)||a.length<2||!a.every(Number.isFinite))) continue;
     const p = lot.p.filter((a,i)=>Array.isArray(a)&&a.length>=2&&a.every(Number.isFinite)&&(i===0||Math.hypot(a[0]-lot.p[i-1][0],a[1]-lot.p[i-1][1])>.01)).map(a=>a.slice(0,2));
     if(p.length>3&&Math.hypot(p[0][0]-p.at(-1)[0],p[0][1]-p.at(-1)[1])<.01)p.pop();
@@ -157,10 +226,17 @@ export function buildParking(scene, D, hAt, surfAt, TEX = {}) {
     for (const triangle of THREE.ShapeUtils.triangulateShape(p.map(a=>new THREE.Vector2(...a)),holes.map(r=>r.map(a=>new THREE.Vector2(...a))))) {
       paveTriangle(asphalt,triangle.map(i=>points[i]),hAt);
     }
+    if(lot.id===504188968||lot.id===503892533||String(lot.id).startsWith('503892533-apron-'))
+      blockRanges.push([groundStart,asphalt.positions.length/3,lot.id===504188968?1:2]);
     if(lot.apronOnly || area(p)<12)continue;
     const A = axes(p), rand = random(hash(lot.id)), point = (u,v) => [A.u[0]*u+A.v[0]*v,A.u[1]*u+A.v[1]*v], lineKeys = new Set();
     const line = (a,b) => {const key=[a,b].map(p=>p.map(v=>v.toFixed(3)).join(',')).sort().join('|');if(!lineKeys.has(key)){lineKeys.add(key);stripe(paint,a,b,hAt);}};
     const record = {id:lot.id,name:lot.name||'',source:lot.source||'OpenStreetMap parking polygon',polygon:p,stalls:0,illustrativeCars:0,groundVertexStart:groundStart,groundVertexCount:asphalt.positions.length/3-groundStart,paintVertexStart:paintStart}; lots.push(record);
+    if(lot.surveyRows){
+      observedRows(lot,record,line,rand,stalls,candidates);
+      record.paintVertexCount=paint.positions.length/3-paintStart;
+      continue;
+    }
     for(let row=0;row<200;row++){
       const centerV=A.minV+.8+DEPTH/2+Math.floor(row/2)*(DEPTH*2+AISLE)+(row%2?(DEPTH+AISLE):0);
       if(centerV+DEPTH/2+.15>A.maxV)break;
@@ -187,15 +263,29 @@ export function buildParking(scene, D, hAt, surfAt, TEX = {}) {
     record.paintVertexCount=paint.positions.length/3-paintStart;
   }
   for(const [batch,name,material] of [[asphalt,'campus-parking-asphalt',new THREE.MeshStandardMaterial({color:0x747b80,map:TEX?.asphalt||null,roughness:.94,polygonOffset:true,polygonOffsetFactor:-2.5,polygonOffsetUnits:-2.5})],[paint,'campus-parking-markings',new THREE.MeshStandardMaterial({color:0xd8d9d1,roughness:.88,polygonOffset:true,polygonOffsetFactor:-4,polygonOffsetUnits:-4})]]){
-    if(!batch.positions.length){material.dispose();continue;}const mesh=new THREE.Mesh(batch.geometry(),material);mesh.name=name;mesh.receiveShadow=true;scene.add(mesh);models.push(mesh);
+    if(!batch.positions.length){material.dispose();continue;}
+    const geometry=batch.geometry();
+    let materials=material;
+    if(batch===asphalt&&TEX.hexDrive&&blockRanges.length){
+      const blocks=material.clone();blocks.color.setHex(0xb0aaa3);blocks.map=TEX.hexDrive;
+      let cursor=0;
+      for(const [from,to,materialIndex] of blockRanges){
+        if(from>cursor)geometry.addGroup(cursor,from-cursor,0);
+        if(to>from)geometry.addGroup(from,to-from,materialIndex);
+        cursor=to;
+      }
+      if(cursor<geometry.attributes.position.count)geometry.addGroup(cursor,geometry.attributes.position.count-cursor,0);
+      materials=[material,blocks,administrationPaving(material)];
+    }
+    const mesh=new THREE.Mesh(geometry,materials);mesh.name=name;mesh.receiveShadow=true;scene.add(mesh);models.push(mesh);
   }
   const placements=[];
   for(const a of candidates.sort((a,b)=>a.priority-b.priority)){
     if(placements.some(b=>Math.hypot(a.x-b.x,a.z-b.z)<6&&vehiclesOverlap(a,b)))continue;
     placements.push(a);if(placements.length===CAR_CAP)break;
   }
-  placements.forEach(a=>{a.record.illustrativeCars++;delete a.record;});models.push(...cars(scene,placements,hAt));
-  const metadata={source:'OSM parking polygons; stalls and vehicles are illustrative estimates',photoOverride:'Captures94–97: exclude only the planted strip1–7m beyond the western road edge; source parking polygons unchanged',stallWidthM:WIDTH,stallDepthM:DEPTH,aisleWidthM:AISLE,carCap:CAR_CAP,parkingLots:lots.length,stalls:stalls.length,cars:placements.length,drawCalls:models.length,collisionAdded:false};
+  placements.forEach(a=>{a.record.illustrativeCars++;delete a.record;});models.push(...addParkedCars(scene,placements,hAt));
+  const metadata={source:'OSM lots with photographed bay layouts at the library, clinic, engineering and western halls. Individual vehicle occupancy is illustrative.',photoOverride:'Captures 94–97 exclude the planted strip 1–7m beyond the western road edge',stallWidthM:WIDTH,stallDepthM:DEPTH,aisleWidthM:AISLE,carCap:CAR_CAP,parkingLots:lots.length,stalls:stalls.length,cars:placements.length,drawCalls:models.length,collisionAdded:false};
   models.forEach(m=>{m.userData.parking=metadata;});
   return {models,lots,stalls,cars:placements,metadata};
 }

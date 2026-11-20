@@ -6,22 +6,22 @@ import {finishLandmarkMaterials} from './facade-materials.js';
 // The source footprint, building height and entrances still come from the campus model.
 export const streetviewPalette={
   E14:[0xd4cec3,1], 'N13-1':[0xaf523a,1], 'N7-2':[0xcac9bf,1], N25:[0x9b5948,0],
-  W2:[0xd5d1c6,1], W7:[0xd2cdc1,0], N21:[0x9e6657,0], N4:[0x915843,0], W8:[0xcccdc7,0],
+  W2:[0xd5d1c6,1], W7:[0xd2cdc1,0], N21:[0x81594f,0], N4:[0x915843,0], W8:[0xcccdc7,0],
   E8:[0xd3d0c6,0], N12:[0x8c5849,0], E21:[0x88a7ae,2], E5:[0xc4c7c7,1],
   N26:[0x93aab0,2], N18:[0x966553,0], N7:[0x9baca7,1], W1:[0xa1b4b9,1],
   E15:[0x975844,0], W10:[0xe0e0d6,0], 'W5-4':[0xdad5c9,0], N22:[0xc8c9c4,1],
-  E3:[0xa7acac,1], 'N7-5':[0xb5bbba,2], 'N7-1':[0x809ba4,1], N27:[0x8eafb2,2],
+  E3:[0xa7acac,1], 'N7-5':[0xb5bbba,2], 'N7-1':[0x809ba4,1], N27:[0xb9c4c7,2], 'N12-1':[0x855344,0],
   W12:[0xd8d8d0,0], N24:[0xcac9c2,1]
 };
 const frontages={
   E14:{view:[-54.3,-42.9],type:'administration'}, 'N7-2':{view:[-343.2,-209.4],type:'ribbons'},
   W2:{view:[-39.1,280.7],type:'eaves'}, N12:{view:[-208.3,-482.6],type:'hall'},
-  E21:{view:[669.9,58.7],type:'clinic'}, N22:{view:[196.5,-544.7],type:'ribbons'},
-  W10:{view:[-476.7,-169.2],type:'workshop'}, N21:{view:[-305.7,-629.4],type:'garden'},
+  N22:{view:[196.5,-544.7],type:'ribbons'},
+  W10:{view:[-476.7,-169.2],type:'workshop'},
   N26:{view:[-36.4,-573.8],type:'portico'}, 'W5-4':{view:[-579.1,17.8],type:'village'},
   N4:{view:[19.5,-374],type:'stairwell'},
   E3:{view:[222,197],type:'screen'}, 'N7-5':{view:[-392,-341],type:'colouredGlass'},
-  N27:{view:[-122,-589],type:'eureka'}, E5:{view:[160,74],type:'faculty'},
+  E5:{view:[160,74],type:'faculty'},
   N2:{view:[148,-316],type:'brickOffice'}, N10:{view:[-136,-498],type:'colonnade'},
   'N7-1':{view:[-266,-241],type:'tiledLab'}, W1:{view:[-38,446],type:'tiledLab'},
   W12:{view:[-443,145],type:'utility'}, N24:{view:[126,-624],type:'stairwell'}
@@ -89,13 +89,13 @@ export function buildStreetviewDetails(scene,D,hAt,surfaceAt){
     });
     // Topiary along these photographed frontages grows in planting strips.
     // Leave breaks for entrances and reject candidates on mapped paving.
-    if(['administration','garden','village','portico','workshop','brickOffice','faculty','eureka','tiledLab'].includes(profile.type)){
-      for(let along=-centre+1.7;along<len-centre-1.7;along+=profile.type==='garden'?4.4:5.5){
+    if(['administration','village','portico','workshop','brickOffice','faculty','tiledLab'].includes(profile.type)){
+      for(let along=-centre+1.7;along<len-centre-1.7;along+=5.5){
         if(Math.abs(along)<Math.min(4.5,len*.19))continue;
         for(const setback of [2.6,3.8,5.2]){
           const x=mx+tx*along+nx*setback,z=mz+tz*along+nz*setback;
           if(surfaceAt(x,z)!==0||surfaceAt(x+1,z)!==0||surfaceAt(x-1,z)!==0||surfaceAt(x,z+1)!==0||surfaceAt(x,z-1)!==0)continue;
-          const bottom=hAt(x,z),tier=['garden','village','administration','tiledLab','eureka'].includes(profile.type);
+          const bottom=hAt(x,z),tier=['village','administration','tiledLab'].includes(profile.type);
           trunks.push([x,bottom+.65,z,.12,1.3,.12]);
           foliage.push([x,bottom+1.65,z,1.12,.67,1.03]);
           if(tier){foliage.push([x-.40,bottom+1,z+.20,.88,.38,.84],[x+.32,bottom+2.26,z-.08,.64,.39,.67]);}break;
@@ -114,24 +114,18 @@ export function buildStreetviewDetails(scene,D,hAt,surfaceAt){
       panel(0,4.60,2.12,wide*.77,.14,4.10,0x8ca7a8);panel(0,4.65,4.17,wide*.79,.29,.22,0xbbbcb2);
       for(let j=-2;j<=2;j++)panel(j*wide*.175,4.40,2.14,.12,.22,4.07,0x899797);
       glazing(1.28,2.54,Math.min(4.6,wide*.62),0x28454c,0,.34);
-    }else if(profile.type==='ribbons'||profile.type==='clinic'){
+    }else if(profile.type==='ribbons'){
       for(let y=3.15;y<top-.8;y+=3.65)panel(0,y,.20,len*.97,.44,.56,0xd6d5cd);
-      if(profile.type==='clinic')glazing(1.43,2.8,len*.85,0x3a788a);
     }else if(profile.type==='eaves'){
       panel(0,top+.06,.45,len*.99,.43,1.28,0x333a3b);glazing(top*.63,1.15,len*.88);
     }else if(profile.type==='workshop'){
       for(const t of [-.24,.24]){const h=3.0,w=Math.min(len*.28,4);panel(t*len,h*.5,.13,w,h,.20,0x6e7e83);for(let y=.3;y<h;y+=.36)panel(t*len,y,.24,w,.035,.035,0x48575c);}
     }else if(profile.type==='village'){
       const core=-len*.24,coreWidth=Math.min(3.4,len*.20);
-      panel(core,top*.50,.25,coreWidth,top*.97,.46,0xcfa24e);
-      for(let y=2.2;y<top-1;y+=3.05){
+      const eaves=12.65;
+      panel(core,eaves*.50,.25,coreWidth,eaves*.97,.46,0xcfa24e);
+      for(let y=2.2;y<eaves-1;y+=3.05){
         glazing(y,1.20,coreWidth*.67,0x56666d,core,.50);
-        for(const offset of [.095,.355]){
-          const w=len*.20;
-          panel(offset*len,y-.73,.55,w,.80,.85,0xd8d4c4);
-          panel(offset*len,y-.23,.94,w,.058,.08,0x89928e);
-          for(const edge of [-1,1])panel(offset*len+edge*(w/2-.06),y-.60,.48,.12,1.02,.89,0xb6b5a9);
-        }
       }
     }else if(profile.type==='stairwell'){
       glazing(top*.49,top*.91,Math.min(3.2,wide),0x55808a);panel(0,3.1,.63,Math.min(5.5,wide),.28,1.45,0x909b97);
@@ -159,13 +153,6 @@ export function buildStreetviewDetails(scene,D,hAt,surfaceAt){
         }
       }
       panel(0,3.21,.42,span+.17,.12,.42,0xc6c9bc);
-    }else if(profile.type==='eureka'){
-      for(let y=4.3;y<top-.8;y+=3.55){
-        glazing(y,2.20,len*.93,0x51899a);
-        panel(0,y-1.36,.39,len*.99,.40,.67,0xc7c6b5);
-      }
-      const count=Math.max(2,Math.round(len/5));
-      for(let i=0;i<count;i++)panel(((i+.5)/count-.5)*len,2.33,.52,.22,4.65,.44,0xba944f);
     }else if(profile.type==='faculty'){
       for(let y=2.5;y<top-1;y+=3.6)glazing(y,1.12,len*.82,0x4e6267);
       panel(0,top-.28,.29,len*.99,.31,.53,0xaaa99e);

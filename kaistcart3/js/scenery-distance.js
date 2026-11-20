@@ -3,7 +3,7 @@ import { Sphere, Vector3 } from '../lib/three.module.min.js';
 function detailRange(name) {
   if (/tactile|bollard|parking-car-wheels|parking-car-trim|tire.stop|twig/i.test(name)) return 170;
   if (/kerbs|parking-markings|parking-car-glass|crosswalks, lane paint|understory|branch|shrub/i.test(name)) return 310;
-  if (/parking-car-bodies|captured-roadside-solids|trunks|street.furniture/i.test(name)) return 500;
+  if (/parking-car-bodies|captured-roadside-solids|trunks|street.furniture|KAIST Bridge metal parapets tube/i.test(name)) return 500;
   if (/buildings-detail|architecture-detail/i.test(name)) return 720;
   return Infinity;
 }
@@ -23,13 +23,15 @@ export function trackSceneryDistance(scene) {
     const local=mesh.boundingSphere || mesh.geometry.boundingSphere;
     if(!local || local.isEmpty())return;
     const bounds=new Sphere().copy(local).applyMatrix4(mesh.matrixWorld);
-    entries.push({mesh,bounds,range,casts});
+    const near=mesh.geometry,far=near.userData.distantCrown;
+    entries.push({mesh,bounds,range,casts,near,far});
   });
   return position=>{
     if(previous.distanceToSquared(position)<100)return;
     previous.copy(position);
-    for(const {mesh,bounds,range,casts} of entries){
+    for(const {mesh,bounds,range,casts,near,far} of entries){
       const squared=position.distanceToSquared(bounds.center);
+      if(far)mesh.geometry=squared>(155+bounds.radius)**2?far:near;
       if(Number.isFinite(range))mesh.visible=squared<(range+bounds.radius)**2;
       if(casts)mesh.castShadow=squared<(205+bounds.radius)**2;
     }

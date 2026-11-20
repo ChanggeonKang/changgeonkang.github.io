@@ -96,20 +96,21 @@ function crownLobe(seed, detail) {
   }
   return geometry;
 }
-function clippedCrown(understory=false){
+function clippedCrown(understory=false,distant=false){
   const lobes=understory
     ? [[-.11,.33,.04,.37,.32,.35],[.14,.48,-.06,.35,.30,.32],[-.07,.68,.03,.37,.25,.30],[.12,.79,.06,.26,.19,.25]]
     : [[0,.2,0,.38,.19,.31],[.03,.43,.02,.34,.18,.29],[-.04,.65,-.015,.31,.18,.28],[.015,.85,0,.28,.17,.25],[-.2,.35,.01,.19,.15,.23],[.17,.59,.02,.2,.16,.22]];
-  return merge(lobes.map(([x,y,z,a,b,c],i)=>[crownLobe(i+.4,understory?1:2),transform(x,y,z,a,b,c),i%2?0xe9edde:0xffffff]),true);
+  const detail=distant?0:understory?1:2;
+  return merge(lobes.map(([x,y,z,a,b,c],i)=>[crownLobe(i+.4,detail),transform(x,y,z,a,b,c),i%2?0xe9edde:0xffffff]),true);
 }
 
 // Dense central foliage and staggered boughs make an uneven pine silhouette.
-function pineCrown(){
+function pineCrown(distant=false){
   const rand=random(30471), parts=[];
   const spray=(x,y,z,sx,sy,sz,az,tilt,shade)=>{
     const rotation=new THREE.Quaternion().setFromEuler(new THREE.Euler(0,-az,tilt,'YXZ'));
     const matrix=new THREE.Matrix4().compose(new THREE.Vector3(x,y,z),rotation,new THREE.Vector3(sx,sy,sz));
-    parts.push([crownLobe(rand()*13,1),matrix,shade]);
+    parts.push([crownLobe(rand()*13,distant?0:1),matrix,shade]);
   };
   for(let k=0;k<7;k++){
     const t=k/6,az=k*2.4,r=.23*(1-.48*t);
@@ -289,10 +290,11 @@ function plantWesternVerge(D,C,hAt,surfAt,templates){
   return plants;
 }
 
-export function buildStreetscape(scene,D,C,hAt,surfAt){
+export function buildStreetscape(scene,D,C,hAt,surfAt,mobile=false){
   const templates={sculpted:clippedCrown(),understory:clippedCrown(true),pine:pineCrown()}, leafMap=evergreenTexture();
   const plants=plantWesternVerge(D,C,hAt,surfAt,templates),models=[];
   for(const [kind,crown] of Object.entries(templates)){
+    if(mobile)crown.userData.distantCrown=kind==='pine'?pineCrown(true):clippedCrown(kind==='understory',true);
     models.push(...addPlants(scene,plants[kind],kind,crown,kind==='understory'?null:trunkTemplate(kind),leafMap));
   }
   const apartments=apartmentDetails(scene,D,hAt);models.push(...apartments.models);

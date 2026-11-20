@@ -1,11 +1,16 @@
-// A wide asphalt quad spans the road crown. Its two rendered triangles can
-// stand well above (or below) a fresh terrain sample taken between its ends.
-// Keep only the pavement triangles in the immediate neighbourhood of a hump.
+// Tyres and entrance floors query the triangles actually submitted to WebGL.
+// Keep compact triangle references for the whole campus, and decode only the
+// handful of cells around a moving kart into planes for repeated wheel probes.
 const CELL = 4;
-export const APPROACH = 5;
-const cellKey = (x,z) => x * 16384 + z;
-const substrates = new Set(['Mapped campus streets and service lanes','Mapped walks, cycleways and steps',
+const substrates = new Set(['Mapped campus streets and service lanes','West campus block-paved motor lane','Sejong Hall paved driveway and forecourt','Mapped walks, cycleways and steps',
   'Mapped trails and gravel paths','Campus terrain','Campus plazas and pedestrian squares','campus-parking-asphalt']);
+
+// Quantising the source fingerprint to millimetres tolerates harmless
+// floating-point differences between browser engines.
+export function hashNumbers(hash,numbers,scale=1){
+  for(let i=0;i<numbers.length;i++)hash=Math.imul(hash^Math.round(numbers[i]*scale),16777619);
+  return hash>>>0;
+}
 
 function clip(points,axis,edge,sign){
   const out=[];
@@ -59,57 +64,122 @@ function clearPavementSeams(b,triangles){
   for(let k=0;k<heights.length;k++)heights[k]+=corrections[k];
 }
 
-export function indexHumpPavement(humps, meshes) {
-  return indexPavement(humps.map(b=>({x:b.x,z:b.z,radius:Math.hypot(b.hw+APPROACH,b.length/2+APPROACH)})),meshes);
-}
-
-export function indexPavement(regions, meshes) {
-  const cells = new Map();
-  for (const b of regions) {
-    const radius=b.radius;
-    for(let i=Math.floor((b.x-radius)/CELL);i<=Math.floor((b.x+radius)/CELL);i++)
-      for(let j=Math.floor((b.z-radius)/CELL);j<=Math.floor((b.z+radius)/CELL);j++)cells.set(cellKey(i,j),[]);
+export function indexPavement(bounds,meshes) {
+  const x0=Math.floor(bounds.x0/CELL), z0=Math.floor(bounds.z0/CELL);
+  const w=Math.floor(bounds.x1/CELL)-x0+1,h=Math.floor(bounds.z1/CELL)-z0+1;
+  const positions=[],indices=[],paintable=[];
+  let fingerprint=2166136261;
+  for(const m of meshes)if(substrates.has(m.name)){
+    positions.push(m.geometry.attributes.position.array);
+    indices.push(m.geometry.index?.array);
+    paintable.push(m.name!=='Campus terrain' && m.name!=='Mapped trails and gravel paths');
+    fingerprint=hashNumbers(fingerprint,positions.at(-1),1000);
+    if(indices.at(-1))fingerprint=hashNumbers(fingerprint,indices.at(-1));
   }
-  for(const mesh of meshes) {
-    if(!substrates.has(mesh.name))continue;
-    const pos=mesh.geometry.attributes.position, index=mesh.geometry.index?.array;
-    for(let k=0,count=index?.length ?? pos.count;k<count;k+=3){
-      const a=index?index[k]:k,b=index?index[k+1]:k+1,c=index?index[k+2]:k+2;
-      const ax=pos.getX(a),az=pos.getZ(a),bx=pos.getX(b),bz=pos.getZ(b),cx=pos.getX(c),cz=pos.getZ(c);
-      const x0=Math.floor(Math.min(ax,bx,cx)/CELL),x1=Math.floor(Math.max(ax,bx,cx)/CELL);
-      const z0=Math.floor(Math.min(az,bz,cz)/CELL),z1=Math.floor(Math.max(az,bz,cz)/CELL);
-      let plane;
-      for(let i=x0;i<=x1;i++)for(let j=z0;j<=z1;j++){
-        const bin=cells.get(cellKey(i,j));
-        if(!bin)continue;
-        if(!plane){
-          const det=(bx-ax)*(cz-az)-(bz-az)*(cx-ax);
-          if(Math.abs(det)<1e-10)continue;
-          const ay=pos.getY(a);
-          plane={ax,az,ay,bx,bz,cx,cz, ux:(cz-az)/det,uz:(ax-cx)/det,vx:(az-bz)/det,vz:(bx-ax)/det,
-            uy:pos.getY(b)-ay,vy:pos.getY(c)-ay};
+  const numMeshes=positions.length,offsets=new Uint32Array(w*h+1);
+  let entries;
+  // Two passes avoid keeping a JS array (and boxed numbers) per square of
+  // road. Every reference addresses the original mesh buffers directly.
+  function populate(cursor){
+    for(let mesh=0;mesh<numMeshes;mesh++){
+      const pos=positions[mesh],idx=indices[mesh],count=idx?.length??pos.length/3;
+      for(let k=0;k<count;k+=3){
+        const a=idx?idx[k]*3:k*3,b=idx?idx[k+1]*3:a+3,c=idx?idx[k+2]*3:a+6;
+        const ax=pos[a],az=pos[a+2],bx=pos[b],bz=pos[b+2],cx=pos[c],cz=pos[c+2];
+        if(Math.abs((bx-ax)*(cz-az)-(bz-az)*(cx-ax))<1e-10)continue;
+        const left=Math.max(0,Math.floor(Math.min(ax,bx,cx)/CELL)-x0);
+        const right=Math.min(w-1,Math.floor(Math.max(ax,bx,cx)/CELL)-x0);
+        const top=Math.max(0,Math.floor(Math.min(az,bz,cz)/CELL)-z0);
+        const bottom=Math.min(h-1,Math.floor(Math.max(az,bz,cz)/CELL)-z0);
+        const ref=(k/3)*numMeshes+mesh;
+        for(let j=top;j<=bottom;j++)for(let i=left;i<=right;i++){
+          const bin=i+j*w;
+          if(cursor)entries[cursor[bin]++]=ref;
+          else offsets[bin+1]++;
         }
-        bin.push(plane);
       }
     }
   }
-  function heightAt(x,z){
+  populate(null);
+  for(let i=1;i<offsets.length;i++)offsets[i]+=offsets[i-1];
+  entries=new Uint32Array(offsets.at(-1));
+  populate(offsets.slice(0,-1));
+  function plane(ref){
+    const m=ref%numMeshes, k=(ref-m)/numMeshes*3,pos=positions[m],idx=indices[m];
+    const a=idx?idx[k]*3:k*3,b=idx?idx[k+1]*3:a+3,c=idx?idx[k+2]*3:a+6;
+    const ax=pos[a],az=pos[a+2],bx=pos[b],bz=pos[b+2],cx=pos[c],cz=pos[c+2],ay=pos[a+1];
+    const det=(bx-ax)*(cz-az)-(bz-az)*(cx-ax);
+    return {ax,az,bx,bz,cx,cz,ay,ux:(cz-az)/det,uz:(ax-cx)/det,vx:(az-bz)/det,vz:(bx-ax)/det,uy:pos[b+1]-ay,vy:pos[c+1]-ay,paintable:paintable[m]};
+  }
+  const cache=Array(32);
+  function heightAt(x,z,ceiling=Infinity){
+    const i=Math.floor(x/CELL)-x0,j=Math.floor(z/CELL)-z0;
+    if(i<0||j<0||i>=w||j>=h)return -Infinity;
+    const bin=i+j*w,slot=bin%cache.length;
+    let tile=cache[slot];
+    if(tile?.bin!==bin){
+      const triangles=[];
+      for(let k=offsets[bin];k<offsets[bin+1];k++)triangles.push(plane(entries[k]));
+      cache[slot]=tile={bin,triangles};
+    }
     let top=-Infinity;
-    const triangles=cells.get(cellKey(Math.floor(x/CELL),Math.floor(z/CELL)));
-    if(triangles)for(const t of triangles){
+    for(const t of tile.triangles){
       const dx=x-t.ax,dz=z-t.az, u=t.ux*dx+t.uz*dz,v=t.vx*dx+t.vz*dz;
       if(u<-.000001 || v<-.000001 || u+v>1.000001)continue;
       const y=t.ay+t.uy*u+t.vy*v;
-      if(y>top)top=y;
+      if(y<=ceiling && y>top)top=y;
     }
     return top;
   }
-  function fitSeams(b){
-    const radius=Math.hypot(b.hw,b.length/2),triangles=new Set();
-    for(let i=Math.floor((b.x-radius)/CELL);i<=Math.floor((b.x+radius)/CELL);i++)
-      for(let j=Math.floor((b.z-radius)/CELL);j<=Math.floor((b.z+radius)/CELL);j++)
-        for(const t of cells.get(cellKey(i,j)) || [])triangles.add(t);
-    clearPavementSeams(b,triangles);
+  function trianglesIn(minX,minZ,maxX,maxZ){
+    const refs=new Set();
+    const left=Math.max(0,Math.floor(minX/CELL)-x0),right=Math.min(w-1,Math.floor(maxX/CELL)-x0);
+    const top=Math.max(0,Math.floor(minZ/CELL)-z0),bottom=Math.min(h-1,Math.floor(maxZ/CELL)-z0);
+    for(let j=top;j<=bottom;j++)for(let i=left;i<=right;i++){
+      const bin=i+j*w;
+      for(let k=offsets[bin];k<offsets[bin+1];k++)refs.add(entries[k]);
+    }
+    return Array.from(refs,plane);
   }
-  return {heightAt,fitSeams};
+  function fitSeams(b){
+    const radius=Math.hypot(b.hw,b.length/2);
+    clearPavementSeams(b,trianglesIn(b.x-radius,b.z-radius,b.x+radius,b.z+radius));
+  }
+  // At the edge of a bridge or a cut in a parking slab the visible road can
+  // change level abruptly. Keep the two sides of that edge independent.
+  function edgeProfile(ax,az,bx,bz){
+    const dx=bx-ax,dz=bz-az,facets=[],cuts=[0,1];
+    for(const t of trianglesIn(Math.min(ax,bx),Math.min(az,bz),Math.max(ax,bx),Math.max(az,bz))){
+      const u=(ax-t.ax)*t.ux+(az-t.az)*t.uz,v=(ax-t.ax)*t.vx+(az-t.az)*t.vz;
+      const du=dx*t.ux+dz*t.uz,dv=dx*t.vx+dz*t.vz;
+      let start=0,end=1;
+      for(const [offset,rate] of [[u,du],[v,dv],[1-u-v,-du-dv]]){
+        if(Math.abs(rate)<1e-12){if(offset<0){end=-1;break;}}
+        else if(rate>0)start=Math.max(start,-offset/rate);
+        else end=Math.min(end,-offset/rate);
+      }
+      if(end-start<=1e-7)continue;
+      facets.push({start,end,y:t.ay+u*t.uy+v*t.vy,dy:du*t.uy+dv*t.vy});
+      cuts.push(start,end);
+    }
+    for(let i=1;i<facets.length;i++)for(let j=0;j<i;j++){
+      const a=facets[i],b=facets[j],cross=(b.y-a.y)/(a.dy-b.dy);
+      if(cross>Math.max(a.start,b.start)&&cross<Math.min(a.end,b.end))cuts.push(cross);
+    }
+    cuts.sort((a,b)=>a-b);
+    const pieces=[];
+    for(let i=1;i<cuts.length;i++){
+      const start=cuts[i-1],end=cuts[i],mid=(start+end)*.5;
+      if(end-start<1e-7)continue;
+      let height=-Infinity,face=null;
+      for(const f of facets)if(mid>=f.start&&mid<=f.end&&f.y+mid*f.dy>height){
+        face=f;height=f.y+mid*f.dy;
+      }
+      const previous=pieces.at(-1);
+      if(previous&&previous.face===face)previous.end=end;
+      else pieces.push({start,end,face});
+    }
+    return pieces;
+  }
+  return {heightAt,fitSeams,trianglesIn,edgeProfile,fingerprint};
 }

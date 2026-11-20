@@ -1,6 +1,8 @@
 import { physicalBarrier, rasterPolygon, rasterSegment } from './explore-surfaces.js';
 import { resolveWalls } from './race-sim.js';
 import { indexRoadBoundary, sampleRoadGrid } from './road-boundary-index.js';
+import { parkedCarIndex } from './parked-car-access.js';
+import {resolvePost} from './fixed-structures.js';
 
 // Rounded front corners preserve space to turn in tight entrances. The same
 // outline governs spawning, movement and recovery.
@@ -11,6 +13,14 @@ function hasChassisClearance(isDrivable,x,z,heading,groundHint=Infinity){
   const s=Math.sin(heading),c=Math.cos(heading);
   for(const [lx,lz] of hull)if(!isDrivable(x+lx*c+lz*s,z-lx*s+lz*c,groundHint))return false;
   return true;
+}
+
+export function withParkedCars(access,cars,groundAt){
+  const {occupied,near}=parkedCarIndex(cars,groundAt);
+  const free=(x,z,level)=>access.isDrivable(x,z,level) && !occupied(x,z,level);
+  return {...access,isOccupied:occupied,isFree:free,canPlace(x,z,th,level){
+    return near(x,z)?hasChassisClearance(free,x,z,th,level):access.canPlace(x,z,th,level);
+  }};
 }
 
 export function createDrivingAccess(data, network, index, surfaceGrid, outlines) {
@@ -47,7 +57,7 @@ export function createDrivingAccess(data, network, index, surfaceGrid, outlines)
   }
   // A dedicated sidewalk or stair inside a car park is still a pedestrian
   // route. Mapped road intersections are painted back over their crossings.
-  for(const [road,way] of index.ways)if(!road.drivable && !road.bridge && !road.tunnel){
+  for(const [road,way] of index.ways)if(!road.drivable && !road.sharedParkingSurface && !road.bridge && !road.tunnel){
     for(const s of way.segments)rasterSegment(grid,s.a,s.b,road.width/2,k=>{d[k]=0;});
   }
   const drivesAtNode=new Map();
@@ -107,7 +117,10 @@ export function resolveDrivingBoundary(body,previous,access) {
     if(!access.canPlace(px,pz,body.th,ground)){body.x=px;body.z=pz;break;}
   }
   if(access.canPlace(body.x,body.z,body.th,ground))return 0;
-  const occupied=(x,z)=>access.isDrivable(x,z,ground)?2:9;
+  const post=access.postHit?.(body.x,body.z,body.th,ground);
+  if(post)return resolvePost(body,previous,access,ground,post);
+  const free=access.isFree || access.isDrivable;
+  const occupied=(x,z)=>free(x,z,ground)?2:9;
   const impact=resolveWalls(body,previous,occupied,hull);
   if(!access.canPlace(body.x,body.z,body.th,ground) && access.canPlace(previous.x,previous.z,previous.th,ground)){
     // Turning in place can rotate a corner into a narrow wall even when the

@@ -7,7 +7,7 @@ export function partitionCampusBatches(scene, animatedTreeLods) {
   const packed=new Set(animatedTreeLods.flatMap(lod=>[lod.near,lod.far]));
   const cell=(x,z)=>Math.floor(x/300)*4096+Math.floor(z/300);
   const matrix=new THREE.Matrix4(),colour=new THREE.Color(),point=new THREE.Vector3(), meshes=[];
-  scene.traverse(m=>{if(m.isMesh && !packed.has(m))meshes.push(m);});
+  scene.traverse(m=>{if(m.isMesh && !m.userData.cameraPacked && !packed.has(m))meshes.push(m);});
   const attach=(source,copy)=>{
     copy.name=source.name;
     copy.position.copy(source.position);copy.quaternion.copy(source.quaternion);copy.scale.copy(source.scale);

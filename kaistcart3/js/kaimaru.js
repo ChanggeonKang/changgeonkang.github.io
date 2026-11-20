@@ -103,6 +103,40 @@ export function buildKaimaru(scene, building, hAt, MB) {
   }
   diningWing(-270.65,-253.30,true);
   diningWing(-244.70,-227.55,false);
+  // N11's eastern wing is a separate three-storey volume. Its low hipped
+  // roof is visible in the orthophoto, and the south face, recessed ground
+  // floor and two rows of punched windows can be seen across Oreum-gil.
+  const ex=-206.75,ez=-435.03,ew=23.8,ed=20.2,eFront=ez+ed*.5;
+  const eBase=hAt(ex,eFront)+.62,upperWall=9.88,eRoof=eBase+upperWall;
+  box(masonry,ex,eBase-1.00,ez,ew,2.05,ed,0x784b40);
+  box(masonry,ex,eBase+4.85,ez-.43,ew,9.97,ed-.86,0x8b5243);
+  box(masonry,ex,eBase+6.68,eFront-.32,ew,6.41,.71,0x945749);
+  const centres=[ex-ew*.5+3.47,ex-ew*.5+9.12,ex-ew*.5+14.77,ex-ew*.5+20.42];
+  for(const [i,x] of centres.entries()){
+    const frontage=(y,z,w,h,d,color,batch=hardware)=>box(batch,x,y,z,w,h,d,color);
+    for(const y of [eBase+5.07,eBase+8.10]){
+      frontage(y,eFront+.061,4.34,1.35,.11,0x433d37);
+      frontage(y,eFront+.129,4.12,1.17,.06,i%2?0x637a77:0x718482,glazing);
+      frontage(y,eFront+.168,.055,1.18,.04,0x554a42);
+      frontage(y-.69,eFront+.112,4.47,.08,.24,0x785544);
+    }
+    frontage(eBase+1.64,eFront-.69,5.12,2.70,.10,0x3c514e,glazing);
+    frontage(eBase+1.64,eFront-.60,.067,2.70,.055,frame);
+    frontage(eBase+.42,eFront+.02,5.12,.70,.20,0x885044,masonry);
+    box(masonry,x-2.64,eBase+1.67,eFront-.09,.48,3.35,.56,0x855142);
+  }
+  for(const side of [-1,1]){
+    for(let j=0;j<4;j++)for(const y of [eBase+4.98,eBase+8.05]){
+      const z=ez-ed*.5+3.00+j*4.60;
+      box(glazing,ex+side*(ew*.5+.012),y,z,.05,1.16,3.35,0x657773);
+      box(hardware,ex+side*(ew*.5+.038),y,z,.035,1.19,.06,frame);
+    }
+  }
+  box(hardware,ex,eRoof+.10,ez,ew+1.65,.31,ed+1.62,0x65443d);
+  const corner=(x,z)=>[x,eRoof+.24,z],ridge=[ex,eRoof+1.28,ez];
+  const roofCorners=[corner(ex-ew*.5-.82,ez+ed*.5+.81),corner(ex-ew*.5-.82,ez-ed*.5-.81),
+    corner(ex+ew*.5+.82,ez-ed*.5-.81),corner(ex+ew*.5+.82,ez+ed*.5+.81)];
+  for(let j=0;j<4;j++)hardware.tri(roofCorners[j],roofCorners[(j+3)%4],ridge,up,uv,uv,uv,shade.set(j%2?0x675a55:0x625954));
   for(const x of [-270.65,-253.3,-244.7,-227.55]){
     const w=(x===-253.3||x===-244.7)?1.12:.80;
     rect(masonry,x,1.87,frontZ(x)-.04,w,6.27,1.03,brick);
@@ -221,6 +255,11 @@ export function buildKaimaru(scene, building, hAt, MB) {
     const mesh=new THREE.Mesh(new THREE.PlaneGeometry(width,height),new THREE.MeshStandardMaterial({map,roughness:.84}));
     mesh.position.set(x,y,z);group.add(mesh);return mesh;
   };
+  const eastNumber=signPlane(2.24,.81,centres[0]-1.05,eBase+6.60,eFront+.18,(ctx,w,h)=>{
+    ctx.clearRect(0,0,w,h);ctx.font='bold 241px Arial';ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillStyle='#b9554d';ctx.fillText('N11',w*.5,h*.56);
+  });
+  eastNumber.material.transparent=true;eastNumber.material.alphaTest=.3;
   signPlane(5.61,.94,doorX,floor+3.74,-397.78,(ctx,w,h)=>{
     ctx.fillStyle='#645044';ctx.fillRect(0,0,w,h);
     for(let x=0;x<w;x+=22){ctx.fillStyle='#493b32';ctx.fillRect(x,0,2,h);}
@@ -234,7 +273,9 @@ export function buildKaimaru(scene, building, hAt, MB) {
     ctx.fillStyle='#465e61';ctx.fillRect(32,10,w-64,34);
     for(let i=0;i<5;i++){ctx.fillStyle=i%2?'#b5a479':'#8c9880';ctx.fillRect(60,62+i*32,143,22);ctx.fillStyle='#9a958a';ctx.fillRect(226,68+i*32,455,5);}
   });
-  const totemX=-244.7,totemZ=-389.53, ground=hAt(totemX,totemZ);
+  // Bearings to the red marker in three adjacent street views put the post
+  // at the front of the planting bed, just behind the bicycle stands.
+  const totemX=-244.1,totemZ=-388.65, ground=hAt(totemX,totemZ);
   const totem=new THREE.Mesh(new THREE.BoxGeometry(.53,1.83,.25),new THREE.MeshStandardMaterial({color:0x9e3336,roughness:.83}));
   totem.position.set(totemX,ground+.915,totemZ);totem.castShadow=true;group.add(totem);
   const marker=signPlane(1.83,.53,totemX,ground+.915,totemZ+.127,(ctx,w,h)=>{

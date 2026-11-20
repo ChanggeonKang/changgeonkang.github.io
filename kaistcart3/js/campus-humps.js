@@ -4,6 +4,7 @@ import { isMotorRoad } from './explore-surfaces.js';
 // specified no width. Only a width tag on the hump is an actual dimension.
 export function humpWidth(road, feature) {
   const clearWidth = Math.max(.5, road.width - .40);
+  if(feature.carriagewaySide)return Math.max(.5,(clearWidth-.40)/2);
   const tagged = ['osm:traffic_calming:width','osm:width'].includes(feature.dimensionSources?.width);
   if (tagged && feature.width > 0) return Math.min(feature.width, clearWidth);
   return clearWidth;
@@ -57,7 +58,7 @@ function snapPhoto(index,course,ci){
   return best;
 }
 
-export function locateHumps(network, campusFeatures, index, course, observations) {
+export function locateHumps(network, campusFeatures, index, course, observations, access) {
   const old = new Map(campusFeatures.map(b => [b.id, b]));
   const placed = [], byId = new Map();
   function attach(snap, feature, ci) {
@@ -72,9 +73,12 @@ export function locateHumps(network, campusFeatures, index, course, observations
     const before=sampleWay(index,road,at-reach), after=sampleWay(index,road,at+reach);
     const dx=after[0]-before[0], dz=after[1]-before[1];
     const span = Math.hypot(dx,dz);
-    const width = humpWidth(road, feature);
-    const hump = {...feature, x, z, ci, roadWayId:road.id, width, hw:width/2, length,
-      height:feature.height ?? (short ? .05 : .10), dx:span>.01?dx/span:s.dx, dz:span>.01?dz/span:s.dz};
+    const width = humpWidth(road, feature), tangentX=span>.01?dx/span:s.dx,tangentZ=span>.01?dz/span:s.dz;
+    // The N0 median separates two physically staggered humps. Centre each
+    // half on its two-lane carriageway, preserving the gap at the yellow lines.
+    const lateral=feature.carriagewaySide?(feature.carriagewaySide==='north'?1:-1)*Math.sign(tangentX)*(.20+width/2):0;
+    const hump = {...feature, x:x+tangentZ*lateral, z:z-tangentX*lateral, ci, roadWayId:road.id, width, hw:width/2, length,
+      height:feature.height ?? (short ? .05 : .10), dx:tangentX, dz:tangentZ};
     placed.push(hump);
     if (feature.id) byId.set(feature.id,hump);
   }
@@ -83,6 +87,48 @@ export function locateHumps(network, campusFeatures, index, course, observations
     const onHost = r => isMotorRoad(r) && r.id===hostId && r.nodes.includes(feature.id);
     attach(index.nearest(feature.x,feature.z,1,onHost), {...old.get(feature.id),...feature}, -1);
   }
+  // November 2026 panorama WNAIQBQp-P9GfHtbMREE-w shows a raised red
+  // approach on each side of the mapped E3-5 zebra. Dimensions are estimated.
+  const crossingNode=13895889542,street=network.roads.find(r=>r.id===77338232 && r.nodes.includes(crossingNode));
+  if(street){
+    const p=street.p[street.nodes.indexOf(crossingNode)];
+    const table={type:'table',paint:'red-crossing',length:5.9,height:.095,plateau:3.35,
+      source:'November 2026 street view at mapped E3-5 crossing',panorama:'WNAIQBQp-P9GfHtbMREE-w'};
+    const existing=placed.find(b=>b.roadWayId===street.id && Math.hypot(b.x-p[0],b.z-p[1])<1.2);
+    if(existing)Object.assign(existing,table);
+    else attach(index.nearest(...p,1,r=>r===street),{...table,id:crossingNode},-1);
+  }
+  // FoSSrk and dL4nZS show the second table on the School of Computing
+  // access road in opposite directions. Its centre is farther north than
+  // the pedestrian routing node. The white zebra on the garage spur is flat.
+  const court=index.nearest(318.25,287.95,2,r=>r.id===210339936);
+  if(court)attach(court,{id:'E3-computing-court',type:'table',paint:'red-crossing',
+    length:5.55,height:.09,plateau:3.0,panorama:'FoSSrkL7NuzYk7OTq80WJQ',
+    source:'November 2026 views from the court and garage spur, and overhead paint extents'},-1);
+  // November street view and the orthophoto of the N0 guardhouse identify
+  // two sites absent from the traffic-calming nodes. Horizontal dimensions
+  // are image estimates; the conventional .10 m profile is not a survey.
+  const gateRoad=r=>r.id===1280479120;
+  for(const [id,x,length,carriagewaySide] of [
+    ['N0-inner',366.2,4.5,null],
+    ['N0-guard-north',414.6,3.4,'north'],
+    ['N0-guard-south',412.1,3.4,'south']
+  ]){
+    const snap=index.nearest(x,-381.4,2,gateRoad);
+    attach(snap,{id,type:'hump',length,carriagewaySide,panorama:'ZQ4h5XZbmu48J8E9BTTpoQ',
+      source:'November 2026 east gate street view and overhead imagery'},-1);
+  }
+  const woodland=r=>r.id===78059219;
+  for(const [id,x,z,length] of [['woodland-straight',606.20,-382.00,3.7],['woodland-bend',572.25,-364.23,3.4]]){
+    const snap=index.nearest(x,z,1,woodland);
+    attach(snap,{id,type:'hump',length,paint:'longitudinal-bars',panorama:'SV9_mfDWqGD__6YPmBgBRg',
+      source:'October 2026 woodland lane view and overhead footprint'},-1);
+  }
+  // The striped hump ahead of panorama 812 spans just the narrow tennis
+  // access. The four-lane avenue beyond the railing stays level here.
+  const tennis=index.nearest(-508.59,-314.42,1.5,r=>r.id===1528343975 && r.lanes===1);
+  attach(tennis,{id:'tennis-access',type:'hump',length:3.5,paint:'diagonal-bars',
+    panorama:'A2wGJ0u1vlbrz1dfaR5C-g',source:'November 2026 tennis lane view and overhead footprint'},-1);
   for (const observation of observations) {
     const ci = Math.round(observation.progress) % course.n;
     const snap = snapPhoto(index,course,ci);
@@ -92,6 +138,29 @@ export function locateHumps(network, campusFeatures, index, course, observations
     if (matched) { matched.ci=ci; continue; }
     attach(snap,{source:'street-level capture',photoNumbers:observation.photoNumbers,
       height:observation.heightM,length:observation.lengthM},ci);
+  }
+  // November panoramas on the W8 avenue and both N3 red approaches were
+  // checked against the overhead footprints. The two avenues have very
+  // different stripe bearings despite having the same untagged OSM type.
+  for(const b of placed){
+    // Along the tennis lane the surveyed iron railing cuts into the OSM
+    // road strip. The asphalt hump stops inside the drainage gutter on
+    // each side. Keep its visual paint and its tyre surface on that span.
+    if(b.roadWayId===1528343975 && access){
+      const span=sign=>{
+        let limit=b.hw;
+        for(const at of [-.45,0,.45])for(let t=.04;t<limit+.32;t+=.04){
+          const x=b.x+b.dx*at*b.length+b.dz*t*sign,z=b.z+b.dz*at*b.length-b.dx*t*sign;
+          if(!access.isDrivable(x,z)){limit=Math.min(limit,Math.max(0,t-.36));break;}
+        }
+        return limit;
+      };
+      const left=span(-1),right=span(1),offset=(right-left)/2;
+      b.x+=b.dz*offset;b.z-=b.dx*offset;b.width=left+right;b.hw=b.width/2;
+    }
+    if([12994559449,13899794015,13899794016,13899794017,13899794018].includes(b.id))
+      b.paint='longitudinal-bars';
+    if(b.id===13899444976 || b.id===13899444977)b.paint='diagonal-bars';
   }
   return placed;
 }

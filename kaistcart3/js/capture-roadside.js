@@ -347,31 +347,38 @@ export function buildCapturedRoadside(scene, D, C, hAt, surfAt) {
       for(const h of [.19,.4,.63,.85,.98])rod(solid,at(-.045,.5,h),at(1.045,.5,h),h===.98?.023:.011,h===.98?white:0x424a48);
       for(let u=0;u<=1;u+=.05)rod(solid,at(u,.5,.15),at(u,.5,.97),.009,0x424a48);
     }
-    const first=courts[0].p, last=courts.at(-1).p;
-    const perimeter=[[first[0][0]-4.1,first[0][1]-4],[last[1][0]+3,last[1][1]-4],
-      [last[2][0]+3,last[2][1]+4],[first[3][0]-3.45,first[3][1]+4]];
-    for(let edge=0;edge<4;edge++) {
-      const a=perimeter[edge],b=perimeter[(edge+1)%4],length=Math.hypot(b[0]-a[0],b[1]-a[1]);
+    const first=courts[0].p;
+    // The separate parts end at the real gates. Follow the same mapped
+    // trace as collision so a second, offset fence never crosses a gate.
+    const runs=D.barriers.filter(f=>f.id===1264367316).map(f=>f.p);
+    const perimeter=runs.flat(),edges=runs.flatMap(run=>run.slice(1).map((b,i)=>[run[i],b]));
+    for(const [a,b] of edges) {
+      const length=Math.hypot(b[0]-a[0],b[1]-a[1]);
+      const south=a[1]>-316&&b[1]>-316&&length>50;
       const pointAt=(s,h)=>{const x=a[0]+(b[0]-a[0])*s/length,z=a[1]+(b[1]-a[1])*s/length;
         return new THREE.Vector3(x,ground(x,z)+h,z);};
       const ribbon=(x0,h0,x1,h1,x2,h2,x3,h3,c)=>{
         const A=pointAt(x0,h0),B=pointAt(x1,h1),E=pointAt(x2,h2),F=pointAt(x3,h3);
         solid.quad(A,B,E,F,c);solid.quad(F,E,B,A,c);
       };
-      const bays=Math.ceil(length/3.15), bay=length/bays;
-      for(let k=0;k<bays;k++) {
-        const start=k*bay, end=(k+1)*bay, mid=(start+end)/2,r=.17, holeY=.74, green=0x276657;
+      const bays=Math.ceil(length/3.15),cuts=Array.from({length:bays+1},(_,i)=>length*i/bays);
+      if(south)for(const x of [-459.06,-457.58])cuts.push(length*(x-a[0])/(b[0]-a[0]));
+      cuts.sort((s,t)=>s-t);
+      for(let k=1;k<cuts.length;k++) {
+        const start=cuts[k-1],end=cuts[k],mid=(start+end)/2,r=Math.min(.17,(end-start)*.25),holeY=.74,green=0x276657;
+        const x=pointAt(mid,0).x,gate=south&&x>=-459.06&&x<=-457.58;
         rod(solid,pointAt(start,-.10),pointAt(start,3.0),.036,0x8f9991);
         rod(solid,pointAt(start,2.98),pointAt(end,2.98),.031,0x8f9991);
         // Split the cloth around a real opening, so the red court can show through.
-        const stops=[start,...Array.from({length:11},(_,n)=>mid-r*Math.cos(Math.PI*n/10)),end];
+        const stops=gate?[]:[start,...Array.from({length:11},(_,n)=>mid-r*Math.cos(Math.PI*n/10)),end];
         for(let n=1;n<stops.length;n++) {
           const u=stops[n-1],v=stops[n],dy=s=>Math.sqrt(Math.max(0,r*r-(s-mid)**2));
           ribbon(u,.12,v,.12,v,holeY-dy(v),u,holeY-dy(u),green);
           ribbon(u,holeY+dy(u),v,holeY+dy(v),v,1.34,u,1.34,green);
         }
         // Fine diagonal wires above the cloth, batched with the fence posts.
-        const bottom=1.34, top=2.98, width=top-bottom;
+        const bottom=gate ? .10 : 1.34, top=2.98, width=top-bottom;
+        if(gate)rod(solid,pointAt(start,.10),pointAt(end,.10),.037,0x8f9991);
         for(let s=start-width;s<end;s+=.29) {
           const u=Math.max(start,s),v=Math.min(end,s+width);
           for(const ascending of [true,false]) {
@@ -380,6 +387,7 @@ export function buildCapturedRoadside(scene, D, C, hAt, surfAt) {
           }
         }
       }
+      rod(solid,pointAt(length,-.10),pointAt(length,3.0),.036,0x8f9991);
     }
     // The tall floodlight beside the outer sidewalk is visible in both the
     // older approach and the November camera. Its heads face the courts.
@@ -430,7 +438,9 @@ export function buildCapturedRoadside(scene, D, C, hAt, surfAt) {
   wall(1327,1371,1,3.05,1.25,.55,'w11-stone-terrace-lower',[10,11,12],0x969789);
   wall(1335,1367,1,7.0,1.0,.55,'w11-stone-terrace-upper',[10,11,12],0x8e9289);
   wall(1374,1392,1,3.0,.48,.55,'w10-low-stone-edge',[13,14],0xaca894);
-  for(const [a,b]of[[1518,1532],[1538,1550],[1558,1578],[1586,1608]])wall(a,b,1,8.0,1.0,.42,'dorm-brick-retaining',[20,21,22,23,24],0x8b5546);
+  // From Areum the retaining masonry ends before the grassy Somang
+  // approach. The broad stair on mapped steps 1037932970 meets the street.
+  for(const [a,b]of[[1518,1532],[1538,1550]])wall(a,b,1,8.0,1.0,.42,'dorm-brick-retaining',[20,21],0x8b5546);
 
   // W11 terrace stairs are approximate landscape detail beyond the sidewalk.
   { const f=frame(1359,1,5.1); if(register('w11-terrace-stairs','terrace-stairs',[12],f,2.8,4.6)){
@@ -480,10 +490,21 @@ export function buildCapturedRoadside(scene, D, C, hAt, surfAt) {
     }
   }
   function canopy(from,to,side,extra,photos){
-    for(let i=from;i<=to;i+=3){const f=frame(i,side,extra),length=5.8,depth=2.8;
+    for(let i=from;i<=to;i+=3){let f=frame(i,side,extra),length=5.8;const depth=2.8;
+      // The November 2026 views show open grass, the timber pavilion and
+      // access to it between the two mapped cycle-parking strips at N19.
+      if(from===1530&&f.x>-448&&f.x<-417){
+        const edge=f.x< -432.45?-444.3:-420.6;
+        const cut=(edge-f.x)/f.tx;
+        const left=f.x< -432.45?-length/2:Math.max(-length/2,cut);
+        const right=f.x< -432.45?Math.min(length/2,cut):length/2;
+        if(right-left<1.2)continue;
+        const offset=(left+right)/2;
+        f={...f,x:f.x+f.tx*offset,z:f.z+f.tz*offset};length=right-left;
+      }
       if(!register(`bike-shelter-${i}`,'translucent-bicycle-canopy',photos,f,length,depth))continue;
       // Avoid putting shelter bays inside existing building footprints.
-      if([-2.8,0,2.8].some(a=>[-1.4,1.4].some(d=>{const p=point(f,a,d,0);return surfAt(p.x,p.z)===9;}))){metadata.models.pop();metadata.rejected.push({id:`bike-shelter-${i}`,reason:'building footprint'});continue;}
+      if([-.48*length,0,.48*length].some(a=>[-1.4,1.4].some(d=>{const p=point(f,a,d,0);return surfAt(p.x,p.z)===9;}))){metadata.models.pop();metadata.rejected.push({id:`bike-shelter-${i}`,reason:'building footprint'});continue;}
       const y=ground(f.x,f.z), low=point(f,-length/2,0,0),high=point(f,length/2,0,0);
       const lowY=ground(low.x,low.z),highY=ground(high.x,high.z);
       const roof=(a,d)=>lowY+(highY-lowY)*(a/length+.5)+2.38+.26*Math.cos(d/1.4*Math.PI/2);
@@ -494,8 +515,8 @@ export function buildCapturedRoadside(scene, D, C, hAt, surfAt) {
         for(const a of[-length/2,length/2])rod(solid,point(f,a,d0,roof(a,d0)+.01),point(f,a,d1,roof(a,d1)+.01),.022,0x8d9992);
       }
       for(const d of[-1.38,1.38])rod(solid,point(f,-length/2,d,roof(-length/2,d)),point(f,length/2,d,roof(length/2,d)),.03,0x78867d);
-      for(const a of[-1.75,-.1,1.6]){const p=point(f,a,.1,0);bicycle(f,a,.1,ground(p.x,p.z)+.03,i+Math.round(a*10)+20);}
-      for(const a of[-2.1,-.9,.3,1.5,2.4]){const p=point(f,a,.65,y+.35);box(solid,p.x,p.y,p.z,.035,.7,.7,0x82908a,f.angle);}
+      for(const a of[-1.75,-.1,1.6].filter(a=>Math.abs(a)<length/2-.3)){const p=point(f,a,.1,0);bicycle(f,a,.1,ground(p.x,p.z)+.03,i+Math.round(a*10)+20);}
+      for(const a of[-2.1,-.9,.3,1.5,2.4].filter(a=>Math.abs(a)<length/2-.1)){const p=point(f,a,.65,y+.35);box(solid,p.x,p.y,p.z,.035,.7,.7,0x82908a,f.angle);}
     }
   }
   canopy(1530,1611,-1,3.1,[21,22,23,24]);

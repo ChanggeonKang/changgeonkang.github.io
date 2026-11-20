@@ -55,8 +55,11 @@ export function stepFreeDrive(player, dt, buttons) {
     steer: player.steer,
     drift: Boolean(buttons?.drift),
   }) / body.parameters.mass;
-  const wallHit = resolveDrivingBoundary(body,previous,player.access);
+  // Test the pose that will actually be drawn. Rounding after the clearance
+  // check could leave a chassis corner on the forbidden side of a tangent
+  // kerb and invalidate the following step's last clear position.
   stabilizeVehicle(body);
+  const wallHit = resolveDrivingBoundary(body,previous,player.access);
   syncRacer(player);
 
   if (body.contacts > 0 && body.up > .65) player.uprightHeading = body.th;

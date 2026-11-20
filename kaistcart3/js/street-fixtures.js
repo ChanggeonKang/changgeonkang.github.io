@@ -8,6 +8,8 @@ export function paintMappedCrossings(roadIndex, face, quad, markings, colour) {
   let count = 0;
   for (const crossing of crossingSurvey) {
     if (crossing.marking === 'no' || crossing.marking === 'unknown') continue;
+    // The E3 court crossing is painted on its surveyed raised table.
+    if(crossing.way===210339936 && crossing.p[0]===317 && crossing.p[1]===293.4)continue;
     const [x,z] = crossing.p;
     const hit = roadIndex.nearest(x,z,9,r => crossing.way ? r.id === crossing.way : isMotorRoad(r));
     if (!hit || hit.distance > hit.s.road.width/2+1.2) continue;
@@ -62,7 +64,20 @@ function localGeometry(batch,project,tx,tz,nx,nz) {
   return {box,panel};
 }
 
-function buildPondBridge(world,batch,markings) {
+function bridgeWalkMaterial(){
+  const size=256,c=document.createElement('canvas');c.width=c.height=size;
+  const ctx=c.getContext('2d');ctx.fillStyle='#96928f';ctx.fillRect(0,0,size,size);
+  for(let j=0;j<14;j++)for(let i=-1;i<10;i++){
+    const seed=(Math.imul(j+7,2654435761)^Math.imul(i+4,668265263))>>>0;
+    const grey=[195,203,211,218,222,224][seed%6],w=size/9,h=size/14;
+    ctx.fillStyle='rgb('+grey+','+(grey-2)+','+(grey-3)+')';
+    ctx.fillRect(Math.floor((i+(j%2)*.5)*w)+.8,Math.floor(j*h)+.65,Math.ceil(w)-1.2,Math.ceil(h)-1.1);
+  }
+  const map=new THREE.CanvasTexture(c);map.wrapS=map.wrapT=THREE.RepeatWrapping;map.anisotropy=4;map.colorSpace=THREE.SRGBColorSpace;
+  return new THREE.MeshStandardMaterial({map,vertexColors:true,roughness:.94});
+}
+
+function buildPondBridge(world,batch,markings,pavers) {
   // NAVER n_7GLZxlnNHu8dtldnCqdw (October 2026): yellow chrysanthemums in a
   // continuous stone planter, arched openings and large posts at the abutments.
   const road=world.explore.roads.find(r=>r.id===426204521), way=world.roadIndex.ways.get(road);
@@ -77,7 +92,7 @@ function buildPondBridge(world,batch,markings) {
     for(let i=0;i<4;i++)stripe.panel(onRoad(outer[i]),onRoad(outer[(i+1)%4]),onRoad(inner[(i+1)%4]),onRoad(inner[i]),up,0xe0dfd9);
   }
   const approaches=[504338794,504338795].map(id=>world.explore.roads.find(r=>r.id===id));
-  const trim=0xb6b3a2, stone=0xd7d5c7, shadow=0xadaea0;
+  const trim=0x898285, stone=0x9d9190, shadow=0x685f61;
   for (const sidewalk of approaches) {
     if (!sidewalk) continue;
     const cx=s.a[0]+s.dx*s.span/2, cz=s.a[1]+s.dz*s.span/2;
@@ -88,12 +103,19 @@ function buildPondBridge(world,batch,markings) {
     const {panel,box}=localGeometry(batch,project,s.dx,s.dz,nx,nz);
     const v=outer+.10, span=way.length-.8, bays=Math.round(span/2.9), pitch=span/bays;
     box(way.length/2,-.45,(road.width/2+outer)/2,way.length,.43,outer-road.width/2,shadow);
-    // Narrow coursed paver bands follow the bridge deck even above the pond.
-    const tile=0xbca09a;
-    for (let j=0;j<Math.ceil(span/1.65);j++) {
-      const u0=.35+j*1.65,u1=Math.min(way.length-.35,u0+1.638);
-      if (u1>u0) panel([u0,.03,road.width/2+.22],[u1,.03,road.width/2+.22],[u1,.03,outer],[u0,.03,outer],up,tile);
-    }
+    // Two warm brick bands enclose the grey walking surface. They have the
+    // same deck slope as the stone edge, including at both abutments.
+    const inner=road.width/2+.17,edge=outer-.10;
+    const pavement=(lo,hi,hex)=>{
+      if(hi<=lo)return;
+      const pts=[[.32,lo],[way.length-.32,lo],[way.length-.32,hi],[.32,hi]];
+      pavers.quad(...pts.map(([u,w])=>project(u,.081,w)),up,...pts.map(([u,w])=>[u/1.75,w/1.75]),shade(hex));
+    };
+    // Pink-to-violet brick beside the kerb, with a wider band of tan paving
+    // alongside the planters. Both bands are visible along the viewing axis.
+    pavement(inner,inner+.47,0xab9da9);
+    pavement(inner+.47,edge-.94,0xb2afba);
+    pavement(edge-.94,edge,0xbca69a);
     box(way.length/2,.026,road.width/2+.05,way.length,.065,.16,trim);
     box(way.length/2,.07,v,span,.11,.29,trim);
     box(way.length/2,.89,v,span,.10,.4,stone);
@@ -112,14 +134,29 @@ function buildPondBridge(world,batch,markings) {
         }
         panel([ua,ha,v-.115],[ub,hb,v-.115],[ub,hb,v+.115],[ua,ha,v+.115],[0,-1,0],shadow);
       }
-      // Four flowering mounds per bay. Angled facets avoid a flat yellow strip
-      // from the driver's eye height while preserving the long ribbon in the view.
-      for (let j=0;j<5;j++) {
-        const u=a+(j+.5)*pitch/5, r=pitch*.11, h=1.28+.045*Math.sin(i*27+j*3);
-        for (const dir of [-1,1]) {
-          panel([u-r,1.17,v+.16*dir],[u+r,1.17,v+.16*dir],[u+r*.63,h,v+.07*dir],[u-r*.6,h,v+.07*dir],[0,.39,dir],(i+j)%4?0xb29736:0xcbac3d);
+      for(let k=0;k<3;k++){
+        const u=a+(k+.5)*pitch/3,half=pitch*.158;
+        // Light planter boxes have a visible joint on either side, including
+        // the shaded face seen looking along the bridge from the shuttle stop.
+        for(const dir of [-1,1]){
+          panel([u-half+.04,1.06,v+.18*dir],[u+half-.04,1.06,v+.18*dir],[u+half,1.21,v+.24*dir],[u-half,1.21,v+.24*dir],[0,.2,dir],0xb6b6bf);
+          panel([u-half,1.22,v+.199*dir],[u+half,1.22,v+.199*dir],[u+half,1.31,v+.166*dir],[u-half,1.31,v+.166*dir],[0,.22,dir],0x546630);
         }
-        panel([u-r*.6,h,v-.07],[u+r*.63,h,v-.07],[u+r*.63,h,v+.07],[u-r*.6,h,v+.07],up,(i+j)%3?0xe2ba38:0xf2ce50);
+        box(u,1.19,v,half*2+.016,.036,.50,0xcac9ce);
+        for(let j=0;j<5;j++){
+          const flowerU=u+(j-2)*half*.39,flowerV=v+.06*Math.sin(i*2.4+k*1.7+j*2.3);
+          const r=half*.39,h=1.36+.028*Math.cos(i*7+k+j*1.7);
+          const bloom=[0xcba20c,0xd4a90d,0xe3b80d,0xf4ca24,0xe4bb12][(i+k+j)%5];
+          const centre=project(flowerU,h+.07,flowerV);
+          for(let n=0;n<6;n++){
+            const t=n*Math.PI/3,w=t+Math.PI/3;
+            const rim=v1=>[flowerU+r*Math.cos(v1),h-.015,flowerV+r*.79*Math.sin(v1)];
+            const low=v1=>[flowerU+r*.97*Math.cos(v1),1.19,flowerV+r*.85*Math.sin(v1)];
+            const normal=[.52*Math.cos(t+.52),.82,.52*Math.sin(t+.52)];
+            batch.tri(project(...rim(t)),project(...rim(w)),centre,[normal[0]*s.dx+normal[2]*nx,normal[1],normal[0]*s.dz+normal[2]*nz],uv,uv,uv,shade(bloom));
+            panel(low(t),low(w),rim(w),rim(t),[Math.cos(t+.52),.25,Math.sin(t+.52)],(j+n)%3?bloom:0x72813e);
+          }
+        }
       }
     }
     for (const u of [.32,way.length-.32]) {
@@ -174,7 +211,7 @@ const stopNames = {
   '한국생명공학연구원':'KRIBB','한국지질자원연구원':'KIGAM','원자력안전기술원':'KINS'
 };
 function signage(stops) {
-  const canvas=document.createElement('canvas'),tw=256,th=128,cols=4,rows=Math.ceil(stops.length/cols);
+  const canvas=document.createElement('canvas'),tw=256,th=128,cols=4,rows=Math.ceil((stops.length+1)/cols);
   canvas.width=cols*tw;canvas.height=rows*th;
   const ctx=canvas.getContext('2d');
   for (let i=0;i<stops.length;i++) {
@@ -185,6 +222,11 @@ function signage(stops) {
     ctx.fillStyle='#162c38';ctx.font='bold 24px sans-serif';ctx.fillText(stopNames[stop.name] || stop.name,x+14,y+78,tw-28);
     ctx.fillStyle='#52676a';ctx.font='16px sans-serif';ctx.fillText(stop.ref || 'Campus service',x+14,y+105,tw-28);
   }
+  const x=stops.length%cols*tw,y=Math.floor(stops.length/cols)*th;
+  ctx.fillStyle='#a93442';ctx.fillRect(x,y,tw,th);
+  ctx.fillStyle='#fff5eb';ctx.textAlign='center';ctx.textBaseline='middle';
+  ctx.font='bold 47px sans-serif';ctx.fillText('정지',x+tw/2,y+43,tw*.74);
+  ctx.font='bold 35px sans-serif';ctx.fillText('STOP',x+tw/2,y+85,tw*.55);
   const texture=new THREE.CanvasTexture(canvas);texture.colorSpace=THREE.SRGBColorSpace;texture.anisotropy=4;
   const coords=i=>{
     const x=(i%cols)*tw,y=Math.floor(i/cols)*th;
@@ -194,8 +236,36 @@ function signage(stops) {
   return {texture,coords};
 }
 
+function buildWestExit(world,ground,solid,signs,atlas){
+  // In the g6FoUO6 south-facing panorama the stop sign stands inside the
+  // right grass verge. The orange convex mirror is nearer the main road.
+  const square=atlas.coords(transitStops.length);
+  for(const [x,z,heading,mirror] of [[-234.25,385.4,2.98,false],[-235.3,388.1,2.48,true]]){
+    if(world.access.isDrivable(x,z))continue;
+    const y=ground(x,z),cx=Math.sin(heading),cz=Math.cos(heading);
+    const project=(u,v,d)=>[x+cz*u+cx*d,y+v,z-cx*u+cz*d];
+    const {box}=localGeometry(solid,project,cz,-cx,cx,cz);
+    const h=mirror?2.23:1.73,radius=mirror?.40:.32,n=mirror?20:8,normal=[cx,0,cz];
+    box(0,-.12,-.045,mirror?.058:.047,h+.10,mirror?.058:.047,mirror?0xb45d36:0xa3a6a2);
+    const front=mirror?solid:signs,rim=shade(mirror?0xbc6139:0xc5c5bf);
+    for(let i=0;i<n;i++){
+      const a=2*Math.PI*(i+.5)/n,b=a+2*Math.PI/n;
+      const at=(angle,r,d)=>project(r*Math.cos(angle),h+r*Math.sin(angle),d);
+      const rimNormal=[cz*Math.cos((a+b)/2),Math.sin((a+b)/2),-cx*Math.cos((a+b)/2)];
+      solid.quad(at(a,radius,-.06),at(b,radius,-.06),at(b,radius,.006),at(a,radius,.006),rimNormal,uv,uv,uv,uv,rim);
+      solid.tri(project(0,h,-.06),at(a,radius,-.06),at(b,radius,-.06),[-cx,0,-cz],uv,uv,uv,rim);
+      const faceRadius=radius-(mirror?.027:.011);
+      solid.quad(at(a,faceRadius,.006),at(a,radius,.006),at(b,radius,.006),at(b,faceRadius,.006),normal,uv,uv,uv,uv,rim);
+      const map=(u,v)=>[square[0][0]+(square[2][0]-square[0][0])*(.5+.5*u),square[0][1]+(square[2][1]-square[0][1])*(.5+.5*v)];
+      const tint=mirror?shade(Math.sin((a+b)/2)>.12?0xb4c6cc:0xa3ae9e):shade(0xffffff);
+      front.tri(project(0,h,mirror?.061:.006),at(a,faceRadius,.006),at(b,faceRadius,.006),normal,
+        map(0,0),map(Math.cos(a),Math.sin(a)),map(Math.cos(b),Math.sin(b)),tint);
+    }
+  }
+}
+
 export function buildStreetFixtures(scene,world,ground,terrain,MB,flat) {
-  const solid=new MB(),glass=new MB(),signs=new MB(),markings=new MB(),atlas=signage(transitStops);
+  const solid=new MB(),glass=new MB(),signs=new MB(),markings=new MB(),pavers=new MB(),atlas=signage(transitStops);
   const platforms=[];
   for (let i=0;i<transitStops.length;i++) {
     const stop=transitStops[i], [sx,sz]=stop.p;
@@ -251,7 +321,9 @@ export function buildStreetFixtures(scene,world,ground,terrain,MB,flat) {
     }
     platforms.push({x,z,nx,nz,shelter});
   }
-  buildPondBridge(world,solid,markings);
+  buildPondBridge(world,solid,markings,pavers);
+  buildWestExit(world,ground,solid,signs,atlas);
+  if(pavers.p.length)flat(scene,pavers,bridgeWalkMaterial(),3).name='Duck Pond bridge pavers';
   buildKaimaruCanopy(world,ground,terrain,solid,markings);
   const material=new THREE.MeshStandardMaterial({vertexColors:true,roughness:.78});
   if(solid.p.length){const mesh=flat(scene,solid,material,1);mesh.name='Street furniture · Duck Pond bridge and transit stops';mesh.castShadow=true;}

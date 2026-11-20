@@ -115,7 +115,8 @@ function roundedRing(p, fraction = .22) {
     const a = p[(i + p.length - 1) % p.length], c = p[(i + 1) % p.length];
     const cross = (b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0]);
     if (cross * sign < .01) { q.push(b); return; }
-    const start = b.map((v, k) => mix(v, a[k], fraction)), end = b.map((v, k) => mix(v, c[k], fraction));
+    const amount=typeof fraction==='function'?fraction(b):fraction;
+    const start = b.map((v, k) => mix(v, a[k], amount)), end = b.map((v, k) => mix(v, c[k], amount));
     for (let j = 0; j <= 8; j++) {
       const t = j / 8; q.push(b.map((v, k) => (1 - t) ** 2 * start[k] + 2 * (1 - t) * t * v + t * t * end[k]));
     }
@@ -230,8 +231,10 @@ function e16(b, p, base, batches) {
 
 function n3(b, p, base, batches, hAt) {
   const { stone, metal, glass } = batches;
-  const silver = tint(0xcbd0d1), darkSilver = tint(0x778b90), teal = tint(0x407d8b), concrete = tint(0xb2b0a5);
-  const shell = roundedRing(p, .27);
+  const silver = tint(0xb3b6b6), darkSilver = tint(0x818e94), teal = tint(0x285372), concrete = tint(0xb2b0a5);
+  // The south corner above the conical support is sharp in both November
+  // street views. The east end follows the curve around the arena.
+  const shell = roundedRing(p,point=>point[0]<-55&&point[1]>-227?.024:.27);
   const cx = p.reduce((s, a) => s + a[0], 0) / p.length, cz = p.reduce((s, a) => s + a[1], 0) / p.length;
   const lower = shell.map(a => [mix(a[0], cx, .24), mix(a[1], cz, .24)]);
   volume(stone, p, base, base + .32, concrete);
@@ -260,7 +263,7 @@ function n3(b, p, base, batches, hAt) {
     }
     for (let j = Math.ceil(perimeter / 1.65) * 1.65; j < perimeter + L; j += 1.65) {
       const t = (j - perimeter) / L, bottom = mix(fascia0, fascia1, t) + 1.4;
-      facade(metal, a, q, Math.max(0, t - .055 / L), Math.min(1, t + .055 / L), bottom, top - 1.1, darkSilver, normal);
+      facade(metal, a, q, Math.max(0, t - .065 / L), Math.min(1, t + .065 / L), bottom, top - 1.1, darkSilver, normal);
     }
     for (const y of [base + 11.4, base + 14.1]) if (y > Math.max(fascia0, fascia1) + 1.4) facade(metal, a, q, 0, 1, y, y + .09, darkSilver, normal);
     const la = lower[i], lb = lower[(i + 1) % lower.length];
@@ -285,11 +288,25 @@ function n3(b, p, base, batches, hAt) {
       const foot=Math.max(base+.31,hAt(x,z)-.09), edgeY=base+6+(mix(a[1],q[1],t)+330)/115*3.1;
       const topY=mix(edgeY,base+6.1,depth)+.03, height=topY-foot;
       if (height<1) continue;
-      metal.geometry(new THREE.CylinderGeometry(.43,.37,height,16),x,(topY+foot)/2,z,tint(0xd8d8ce));
-      metal.geometry(new THREE.CylinderGeometry(.46,.46,.14,16),x,foot+.11,z,darkSilver);
       arcadeColumns.push({x,z,bottom:foot,top:topY});
     }
     facadeLength+=L;
+  }
+  // Actual entrance column is a broad inverted frustum with narrow horizontal
+  // cladding joints. Adjacent columns along the arcade remain cylindrical.
+  const cone=arcadeColumns.reduce((best,c)=>!best||Math.hypot(c.x+65,c.z+217.5)<
+    Math.hypot(best.x+65,best.z+217.5)?c:best,null);
+  for(const column of arcadeColumns){
+    const {x,z,bottom,top}=column,height=top-bottom,heavy=column===cone;
+    const head=heavy?3.36:.43,foot=heavy?1.44:.37;
+    metal.geometry(new THREE.CylinderGeometry(head,foot,height,heavy?36:16),x,(top+bottom)/2,z,heavy?tint(0xa39b91):tint(0xc3c5bf));
+    metal.geometry(new THREE.CylinderGeometry(foot+.07,foot+.07,.14,24),x,bottom+.09,z,darkSilver);
+    if(heavy){
+      for(let d=1.12;d<height-.3;d+=1.12){
+        const r=mix(foot,head,d/height)+.014;
+        metal.geometry(new THREE.CylinderGeometry(r+.008,r,.028,36),x,bottom+d,z,tint(0x878680));
+      }
+    }
   }
   if (entryFace>=0) {
     const i=entryFace, j=(i+1)%lower.length, near=.28, far=.81, halfSpan=Math.min(.36,5.6/entryLength);
@@ -312,55 +329,98 @@ function n3(b, p, base, batches, hAt) {
 }
 
 function e9(b, p, base, { stone, metal, glass }) {
-  const white = tint(0xe0e4dc), recess = tint(0x536b70), bronze = tint(0x333b3d), sign = areaSign(p);
-  const box = fitRectangle(p, [[34,19], [30,18], [26,16]], 'south'), top = base + 26.8;
-  let body = p;
-  if (box) {
-    const u = [box[1][0]-box[0][0],box[1][1]-box[0][1]], L = Math.hypot(...u); u[0] /= L; u[1] /= L;
-    const limit = box[1][0]*u[0]+box[1][1]*u[1]-6, clipped=[];
-    p.forEach((a,i)=>{const b=p[(i+1)%p.length], da=a[0]*u[0]+a[1]*u[1]-limit, db=b[0]*u[0]+b[1]*u[1]-limit;
-      if(da<=0)clipped.push(a);if((da<=0)!==(db<=0)){const t=da/(da-db);clipped.push([mix(a[0],b[0],t),mix(a[1],b[1],t)]);}});
-    if(clipped.length>=3)body=clipped;
-  }
-  volume(stone, p, base, base + .4, tint(0xa9b2ab));
-  volume(glass, p, base + .4, base + 4.8, tint(0x4b7278));
-  volume(stone, p, base + 4.8, base + 6.4, white);
-  volume(glass, p, base + 6.4, base + 9.1, tint(0x4b7278), tint(0xa2aaa3));
-  volume(stone, body, base + 9.1, base + 18.5, white, tint(0xa2aaa3));
-  body.forEach((a, i) => {
-    const q = body[(i + 1) % body.length], L = Math.hypot(q[0] - a[0], q[1] - a[1]);
-    if (L < .1) return;
-    const normal = faceNormal(a, q, sign);
-    facade(stone, a, q, 0, 1, base + 4.8, base + 6.4, white, normal);
-    facade(stone, a, q, 0, 1, base + 9.1, base + 9.7, white, normal);
-    const cols = Math.max(1, Math.round(L / 1.32)), step = L / cols;
-    // Deep-looking perforated lattice: dark recessed pane, white bars and slim
-    // inner shadow edge. All layers remain on or inside the mapped perimeter.
-    for (let j = 0; j < cols; j++) {
-      const t0 = j / cols, t1 = (j + 1) / cols;
-      facade(stone, a, q, t0, Math.min(t1, t0 + .4 / step / cols), base + 9.7, base + 18.5, white, normal);
-      for (let y = 9.7; y < 18.4; y += 1.27) {
-        facade(stone, a, q, t0, t1, base + y, base + y + .42, white, normal);
-        if (y + .42 < 18.15) facade(glass, a, q, Math.min(t1, t0 + .4 / L), t1, base + y + .42, base + Math.min(y + 1.27,18.15), tint(0x48626a), normal);
-        facade(metal, a, q, Math.min(t1, t0 + .4 / L), t1, base + y + .42, base + y + .54, recess, normal);
+  const white=tint(0xd5d5d1),recess=tint(0x586269),bronze=tint(0x594747),top=base+27.65;
+  // Actual OSM parts 1211173709 (fifth floor), 1211173710 and 1215432597
+  // (four-storey wings), and 1215689144 (elevated connecting floor).
+  const box=[[63.4,135.6],[74.2,55.4],[95,58.2],[84.2,138.4]];
+  const south=[[84.2,138.4],[66.5,112.5],[51,88.7],[81,69.1],[91.4,84.8],[114.1,118]];
+  const north=[[9,25.4],[37.9,6.5],[44.3,16.2],[54.4,9.5],[75.2,40.8],[66.1,46.7],
+    [72.8,56.8],[52.7,69.9],[42.8,76.4],[26,51.1]];
+  const link=[[51,88.7],[42.8,76.4],[52.7,69.9],[72.8,56.8],[74,58.5],[81,69.1]];
+  function lattice(body,bottom){
+    const sign=areaSign(body);
+    volume(stone,body,base+bottom,base+18.5,white,tint(0xa2aaa3));
+    body.forEach((a, i) => {
+      const q = body[(i + 1) % body.length], L = Math.hypot(q[0] - a[0], q[1] - a[1]);
+      if (L < .1) return;
+      const normal = faceNormal(a, q, sign);
+      const cols = Math.max(1, Math.round(L / 1.32)), step = L / cols;
+      // Deep-looking perforated lattice: dark recessed pane, white bars and slim
+      // inner shadow edge. All layers remain on or inside the mapped perimeter.
+      for (let j = 0; j < cols; j++) {
+        const t0 = j / cols, t1 = (j + 1) / cols;
+        facade(stone, a, q, t0, Math.min(t1, t0 + .4 / step / cols), base + bottom, base + 18.5, white, normal);
+        for (let y = bottom+.28; y < 18.4; y += 1.27) {
+          facade(stone, a, q, t0, t1, base + y, base + y + .42, white, normal);
+          if (y + .42 < 18.15) facade(glass, a, q, Math.min(t1, t0 + .4 / L), t1, base + y + .42, base + Math.min(y + 1.27,18.15), tint(0x48626a), normal);
+          facade(metal, a, q, Math.min(t1, t0 + .4 / L), t1, base + y + .42, base + y + .54, recess, normal);
+        }
+        if (bottom<10 && j % 3 === 0) facade(metal, a, q, t0, Math.min(t1, t0 + .11 / L), base + .4, base + 9.1, tint(0xbbcbc7), normal);
       }
-      if (j % 3 === 0) facade(metal, a, q, t0, Math.min(t1, t0 + .11 / L), base + .4, base + 9.1, tint(0xbbcbc7), normal);
-    }
-    facade(stone, a, q, 0, 1, base + 18.15, base + 18.5, white, normal);
-  });
-  if (box) {
-    volume(metal, box, base + 18.5, top, bronze);
-    box.forEach((a, i) => {
-      const q = box[(i + 1) % box.length], L = Math.hypot(q[0] - a[0], q[1] - a[1]), normal = faceNormal(a, q, areaSign(box));
-      facade(glass, a, q, .045, .955, base + 19.5, top - 1.1, tint(i % 2 ? 0x718e85 : 0xa5ab87), normal);
-      for (let j = 1; j < L / 2.3; j++) facade(metal, a, q, j * 2.3 / L, Math.min(.955, (j * 2.3 + .12) / L), base + 19.5, top - 1.1, bronze, normal);
-      facade(metal, a, q, .045, .955, base + 22.7, base + 22.83, bronze, normal);
+      facade(stone, a, q, 0, 1, base + 18.15, base + 18.5, white, normal);
     });
-    // A narrow inset support and dark soffit make the top framed reading room
-    // distinct from the white lattice volume, without overhanging the footprint.
-    metal.quad(...box.map(a=>[a[0],base+18.5,a[1]]),tint(0x707770),[0,-1,0]);
   }
-  return { top: box ? top : base + 18.5, approximateHeightM: box ? 26.8 : 18.5, upperFrameFootprint: box, features: ['white perforated lattice', 'glazed lower levels', 'dark projecting upper reading-room frame'] };
+  for(const body of [north,south]){
+    volume(stone,body,base,base+.4,tint(0xa9b2ab));
+    volume(glass,body,base+.4,base+4.8,tint(0x526873));
+    volume(stone,body,base+4.8,base+6.4,white);
+    volume(glass,body,base+6.4,base+9.1,tint(0x637a83));
+    lattice(body,9.1);
+  }
+  lattice(link,13.8);
+  const bottom=(ring,y,shade)=>{
+    for(const ids of THREE.ShapeUtils.triangulateShape(ring.map(q=>new THREE.Vector2(...q)),[]))
+      metal.tri(...ids.map(i=>[ring[i][0],y,ring[i][1]]),shade,[0,-1,0]);
+  };
+  bottom(link,base+13.8,recess);bottom(box,base+18.5,tint(0x786567));roof(metal,box,top,tint(0xaaa69c));
+  const rooftop=(along,across,h)=>[mix(mix(box[0][0],box[1][0],along),mix(box[3][0],box[2][0],along),across),
+    top+h,mix(mix(box[0][1],box[1][1],along),mix(box[3][1],box[2][1],along),across)];
+  for(let row=0;row<24;row++){
+    const a=.014+row*.04055,c=a+.0225;
+    for(let cell=0;cell<13;cell++){
+      const lo=.026+cell*.073,hi=lo+.071;
+      glass.quad(rooftop(a,lo,.22),rooftop(a,hi,.22),rooftop(c,hi,.04),rooftop(c,lo,.04),tint(0x40535c),UP);
+    }
+  }
+  box.forEach((a,i)=>{
+    const q=box[(i+1)%4],dx=q[0]-a[0],dz=q[1]-a[1],L=Math.hypot(dx,dz),n=faceNormal(a,q,areaSign(box));
+    const point=(u,y,inset)=>[a[0]+dx*u/L-n[0]*inset,y,a[1]+dz*u/L-n[2]*inset];
+    const section=(batch,u,v,y,h,inset,shade)=>batch.quad(point(u,y,inset),point(v,y,inset),point(v,h,inset),point(u,h,inset),shade,n);
+    if(i!==3){
+      section(metal,0,L,base+18.5,top,0,bronze);
+      for(let u=1.05;u<L;u+=1.05)section(metal,u-.022,u,base+18.5,top,-.015,tint(0x57464a));
+      // Small punched windows along the bronze side are visible in the architect's oblique elevation.
+      if(i===0||i===2)for(let j=1;j<Math.floor(L/2.2);j++)for(let k=1;k<4;k++){
+        if((j*13+k*5)%11>2)continue;
+        const u=j*2.2,y=base+18.95+k*1.7;
+        section(glass,u,u+.49,y,y+.60,-.022,tint(0x50515d));
+      }
+      return;
+    }
+    const lo=base+19.67,hi=top-1.14,edge=1.02;
+    section(metal,0,L,base+18.5,lo,0,bronze);section(metal,0,L,hi,top,0,bronze);
+    section(metal,0,edge,lo,hi,0,bronze);section(metal,L-edge,L,lo,hi,0,bronze);
+    const inner=.94,trim=tint(0x343943);
+    for(const [u,sign] of [[edge,1],[L-edge,-1]]){
+      const v=[sign*dx/L,0,sign*dz/L];
+      metal.quad(point(u,lo,0),point(u,hi,0),point(u,hi,inner),point(u,lo,inner),trim,v);
+    }
+    metal.quad(point(edge,lo,0),point(L-edge,lo,0),point(L-edge,lo,inner),point(edge,lo,inner),trim,UP);
+    metal.quad(point(edge,hi,0),point(edge,hi,inner),point(L-edge,hi,inner),point(L-edge,hi,0),trim,[0,-1,0]);
+    const panes=11,pw=(L-2*edge)/panes;
+    for(let k=0;k<panes;k++){
+      const u=edge+k*pw,v=u+pw;
+      section(glass,u,v,lo,hi,inner,tint([0x485572,0x4b5971,0x424d66,0x526076][k%4]));
+      section(metal,u,u+.055,lo,hi,inner-.05,trim);
+      for(let j=0;j<4;j++){
+        const offset=(j%2)*.23,y=hi-.68-j*.43;
+        section(glass,u+.10+offset,v-.18,y,y+.07,inner-.025,tint(0xb3aa86));
+      }
+    }
+    section(metal,edge,L-edge,lo+2.72,lo+2.80,inner-.047,trim);
+  });
+  return {top,approximateHeightM:27.65,upperFrameFootprint:box,sourceWays:[1211173709,1211173710,1215432597,1215689144],
+    features:['two lattice-clad wings','elevated connecting floor','bronze cantilever with its recessed, lake-facing reading-room windows']};
 }
 
 function e13(b, p, base, { stone, metal, glass }) {

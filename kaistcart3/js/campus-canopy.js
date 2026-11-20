@@ -2,7 +2,7 @@ import * as T from '../lib/three.module.min.js';
 
 // One lobed branch spray. Transparent gaps between twigs survive at street
 // distance. The same mipmapped leaves shade all the mapped canopy instances.
-export function leafSprayMaterial(random){
+export function leafSprayMaterial(random,twoSided=false){
   const canvas=document.createElement('canvas');
   canvas.width=canvas.height=256;
   const ctx=canvas.getContext('2d');
@@ -29,13 +29,22 @@ export function leafSprayMaterial(random){
   spray(122,196,61,78,34,0);
   const texture=new T.CanvasTexture(canvas);
   texture.colorSpace=T.SRGBColorSpace;texture.anisotropy=4;
-  return new T.MeshStandardMaterial({map:texture,alphaTest:.32,alphaToCoverage:true,
+  const material=new T.MeshStandardMaterial({map:texture,alphaTest:.32,alphaToCoverage:true,
     vertexColors:true,roughness:.96,envMapIntensity:.48});
+  if(twoSided){
+    material.side=T.DoubleSide;
+    // A spray is flat, but its supplied normal follows the canopy volume.
+    // Both faces share this normal when the GPU draws the card only once.
+    material.onBeforeCompile=shader=>{
+      shader.fragmentShader=shader.fragmentShader.replace('#include <normal_fragment_begin>','#include <normal_fragment_begin>\nnormal *= faceDirection;');
+    };
+  }
+  return material;
 }
 
 // Intersecting, individually oriented sprays leave sight lines through the
 // lower branches. Normals follow the crown volume on both sides of each spray.
-export function leafyCrown(seed,distant=false){
+export function leafyCrown(seed,distant=false,twoSided=false){
   let state=seed;
   const random=()=>((state=(Math.imul(state,1664525)+1013904223)>>>0)/4294967296);
   const vertices=[],normals=[],uv=[],colors=[],indices=[];
@@ -50,7 +59,8 @@ export function leafyCrown(seed,distant=false){
       normals.push(norm.x,norm.y,norm.z);uv.push(s+.5,v);
       const light=bright*(.83+.17*v);colors.push(light,light,.96*light);
     }
-    indices.push(base,base+1,base+2,base,base+2,base+3,base,base+2,base+1,base,base+3,base+2);
+    indices.push(base,base+1,base+2,base,base+2,base+3);
+    if(!twoSided)indices.push(base,base+2,base+1,base,base+3,base+2);
   }
   const shape=random(), tilt=(random()-.5)*.15;
   for(let tier=0;tier<3;tier++){

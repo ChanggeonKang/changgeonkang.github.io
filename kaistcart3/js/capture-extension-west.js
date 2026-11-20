@@ -31,7 +31,12 @@ class Batch{
   mesh(kind){const g=new THREE.BufferGeometry();for(const[k,a]of[['position',this.p],['normal',this.n],['color',this.c]])g.setAttribute(k,new THREE.Float32BufferAttribute(a,3));g.computeBoundingSphere();g.computeBoundingBox();const m=new THREE.Mesh(g,new THREE.MeshStandardMaterial({vertexColors:true,roughness:kind==='glass'?.26:kind==='foliage'?.97:.82,metalness:kind==='glass'?.32:.03,polygonOffset:true,polygonOffsetFactor:kind==='glass'?-2:kind==='detail'?-3:0,polygonOffsetUnits:kind==='glass'?-2:kind==='detail'?-3:0}));m.name=`capture-west-${kind}`;m.userData.kind=kind;m.castShadow=true;m.receiveShadow=true;return m;}
 }
 function faces(p,fn){const s=winding(p);p.forEach((a,i)=>{const b=p[(i+1)%p.length],L=Math.hypot(b[0]-a[0],b[1]-a[1]);if(L>.01)fn(a,b,L,[s*(b[1]-a[1])/L,0,-s*(b[0]-a[0])/L],i);});}
-function panel(B,a,b,t0,t1,y0,y1,c,n){if(t1<=t0||y1<=y0)return;const point=(t,y)=>[lerp(a[0],b[0],t),y,lerp(a[1],b[1],t)];B.quad(point(t0,y0),point(t1,y0),point(t1,y1),point(t0,y1),c,n);}
+function panel(B,a,b,t0,t1,y0,y1,c,n,out=0){
+  if(t1<=t0||y1<=y0)return;
+  const px=out?n[0]*out:0,pz=out?n[2]*out:0;
+  const point=(t,y)=>[lerp(a[0],b[0],t)+px,y,lerp(a[1],b[1],t)+pz];
+  B.quad(point(t0,y0),point(t1,y0),point(t1,y1),point(t0,y1),c,n);
+}
 function roof(B,p,y,c){for(const t of THREE.ShapeUtils.triangulateShape(p.map(a=>new THREE.Vector2(...a)),[]))B.tri(...t.map(i=>[p[i][0],y,p[i][1]]),c,[0,1,0]);}
 function volume(B,p,base,top,c){faces(p,(a,b,L,n)=>panel(B,a,b,0,1,base,top,c,n));roof(B,p,top,c);}
 function rectangle(p,x,z,w,d,angle=0){const ca=Math.cos(angle),sa=Math.sin(angle),q=[[-w/2,-d/2],[w/2,-d/2],[w/2,d/2],[-w/2,d/2]].map(([u,v])=>[x+u*ca-v*sa,z+u*sa+v*ca]);return ringValid(q,p)?q:null;}
@@ -47,7 +52,7 @@ const CONFIG={
   1529346023:{name:'KISTI Headquarters',style:'headquarters',height:27.5,photos:[85,95,96,97],features:['tall blue-gray glazed facade','white vertical piers','dark upper band','low white podium']},
   470181823:{name:'Daeduk Hanbit Church',style:'church',height:17.2,photos:[90,91,92,93],features:['brown brick walls','teal glass entrance tower','tall narrow brick steeple']},
   1259373434:{name:'Kiwoom Hall',style:'kiwoom',height:18.2,photos:[97,98],features:['pale silver folded panels','small horizontal windows','column-supported frontage','large upper recess']},
-  78058725:{name:'Galilei Hall',style:'mansard',height:13.2,photos:[102],features:['beige walls','dark steep roof','roof dormers','blue-glazed entrance in pale frame'],confidence:'medium; sideview and mapped W3 footprint relative to W4-2/W4-3 match; entrance details approximate'},
+  78058725:{name:'Galilei Hall',style:'mansard',height:11.2,photos:[102],features:['beige walls','dark steep roof','roof dormers','blue-glazed entrance in pale frame'],confidence:'medium; sideview and mapped W3 footprint relative to W4-2/W4-3 match; entrance details approximate'},
 };
 // These OSM ways are explicitly tagged building=greenhouse in the agricultural
 // research plots on the outside of the W5 bend. Only the rooflines are clear
@@ -179,11 +184,30 @@ function architecture(B,b,p,base,cfg,hAt){
       if(foot<head)B.detail.geometry(new THREE.CylinderGeometry(.4,.43,head-foot,8).translate(x,(head+foot)/2,z),P.white,p);
     }}});
   }else if(style==='mansard'){
-    windows(B,p,base,cfg.height,4,3.7,.46); // The top roof is triangulated inside the existing footprint.
-    const height=q=>top+Math.min(3.4,edgeDistance(q[0],q[1],p)*.75);
+    windows(B,p,base,cfg.height,3,3.7,.53); // The top roof is triangulated inside the existing footprint.
+    const height=q=>top+Math.min(3.4,edgeDistance(q[0],q[1],p)*1.35);
     function tr(a,b,c,depth=0){const ds=[Math.hypot(a[0]-b[0],a[1]-b[1]),Math.hypot(b[0]-c[0],b[1]-c[1]),Math.hypot(c[0]-a[0],c[1]-a[1])];if(Math.max(...ds)<3||depth>8){const up=(b[1]-a[1])*(c[0]-a[0])-(b[0]-a[0])*(c[1]-a[1]);if(up<0)[b,c]=[c,b];B.detail.tri([a[0],height(a),a[1]],[b[0],height(b),b[1]],[c[0],height(c),c[1]],P.roof);return;}const mid=(a,b)=>[(a[0]+b[0])/2,(a[1]+b[1])/2];const k=ds.indexOf(Math.max(...ds));if(k===0){const m=mid(a,b);tr(a,m,c,depth+1);tr(m,b,c,depth+1);}else if(k===1){const m=mid(b,c);tr(a,b,m,depth+1);tr(a,m,c,depth+1);}else{const m=mid(c,a);tr(a,b,m,depth+1);tr(m,b,c,depth+1);}}
     for(const t of THREE.ShapeUtils.triangulateShape(p.map(a=>new THREE.Vector2(...a)),[]))tr(...t.map(i=>p[i]));
-    faces(p,(a,b,L,n)=>{if(L<16)return;for(let t=.18;t<.9;t+=8/L){const x=lerp(a[0],b[0],t)-n[0]*3,z=lerp(a[1],b[1],t)-n[2]*3,q=rectangle(p,x,z,2.7,2.8,Math.atan2(b[1]-a[1],b[0]-a[0]));if(!q)continue;volume(B.detail,q,top+1,top+2.8,P.cream);faces(q,(c,d,ll,nn)=>panel(B.glass,c,d,.15,.85,top+1.3,top+2.4,P.glass,nn));}});
+    // The fourth floor is in the steep roof. Each photographed dormer has its own pointed gable.
+    faces(p,(a,b,L,n)=>{
+      if(L<8)return;
+      const count=Math.max(1,Math.round(L/4.8)),tx=(b[0]-a[0])/L,tz=(b[1]-a[1])/L;
+      for(let j=0;j<count;j++){
+        const t=(j+.5)/count,x=lerp(a[0],b[0],t),z=lerp(a[1],b[1],t);
+        const plane=(u,v)=>[x+u*tx-v*n[0],z+u*tz-v*n[2]];
+        const q=[plane(-1.03,.53),plane(1.03,.53),plane(1.03,2.45),plane(-1.03,2.45)];
+        if(!ringValid(q,p))continue;
+        volume(B.detail,q,top+.48,top+2.12,P.cream);
+        panel(B.glass,q[0],q[1],.13,.87,top+.72,top+1.98,P.dark,n,.027);
+        panel(B.glass,q[0],q[1],.18,.82,top+.78,top+1.91,P.glass,n,.045);
+        const at=(u,h,v)=>{const [x,z]=plane(u,v);return [x,top+h,z];};
+        B.detail.tri(at(-1.03,2.12,.53),at(1.03,2.12,.53),at(0,2.76,.53),P.cream,n);
+        for(const side of [-1,1]){
+          const corners=[at(0,2.86,.39),at(side*1.13,2.13,.39),at(side*1.13,2.13,2.5),at(0,2.86,2.5)];
+          B.detail.quad(...corners,P.roof,[tx*side*.54,.84,tz*side*.54]);
+        }
+      }
+    });
     faces(p,(a,b,L,n)=>{if(n[0]<-.5&&L>13){panel(B.glass,a,b,.28,.72,base+.3,top-1,P.glass,n);panel(B.detail,a,b,.26,.3,base+.3,top,P.white,n);panel(B.detail,a,b,.7,.74,base+.3,top,P.white,n);panel(B.detail,a,b,.26,.74,top-.6,top,P.white,n);}});
   }
   return{heightM:cfg.height+(style==='compute'?6.8:style==='church'?16.3:style==='mansard'?3.4:0),heightBasis:cfg.heightBasis||'Photo-informed estimated volumes; no measured building heights',top:top+(style==='compute'?6.8:style==='church'?16.3:style==='mansard'?3.4:0)};
@@ -401,7 +425,9 @@ export function buildCaptureWest(scene,D={},C,hAt=()=>0,surfAt=()=>0){
   futsalFootprint=null;
   const result={handledIds:new Set(),labels:[],models:[],metadata:{reference:'audit/capture-review-79-102.json',greenhouseReference:'audit/capture-review-01-19.json',sourceDates:['2025-04','2026-04'],drawCalls:0,models:[],props:[],excluded:['source photograph textures','centreline bollards inside the racing corridor','existing W4-1/W4-2/W4-3/W4-4 buildings','existing W4 tree screen north of z=465'],estimated:true}};
   const B={wall:new Batch(),glass:new Batch(),detail:new Batch(),foliage:new Batch()};
-  for(const b of D.buildings||[]){const cfg=CONFIG[b.id]||(westGlasshouses.has(b.id)&&b.p?.length===4?glasshouseProfile:null);if(!cfg||!b.p||b.p.length<3)continue;const p=b.p.filter((a,i)=>i===0||Math.hypot(a[0]-b.p[i-1][0],a[1]-b.p[i-1][1])>.01).map(a=>[...a]);if(Math.hypot(p[0][0]-p.at(-1)[0],p[0][1]-p.at(-1)[1])<.01)p.pop();if(p.length<3||p.some(a=>!a.every(Number.isFinite)))continue;const ys=p.map(a=>hAt(...a));if(!ys.every(Number.isFinite))continue;const base=cfg.style==='kiwoom'?hAt(-342.1,405.6):Math.min(...ys)-.55,start=Object.fromEntries(Object.entries(B).map(([k,v])=>[k,v.p.length/3]));
+  for(const b of D.buildings||[]){const cfg=CONFIG[b.id]||(westGlasshouses.has(b.id)&&b.p?.length===4?glasshouseProfile:null);if(!cfg||!b.p||b.p.length<3)continue;const p=b.p.filter((a,i)=>i===0||Math.hypot(a[0]-b.p[i-1][0],a[1]-b.p[i-1][1])>.01).map(a=>[...a]);if(Math.hypot(p[0][0]-p.at(-1)[0],p[0][1]-p.at(-1)[1])<.01)p.pop();if(p.length<3||p.some(a=>!a.every(Number.isFinite)))continue;const ys=p.map(a=>hAt(...a));if(!ys.every(Number.isFinite))continue;const base=cfg.style==='kiwoom'?hAt(-342.1,405.6)
+      :b.id===78058725?hAt(-320.5,316.7)+.05:Math.min(...ys)-.55;
+    const start=Object.fromEntries(Object.entries(B).map(([k,v])=>[k,v.p.length/3]));
     const shape=cfg===glasshouseProfile?glasshouse(B,p,Math.max(...ys),base):architecture(B,b,p,base,cfg,hAt),model={id:b.id,ref:b.ref||'',name:cfg.name,sourceFootprint:p,baseElevationM:base,...shape,capturePhotos:cfg.photos,features:cfg.features,matchConfidence:cfg.confidence||'High building/route match; facade dimensions approximate',geometryRanges:Object.fromEntries(Object.entries(B).map(([k,v])=>[k,[start[k],v.p.length/3]]))};result.models.push(model);result.metadata.models.push(model);result.handledIds.add(b.id);if(cfg!==glasshouseProfile)result.labels.push({ref:b.ref||'',name:cfg.name,en:cfg.name,x:p.reduce((s,a)=>s+a[0],0)/p.length,z:p.reduce((s,a)=>s+a[1],0)/p.length,y:shape.top+4});
   }
   if(C?.n>1100&&D.buildings?.length)roadside(B,D,C,hAt,surfAt,result);

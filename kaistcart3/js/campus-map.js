@@ -51,7 +51,7 @@ export function makePlaces(world){
     const p=b.p, n=p.length-(p.length>1&&p[0][0]===p.at(-1)[0]&&p[0][1]===p.at(-1)[1]?1:0);
     if(!n)continue;
     const x=p.slice(0,n).reduce((a,v)=>a+v[0],0)/n,z=p.slice(0,n).reduce((a,v)=>a+v[1],0)/n;
-    used.add(key);out.push({name,ref:b.ref,x,z,outline:b.p});
+    used.add(key);out.push({name,ref:b.ref,x,z,outline:b.p,entrances:b.entrances});
   }
   for(const v of world.explore.landmarks||[]){
     if(!Number.isFinite(v.x)||!Number.isFinite(v.z))continue;
@@ -76,6 +76,24 @@ function distanceToPlace(place,x,z){
 }
 
 export function vehicleApproach(place,segments,access){
+  if(place.ref==='E8'){
+    const forecourt=segments.filter(s=>s.road.id===504188913);
+    const arrival=snapToStreet(forecourt,397,-71.5,access);
+    if(arrival){
+      const th=Math.cos(arrival.th)>0?arrival.th+Math.PI:arrival.th;
+      return {...arrival,th,distance:distanceToPlace(place,arrival.x,arrival.z),viewHeading:Math.PI*(1-11/180),
+        panorama:{captured:'2026-11',url:'https://map.naver.com/p?c=19.00,0,0,0,adh&p=Q4NIe6H_SijYgvd_VjaaXA,11,5,91,Float'}};
+    }
+  }
+  if(place.ref==='E9'){
+    // The library's near-side service spur ends at Faculty Hall. Its glazed
+    // west front can be seen from the vehicle road across the public lawn.
+    const frontage=segments.filter(s=>s.road.id===979941424);
+    const arrival=snapToStreet(frontage,-30,130.7,access);
+    if(arrival)return {...arrival,distance:distanceToPlace(place,arrival.x,arrival.z),
+      viewHeading:Math.PI*(1-61/180),approachLabel:'E9 · Academic Cultural Complex approach',
+      panorama:{captured:'2026-11',url:'https://map.naver.com/p?c=19.00,0,0,0,adh&p=MN8BomHNo-oJz-xSIFhSkw,61,5,91,Float'}};
+  }
   if(place.ref==='N11'){
     const frontage=segments.filter(s=>s.road.motorAccess==='kaimaru_streetview_drive');
     const arrival=snapToStreet(frontage,-242.8,-382.5,access);
@@ -92,7 +110,17 @@ export function vehicleApproach(place,segments,access){
     const arrival=snapToStreet(loop,place.x,place.z,access);
     if(arrival)return arrival;
   }
-  return snapToStreet(segments,place.x,place.z,access);
+  const arrival=snapToStreet(segments,place.x,place.z,access);
+  if(!arrival||!place.entrances?.length)return arrival;
+  // A service road sometimes ends exactly on a building's entrance node.
+  // Stop along the approach so the kart and its camera both clear the door.
+  const door=place.entrances.find(([x,z])=>Math.hypot(x-arrival.x,z-arrival.z)<1.5);
+  if(!door)return arrival;
+  const along=segments.filter(s=>s.road===arrival.road);
+  const x=arrival.x+3.5*Math.sin(arrival.th),z=arrival.z+3.5*Math.cos(arrival.th);
+  const setback=snapToStreet(along,x,z,access);
+  if(!setback||Math.hypot(setback.x-door[0],setback.z-door[1])<2.5)return arrival;
+  return {...setback,distance:distanceToPlace(place,setback.x,setback.z)};
 }
 
 function mapTexture(world){
@@ -129,7 +157,7 @@ export function createCampusMap(world,panoramas){
   const extent={w:bounds.x1-bounds.x0,h:bounds.z1-bounds.z0}, lonScale=111320*Math.cos(world.D.origin.lat*Math.PI/180);
   for(const v of panoramas){v.x=(v.lon-world.D.origin.lon)*lonScale;v.z=(world.D.origin.lat-v.lat)*latScale;}
   const mini=$('mini'),full=$('mapCanvas'), origin=world.D.origin;
-  let player={x:0,z:0,th:0}, zoom=1, focus, selected, transform, open=false, drag=null, onTravel=null;
+  let player={x:0,z:0,th:0}, zoom=1, focus, selected, transform, open=false, drag=null, onTravel=null, arrivalView=null;
   const setFocus=()=>{focus={x:(bounds.x0+bounds.x1)/2,z:(bounds.z0+bounds.z1)/2};};setFocus();
   const nearestPlace=(x,z)=>{let d=Infinity,ans=null;for(const p of places){const v=distanceToPlace(p,x,z);if(v<d){ans=p;d=v;}}return {place:ans,distance:d};};
   const title=p=>[p?.ref,p?.name].filter(Boolean).join(' · ');
@@ -144,7 +172,8 @@ export function createCampusMap(world,panoramas){
   function update(p){
     player=p;const c=mini.getContext('2d'),w=mini.width,h=mini.height, s=w/275;
     paint(c,w,h,p.x,p.z,s);arrow(c,w/2,h/2,p.th,13);
-    const name=here(p.x,p.z);if($('placeName').textContent!==name)$('placeName').textContent=name;
+    if(arrivalView&&Math.hypot(p.x-arrivalView.x,p.z-arrivalView.z)>8)arrivalView=null;
+    const name=arrivalView?.approachLabel||here(p.x,p.z);if($('placeName').textContent!==name)$('placeName').textContent=name;
   }
   function draw(){
     if(!open)return;
@@ -172,8 +201,11 @@ export function createCampusMap(world,panoramas){
   function links(p){
     const {lat,lon}=geographicPoint(origin,p.x,p.z),r=Math.PI/180, mx=6378137*lon*r,my=6378137*Math.log(Math.tan(Math.PI/4+lat*r/2));
     const nearby=panoramas.reduce((v,a)=>{const d=Math.hypot(a.x-p.x,a.z-p.z);return d<v.d?{a,d}:v;},{d:35});
-    $('streetLink').href=nearby.a?nearby.a.url:'https://map.kakao.com/link/roadview/'+lat.toFixed(6)+','+lon.toFixed(6);
-    $('streetLink').textContent=nearby.a?'Naver street view ↗':'Kakao road view ↗';
+    const panorama=p.panorama||nearby.a;
+    $('streetLink').href=panorama?panorama.url:'https://map.kakao.com/link/roadview/'+lat.toFixed(6)+','+lon.toFixed(6);
+    const capture=panorama?.captured;
+    const label=capture?new Intl.DateTimeFormat('en',{month:'short',year:'numeric',timeZone:'UTC'}).format(new Date(capture+'-01T00:00:00Z')):'';
+    $('streetLink').textContent=panorama?'Naver street view'+(label?' · '+label:'')+' ↗':'Kakao road view ↗';
     $('naverLink').href='https://map.naver.com/p?c='+mx.toFixed(2)+','+my.toFixed(2)+',18.00,0,0,0,adh';
   }
   function refreshSelection(){
@@ -193,7 +225,11 @@ export function createCampusMap(world,panoramas){
       const heading=found?.th||0;
       const hint=found?.distance<3?found.groundHint:undefined;
       if(access.canPlace(x,z,heading,hint))found={x,z,th:heading,groundHint:hint};
-      else {selected=null;refreshSelection();list();$('mapMessage').textContent='Vehicle access ends here. Select a light-coloured road or car park.';return;}
+      else {
+        selected=null;refreshSelection();list();
+        $('mapMessage').textContent=access.isOccupied?.(x,z,hint)?'This parking bay is occupied. Select an empty bay or aisle.':'Vehicle access ends here. Select a light-coloured road or car park.';
+        return;
+      }
     }
     if(!found || (place&&found.distance>300)){
       selected=null;refreshSelection();list();$('mapMessage').textContent='No nearby vehicle entrance was found.';return;
@@ -219,7 +255,7 @@ export function createCampusMap(world,panoramas){
   full.onpointerup=e=>{if(!drag)return;const click=!drag.moved;drag=null;if(click){const p=point(e);select(p.x,p.z,null,false);}};full.onpointercancel=()=>{drag=null;};
   $('placeSearch').oninput=list;$('travel').onclick=()=>{if(selected&&!onTravel(selected))$('mapMessage').textContent='This spot is obstructed. Select another road nearby.';};
   new ResizeObserver(draw).observe(full);
-  return {update,initialPose(destination){
+  return {update,arrived(pose){arrivalView=pose.approachLabel?pose:null;},initialPose(destination){
     const place=destination && (places.find(p=>p.ref===destination) || places.find(p=>p.name===destination));
     if(place){const arrival=vehicleApproach(place,segments,world.access);if(arrival)return arrival;}
     const s=snapToStreet(segments,159,462,world.access);if(!s)throw Error('Missing main gate road');if(Math.cos(s.th)>0)s.th+=Math.PI;return s;},

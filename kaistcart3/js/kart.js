@@ -121,14 +121,66 @@ export function makeNubzuki(scene, { body = 0x2f95e8, accent = 0xffffff, helmet 
 
   g.traverse(o => { if (o.isMesh) o.castShadow = true; });
   g.rotation.order = 'YXZ';
-  g.userData = { tilt, head, eyes, limbs, rider, arms, hd, ao, sq: 1, air: 0 };
+  const skin=skinEnvelope(g,[tilt,head,...limbs,rider,hd,...arms]);
+  const shadowRing=ao.geometry.attributes.position.array.slice();
+  ao.rotation.set(0,0,0);
+  g.userData = { tilt, head, eyes, limbs, rider, arms, hd, ao, skin, shadowRing, sq: 1, air: 0 };
   scene.add(g);
   return g;
 }
 
+// The four suspension contacts support the chassis. The mascot's wide chin,
+// mittens and animated feet extend past those contacts. Keep their visible
+// undersides on the actual pavement without feeding an extra impulse to a
+// rolling or airborne kart. Upper samples support the rider in a rollover.
+function skinEnvelope(root,parts){
+  root.updateMatrixWorld(true);
+  const buckets=new Map(parts.map(part=>[part,new Map()]));
+  const point=new THREE.Vector3(), transform=new THREE.Matrix4();
+  root.traverse(mesh=>{
+    if(!mesh.isMesh)return;
+    let owner=mesh.parent;
+    while(owner && !buckets.has(owner))owner=owner.parent;
+    if(!owner)return;
+    transform.copy(owner.matrixWorld).invert().multiply(mesh.matrixWorld);
+    const vertices=mesh.geometry.attributes.position, cells=buckets.get(owner);
+    for(let i=0;i<vertices.count;i++){
+      point.fromBufferAttribute(vertices,i).applyMatrix4(transform);
+      const id=Math.floor(point.x/.15)*256+Math.floor(point.z/.15);
+      const limits=cells.get(id);
+      if(!limits)cells.set(id,[point.clone(),point.clone()]);
+      else{
+        if(point.y<limits[0].y)limits[0].copy(point);
+        if(point.y>limits[1].y)limits[1].copy(point);
+      }
+    }
+  });
+  return Array.from(buckets,([part,cells])=>({part,
+    bottom:Array.from(cells.values(),ends=>ends[0]),top:Array.from(cells.values(),ends=>ends[1])}));
+}
+
+function clearSkin(root,height){
+  root.updateMatrixWorld(true);
+  let correction=0;
+  for(const section of root.userData.skin){
+    const m=section.part.matrixWorld.elements;
+    const points=m[5]>=0?section.bottom:section.top;
+    for(const p of points){
+      const y=m[1]*p.x+m[5]*p.y+m[9]*p.z+m[13];
+      // At a campus-road grade the helmet while upright (or feet while
+      // inverted) cannot reach the bed within this two-metre footprint.
+      if(y>height+1.15)continue;
+      const x=m[0]*p.x+m[4]*p.y+m[8]*p.z+m[12];
+      const z=m[2]*p.x+m[6]*p.y+m[10]*p.z+m[14];
+      correction=Math.max(correction,gAt(x,z,height)-y);
+    }
+  }
+  if(correction>0)root.position.y+=correction+.002;
+}
+
 /** Place and animate a kart from its simulation state. */
 export function poseKart(g, s, dt, t) {
-  const u = g.userData, b = s.body, gy = gAt(s.x, s.z), sp = clamp(Math.abs(s.vf) / 16, 0, 1), k = Math.min(1, dt * 14);
+  const u = g.userData, b = s.body, reference=b.y-b.rideHeight,gy = gAt(s.x,s.z,reference), sp = clamp(Math.abs(s.vf) / 16, 0, 1), k = Math.min(1, dt * 14);
   const supportOffset = b.rideHeight ?? RIDE, bodyUp = b.upward;
   g.position.set(b.x - bodyUp[0] * supportOffset, b.y - bodyUp[1] * supportOffset, b.z - bodyUp[2] * supportOffset);
   g.quaternion.fromArray(b.q);
@@ -149,7 +201,13 @@ export function poseKart(g, s, dt, t) {
   u.rider.rotation.x += ((s.boost ? .22 : 0) - u.air * .3 - u.rider.rotation.x) * k;
   for (const a of u.arms) a.rotation.x += (lerp(-1.25, -3.0, u.air) - a.rotation.x) * k;
   u.hd.rotation.y += (-s.steer * .35 - u.hd.rotation.y) * k;
+  if(b.contacts || reference<gy+1.4)clearSkin(g,gy);
   const hgt = clamp(1 - (b.y - RIDE - gy) / 5, .25, 1);
-  u.ao.position.set(s.x, gy + .04, s.z); u.ao.rotation.z = -s.th;
-  u.ao.scale.set(1.25 * hgt, 1.7 * hgt, 1); u.ao.material.opacity = .22 * hgt;
+  const pos=u.ao.geometry.attributes.position,cos=Math.cos(s.th),sin=Math.sin(s.th);
+  for(let i=0;i<pos.count;i++){
+    const lx=u.shadowRing[i*3]*1.25*hgt,lz=u.shadowRing[i*3+1]*-1.7*hgt;
+    const dx=lx*cos+lz*sin,dz=lz*cos-lx*sin;
+    pos.setXYZ(i,dx,gAt(s.x+dx,s.z+dz,reference)-gy+.014,dz);
+  }
+  pos.needsUpdate=true;u.ao.position.set(s.x,gy,s.z);u.ao.material.opacity=.22*hgt;
 }

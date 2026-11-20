@@ -71,10 +71,18 @@
       "https://www.kaist.ac.kr/site/map/index.html",
       "https://kaist.ac.kr/kr/html/kaist/01.html",
       "https://kds.kaist.ac.kr/dormInfo/dormInfo.do",
-      "https://naver.me/xIF5lerm"
+      "https://naver.me/xIF5lerm",
+      "https://sports.kaist.ac.kr/pages/sub/sub_0301",
+      "https://kaist.ac.kr/news/html/news/?GotoPage=59&mng_no=46670&mode=V",
+      "https://kaist.ac.kr/news/html/news/?GotoPage=1&mng_no=38290&mode=V",
+      "https://gansam.com/works/work.php?idx=2561&ptype=view",
+      "https://giving.kaist.ac.kr/ko/sub04/docs/report_2016.pdf",
+      "https://www.ibs.re.kr/kor/sub01_01_08_01.do",
+      "https://m.haeahn.com/ko/project/detail.do?prjctSeq=3000",
+      "https://www.idim.kaist.ac.kr/works/lotte-kaist-design-center"
     ],
-    "changes": "Original code-generated geometry based on reference photographs and mapped footprints; no photograph textures redistributed. The supplied street-view captures inform distinctive building facades, roof forms, planting, sidewalks, parking context and roadside features. Building models retain their mapped footprint boundaries.",
-    "limitations": "Camera locations and viewing directions are visually matched to the existing map and course, not extracted survey coordinates. Building heights, facade divisions and decorative details are estimated unless separately sourced; gate pylon positions ±10 m. Parking spaces, parked cars and supplementary vegetation are illustrative. April foliage, blossoms and dormant grass describe the capture season. Review of the supplied images does not establish surveyed accuracy or current conditions across the entire campus.",
+    "changes": "Original geometry based on public street views, supplied photographs, mapped footprints and campus or architect publications. The review includes building masses, visible interiors, pedestrian approaches, parking, road markings, bridge structures and planting.",
+    "limitations": "Dimensions are visual estimates wherever published plans or building heights were unavailable. Some parking rows are traced from overhead views. Vehicle occupancy, building interiors and supplementary vegetation are interpretive. The latest public imagery differs in age and season across campus.",
     "outdoorTheater": "https://indico.cern.ch/event/801577/attachments/1801881/3076941/KAISTHandbook.pdf"
   },
   "streetViews": {
@@ -83,10 +91,25 @@
       "Kakao Map Road View"
     ],
     "panoramaIndex": "road-views.json",
-    "linkedNaverViews": 115,
+    "linkedNaverViews": 457,
     "userReferencePhotos": 109,
-    "notes": "Original 3D geometry informed by user photographs, campus sources and public street views. The game opens reference imagery on its provider’s site. Camera links use estimated locations. Links to nearby imagery do not certify vehicle access. Access rules use mapped roads, motor access tags, parking areas, physical barriers and vehicle entrances. Most unsurveyed roadside kerb and bollard designs are approximate.",
+    "notes": "The November 2026 map review used the latest available panorama at each surveyed location. Capture month varies by street. Independently registered stations carry a capture month in the atlas. Older approximate reference links remain available. The game opens original imagery on the provider site. Vehicle access follows mapped motor roads, observed driveways and entry controls.",
     "source": "https://map.naver.com/",
-    "fallback": "https://apis.map.kakao.com/web/guide/"
+    "fallback": "https://apis.map.kakao.com/web/guide/",
+    "verifiedFourDirectionLocations": 391,
+    "verifiedCaptureMonths": {
+      "2013-05": 3,
+      "2015-05": 1,
+      "2018-01": 1,
+      "2019-10": 3,
+      "2020-11": 5,
+      "2022-01": 9,
+      "2023-05": 15,
+      "2023-06": 15,
+      "2025-04": 1,
+      "2026-04": 4,
+      "2026-10": 36,
+      "2026-11": 298
+    }
   }
 }

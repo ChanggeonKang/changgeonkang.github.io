@@ -111,7 +111,7 @@ export function physicalBarrier(b) {
   return ['wall', 'city_wall', 'fence', 'retaining_wall', 'guard_rail', 'hedge', 'handrail', 'railing', 'chain', 'cable_barrier'].includes(b.t);
 }
 
-export function prepareSurfaceGrid(data, index, terrainAt) {
+export function prepareSurfaceGrid(data, index, terrainAt, streetDatum=terrainAt) {
   const b = data.bounds, w = b.x1 - b.x0, h = b.z1 - b.z0;
   const grid = { x0:b.x0, z0:b.z0, w,h, d:new Uint8Array(w*h), lift:new Uint8Array(w*h),
     mappedLane:new Uint8Array(w*h), portals:new Uint8Array(w*h), decks:new Map(), lowerDecks:new Set() };
@@ -136,9 +136,10 @@ export function prepareSurfaceGrid(data, index, terrainAt) {
   for (const motor of [false, true]) {
     for (const [road, way] of index.ways) {
       if (isMotorRoad(road) !== motor) continue;
+      if(road.sharedParkingSurface)continue; // Painted parking court already supplies its continuous level surface.
       const width = road.width / 2, type = motor ? 2 : 1, lift = Math.round(roadLift(road) * 200);
       const first = road.p[0], last = road.p.at(-1), bridge = Boolean(road.bridge);
-      if (bridge) way.deck = [terrainAt(...first), terrainAt(...last)];
+      if (bridge) way.deck = [streetDatum(...first), streetDatum(...last)];
       for (const s of way.segments) rasterSegment(grid, s.a, s.b, width, (k, t) => {
         if (grid.d[k] === 8 && !bridge && !road.ford && !isPassage(road)) return;
         // Wider kerbs or a driveway running beside a glazed lobby can touch
@@ -177,7 +178,7 @@ export function prepareSurfaceGrid(data, index, terrainAt) {
         const deck=grid.decks.get(k);
         if(deck===undefined)return;
         const x=b.x0+k%w+.5,z=b.z0+Math.floor(k/w)+.5;
-        if(Math.abs(deck-(terrainAt(x,z)+roadLift(road)))<1)grid.lowerDecks.delete(k);
+        if(Math.abs(deck-(streetDatum(x,z)+roadLift(road)))<1)grid.lowerDecks.delete(k);
       });
     }
   }

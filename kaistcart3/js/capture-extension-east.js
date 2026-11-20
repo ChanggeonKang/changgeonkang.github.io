@@ -3,6 +3,7 @@
 // This module does not mutate terrain, road alignment, collision or source data.
 import * as THREE from '../lib/three.module.min.js';
 import {campusName} from './campus-identity.js';
+import {sejongParts} from './sejong-parts.js';
 
 export const eastRoadStyles=Object.freeze([
   {from:35,to:100,center:'double',edges:'white',photos:[56,57,58]},
@@ -27,15 +28,12 @@ const CONFIG={
  'E6-6':{style:'ribs',height:23.6,floors:6,color:0xc3c9cd,photos:[59,60,62]},
  E12:{style:'energy',height:7.4,floors:1,color:0xe3e4df,photos:[59,60],panoramas:['ldSUrvpB1oPzh1g5zi2vcw','hMLCrbvpbzQJMGEB8s9CTA']},
  E10:{style:'framedBrick',height:8.4,floors:2,color:0x865b52,photos:[61]},
- E8:{style:'dorm',height:13.3,floors:4,color:0xc3b9a1,photos:[62]},
- E22:{style:'ibsFins',height:23.6,floors:5,color:0xc7cecc,photos:[64,65,66]},
+ E8:{style:'dorm',height:13.3,floors:4,color:0xddd9ca,photos:[62],panoramas:['Htttm0pTeDEriOd6fqRFwQ','DWVthHdi5zfPEJt-MrA4yQ','KKPb369m9QgfVWESDRFelA']},
  'E3-3':{style:'service',height:8.4,floors:2,color:0xd8d9d0,photos:[66]},
- E19:{style:'nanoGlass',height:25.2,floors:6,color:0xc9cfce,photos:[67,68,69,70]},
  E18:{style:'ribbon',height:14.6,floors:4,color:0x9b9d94,photos:[68]},
- 'E2-1':{style:'ribbon',height:20.4,floors:5,color:0xd6dad4,photos:[73,74]}
+ 'E2-1':{style:'e2Sunshades',height:18.3,floors:4,color:0xbebec1,photos:[73,74]}
 };
 const ID_CONFIG={
- 1524527051:{style:'parkingFins',height:15.2,floors:4,color:0xcdd6d5,photos:[67],confidence:'medium footprint-relative match; not a legible source reference'},
  543304604:{style:'ribbon',height:19.1,floors:5,color:0xe0e2dc,photos:[71,72],confidence:'medium; candidate E3-1 slab, source has no reference so no new ref assigned'},
  1524577593:{style:'socTower',height:22.5,floors:6,color:0xd9dedc,photos:[71,72],confidence:'E3-5 footprint and KAIST exterior confirmed; bay widths and elevation are approximate'},
  1290618742:{style:'gasStore',height:4.2,floors:1,color:0xd4d6cf,photos:[69],confidence:'medium; OSM names this a cooling-gas store, tank dimensions are visual estimates'}
@@ -90,6 +88,96 @@ function socFacade(B, p, base, height) {
   }
  });
 }
+
+// The November 2026 WNAIQBQ street panorama looks along the low covered
+// entrance. The separate pale roof in the aerial view ends before the
+// diagonal street wing. KAIST's May 2025 completion view shows its courtyard
+// face and the two glazed floors of the taller volume.
+function kraftonHall(B,p,hAt,height){
+ const datum=hAt(284.5,279.5)+.08, bottom=Math.min(datum-.55,...p.map(q=>hAt(...q)-.30));
+ const podium=datum+8.0,top=datum+height, soffit=datum+3.20;
+ const tower=[
+  [273.6,210.4],[285.9,212.8],[285.4,215.5],[291.3,216.7],
+  [282.8,259.8],[271.0,257.4],[269.9,255.6],[270.5,252.4],
+  [268.25,251.95],[269.55,245.10],[268.00,244.80],[269.62,236.12],
+  [268.20,235.82],[269.5,229.5]
+ ];
+ // Keep the near portico open to the pavement with a closed glass wall
+ // behind it. The white band and slot windows sit above round columns.
+ faces(p,(a,b,length,n,i)=>{
+  const street=i<2, inset=street?1.47:0;
+  const back=q=>[q[0]-n[0]*inset,q[1]-n[2]*inset],a1=back(a),b1=back(b);
+  panel(B.wall,a1,b1,0,1,bottom,soffit,0x33454c,n);
+  const bays=Math.max(1,Math.round(length/2.34));
+  for(let j=0;j<bays;j++){
+   const t0=j/bays,t1=(j+1)/bays;
+   panel(B.glass,a1,b1,t0+.05/length,t1-.05/length,datum+.18,soffit-.14,j%3?0x435a61:0x526970,n);
+   panel(B.detail,a1,b1,t0,t1,datum+2.44,datum+2.49,0x647173,n);
+  }
+  if(street){
+   B.wall.quad([a[0],soffit,a[1]],[b[0],soffit,b[1]],[b1[0],soffit,b1[1]],[a1[0],soffit,a1[1]],0xc8c9c1,[0,-1,0]);
+   for(const t of Array.from({length:Math.max(1,Math.floor(length/6.0))},(_,j)=>(j+.5)/Math.max(1,Math.floor(length/6.0)))){
+    const x=mix(a[0],b[0],t)-n[0]*.53,z=mix(a[1],b[1],t)-n[2]*.53;
+    B.detail.add(new THREE.CylinderGeometry(.34,.36,soffit-bottom,14),new THREE.Matrix4().makeTranslation(x,(soffit+bottom)/2,z),0xdbdad5);
+   }
+  }
+  panel(B.wall,a,b,0,1,soffit,podium,0xdfdfda,n);
+  if(street && length>13){
+   const start=i===0?.18:.12,end=i===0?.93:.68;
+   panel(B.glass,a,b,start,end,datum+4.64,datum+5.84,0x49616a,n);
+   for(let t=start+.95/length;t<end;t+=1.10/length)panel(B.detail,a,b,t,t+.052/length,datum+4.65,datum+5.83,0x68777c,n);
+  }else if(!street&&length>10){
+   panel(B.glass,a,b,.07,.92,datum+3.45,datum+5.88,0x527079,n);
+  }
+  panel(B.detail,a,b,0,1,podium-.105,podium,0xc2c8c7,n);
+ });
+ roof(B.wall,p,podium,0x777d79);
+ faces(tower,(a,b,length,n)=>panel(B.wall,a,b,0,1,bottom,top,0xdadeda,n));
+ roof(B.wall,tower,top,0xc6cbc3);
+ socFacade(B,tower,datum,height);
+ // The short south end has a white pier bearing the building number. Blue
+ // glass and horizontal sunshades continue around its eastern corner.
+ const a=tower[4],b=tower[5],endLength=Math.hypot(b[0]-a[0],b[1]-a[1]);
+ const n=[(b[1]-a[1])/endLength,0,-(b[0]-a[0])/endLength];
+ const front=(point,d)=>[point[0]+n[0]*d,point[1]+n[2]*d];
+ const band=(t0,t1,y0,y1,offset,color)=>panel(B.detail,front(a,offset),front(b,offset),t0,t1,y0,y1,color,n);
+ band(.61,1,datum+2.5,top,.055,0xdbdbd4);
+ for(let f=2;f<=6;f++)for(const delta of [.24,.46,.68]){
+  const y=datum+f*height/6-delta;
+  band(.005,.61,y-.083,y,.058,0x6e777c);
+ }
+ const glyphs={'E':['111','100','110','100','111'],'3':['111','001','011','001','111'],
+  '-':['000','000','110','000','000'],'5':['111','100','111','001','111']};
+ const sign='E3-5',block=.169;
+ for(let letter=0;letter<sign.length;letter++)glyphs[sign[letter]].forEach((row,j)=>{
+  for(let col=0;col<row.length;col++)if(row[col]==='1'){
+   const t=.975-(letter*3.9+col)*block/endLength,low=top-1.61+(4-j)*block;
+   band(t-block/endLength,t,low,low+block,.094,0x955331);
+  }
+ });
+ // Through the south court the upper panels on the low wing frame a broad
+ // blue window over the garage canopy (FoSSrk, looking northwest).
+ const southA=p[2],southB=p[5],sl=Math.hypot(southA[0]-southB[0],southA[1]-southB[1]);
+ const sn=[-(southB[1]-southA[1])/sl,0,(southB[0]-southA[0])/sl];
+ const offset=q=>[q[0]+sn[0]*.085,q[1]+sn[2]*.085];
+ panel(B.glass,offset(southA),offset(southB),.48,.96,datum+3.44,podium-.44,0x5b889a,sn);
+ for(let j=0;j<=5;j++){
+  const t=.48+.48*j/5;
+  panel(B.detail,offset(southA),offset(southB),t,t+.046/sl,datum+3.44,podium-.44,0x849297,sn);
+ }
+ // The small equipment arrays on the light roof appear in the same
+ // orientation as its west parapet. Keep the dark low roof over the porch.
+ const theta=-.197,ex=[Math.cos(theta),-Math.sin(theta)],ez=[Math.sin(theta),Math.cos(theta)];
+ for(const [x,z,rows,cols] of [[275.5,230.3,5,3],[273.0,245.2,5,2]]){
+  for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){
+   const a=(c-(cols-1)/2)*1.22,b=(r-(rows-1)/2)*1.84;
+   const px=x+a*ex[0]+b*ez[0],pz=z+a*ex[1]+b*ez[1];
+   B.detail.box(px,top+.17,pz,1.19,.16,1.80,0x687573,tower,theta);
+   B.detail.box(px,top+.275,pz,1.10,.055,1.70,(c+r)%3?0x405459:0x526267,tower,theta);
+  }
+ }
+ return {base:bottom,top,baseAtEntrance:datum,podiumHeight:8,towerFootprint:tower};
+}
 // The E12 service plant faces the science road. In the November panorama
 // hMLCrbvpbzQJMGEB8s9CTA and captures 59/60, its ductwork rises above a
 // white parapet and a faceted flue flares into a hood below a red rim.
@@ -131,20 +219,182 @@ function energyPlant(B,p,base,height) {
  }
 }
 
+// Sejong Hall's fourth floor is inside a steep dark roof. Its many joined
+// wings have one mapped concave outline, so a rectangular roof would bridge
+// open yards. Give the roof a height from its distance to the real perimeter.
+function sejongDormWing(B,p,base,height,hAt){
+ const datum=Math.max(...p.map(q=>hAt(...q)))-.28;
+ const eave=datum+height-2.8,ridge=datum+height+.38,inset=1.55,slate=0x494748;
+ const distances=new Map();
+ function dist(a){
+  const key=a[0]+','+a[1];if(!distances.has(key))distances.set(key,boundary(a[0],a[1],p));return distances.get(key);
+ }
+ const roofY=a=>eave+(ridge-eave)*Math.min(1,dist(a)/inset);
+ const peak=a=>[a[0],roofY(a),a[1]];
+ function skin(a,b,c){
+  // Once all vertices and their whole triangle are on the plateau the single
+  // large top face is exact. Resolve only the pitched perimeter more finely.
+  const v=[a,b,c],lengths=v.map((a,i)=>Math.hypot(a[0]-v[(i+1)%3][0],a[1]-v[(i+1)%3][1]));
+  const max=Math.max(...lengths),i=lengths.indexOf(max);
+  if(max>1.05 && Math.min(dist(a),dist(b),dist(c))<max+inset){
+   const x=v[i],y=v[(i+1)%3],z=v[(i+2)%3],m=[(x[0]+y[0])/2,(x[1]+y[1])/2];
+   skin(x,m,z);skin(m,y,z);return;
+  }
+  const P=peak(a),Q=peak(b),R=peak(c);
+  if((Q[2]-P[2])*(R[0]-P[0])-(Q[0]-P[0])*(R[2]-P[2])>0)B.detail.tri(P,Q,R,slate);
+  else B.detail.tri(P,R,Q,slate);
+ }
+ for(const triangle of THREE.ShapeUtils.triangulateShape(p.map(q=>new THREE.Vector2(...q)),[]))skin(...triangle.map(i=>p[i]));
+ faces(p,(a,b,L,n)=>{
+  panel(B.wall,a,b,0,1,base,datum,0xb9b6a8,n);
+  panel(B.wall,a,b,0,1,datum,eave,0xdad7cb,n);
+  panel(B.detail,a,b,0,1,eave-.15,eave+.05,0x514b48,n);
+  if(L<3.25)return;
+  const bays=Math.max(1,Math.floor(L/3.55)),tx=(b[0]-a[0])/L,tz=(b[1]-a[1])/L;
+  const make=(u,d,y)=>[a[0]+u*tx-d*n[0],y,a[1]+u*tz-d*n[2]];
+  for(let j=0;j<bays;j++){
+   const u=(j+.5)*L/bays,half=Math.min(.98,L/bays*.29);
+   const shortEnd=L<14.8;
+   for(let story=0;story<3;story++){
+    const low=datum+.9+story*(eave-datum)/3,high=low+1.3;
+    panel(B.glass,a,b,(u-half)/L,(u+half)/L,low,high,0x515d5c,n);
+    panel(B.detail,a,b,(u-.035)/L,(u+.035)/L,low,high,0xaba79e,n);
+    panel(B.detail,a,b,(u-half-.07)/L,(u+half+.07)/L,low-.07,low+.025,0xbab8af,n);
+   }
+   if(shortEnd)continue;
+   const inside=make(u,1.36,0);if(!inPoly(inside[0],inside[2],p))continue;
+   const h=1.48,w=Math.min(.98,half+.08),face=.055,back=1.34;
+   const l=make(u-w,face,eave+.22),r=make(u+w,face,eave+.22),tl=make(u-w,face,eave+h),tr=make(u+w,face,eave+h),tip=make(u,face,eave+h+.86);
+   const facePanel=(a,b,y,z,c)=>B.detail.quad(make(a,face,y),make(b,face,y),make(b,face,z),make(a,face,z),c,n);
+   const sill=eave+.38,head=eave+h-.12,wl=u-w+.15,wr=u+w-.15;
+   facePanel(u-w,wl,eave+.22,eave+h,0xc2bdaa);facePanel(wr,u+w,eave+.22,eave+h,0xc2bdaa);
+   facePanel(wl,wr,eave+.22,sill,0xc2bdaa);facePanel(wl,wr,head,eave+h,0xc2bdaa);
+   B.detail.tri(tl,tr,tip,0xc2bdaa,n);
+   const bl=make(u-w,back,eave+h),br=make(u+w,back,eave+h),bt=make(u,back,eave+h+.86);
+   const leftNormal=[-tx*.63,.77,-tz*.63],rightNormal=[tx*.63,.77,tz*.63];
+   B.detail.quad(tl,tip,bt,bl,0x514c49,leftNormal);B.detail.quad(tip,tr,br,bt,0x484644,rightNormal);
+   B.detail.quad(l,tl,bl,make(u-w,back,eave+.22),0xb6b3a5,[-tx,0,-tz]);
+   B.detail.quad(r,tr,br,make(u+w,back,eave+.22),0xb6b3a5,[tx,0,tz]);
+   const window=(s,t,bottom,top,c,d)=>B.glass.quad(make(s,d,bottom),make(t,d,bottom),make(t,d,top),make(s,d,top),c,n);
+   window(wl,wr,sill,head,0x324c51,face+.016);
+   window(u-.037,u+.037,sill,head,0xc6c3b3,face-.014);
+  }
+ });
+ return ridge;
+}
+function sejongHall(B,hAt,height){
+ let peak=-Infinity;
+ for(const {type,p} of sejongParts){
+  if(type==='canopy')continue;
+  const ground=p.map(q=>hAt(...q)),base=Math.min(...ground)-.4;
+  if(type==='dorm'){
+   peak=Math.max(peak,sejongDormWing(B,p,base,height,hAt));continue;
+  }
+  const floor=Math.max(...ground)-.25,top=floor+3.15;
+  faces(p,(a,b,L,n)=>{
+   panel(B.wall,a,b,0,1,base,top,0xcbc8bd,n);
+   panel(B.detail,a,b,0,1,top-.19,top+.09,0xa9aaa3,n);
+   if(L<3.6)return;
+   const count=Math.max(1,Math.floor(L/3.65));
+   for(let j=0;j<count;j++)panel(B.glass,a,b,(j+.12)/count,(j+.88)/count,floor+.83,top-.48,0x485754,n);
+  });
+  roof(B.detail,p,top+.09,0x868a80);
+ }
+ return peak;
+}
+function e2Sunshades(B,p,hAt){
+ const u=([x,z])=>(x-202.5)*.839-(z-317.7)*.544,v=([x,z])=>(x-202.5)*.544+(z-317.7)*.839;
+ function clipped(ring,distance){
+  const out=[];
+  for(let i=0;i<ring.length;i++){
+   const a=ring[i],b=ring[(i+1)%ring.length],da=distance(a),db=distance(b);
+   if(da>=0)out.push(a);
+   if(da*db<0){const f=da/(da-db);out.push([mix(a[0],b[0],f),mix(a[1],b[1],f)]);}
+  }
+  return out;
+ }
+ const datum=hAt(265.4,290.2),bottom=Math.min(...p.map(q=>hAt(...q)))-.37;
+ const upper=clipped(clipped(p,q=>16.07-v(q)),q=>68.58-u(q)),core=clipped(p,q=>u(q)-68.28);
+ const top=datum+16.55,cap=datum+18.3;
+ function shell(ring,height,colour,roofColour){
+  faces(ring,(a,b,l,n)=>panel(B.wall,a,b,0,1,bottom,height,colour,n));roof(B.wall,ring,height,roofColour);
+ }
+ shell(p,datum+7.82,0xb9babb,0xadaeaa);
+ shell(upper,top,0xbabbbd,0xc4c6bd);shell(core,cap,0x484747,0x686866);
+ // Keep the rooftop material edge separate from the fins casting shadows
+ // over the four rows. The entry annex projects in front of the west bays.
+ faces(upper,(a,b,l,n)=>{
+  if(l<.9 || Math.min(u(a),u(b))>68.25)return;
+  const out=(p,q)=>[p[0]+n[0]*q,p[1]+n[2]*q];
+  const strip=(batch,from,to,low,high,depth,color)=>panel(batch,out(a,depth),out(b,depth),from,to,datum+low,datum+high,color,n);
+  const count=Math.max(1,Math.round(l/4.33));
+  const visibleCourse=(t,f)=>f>=2 || (v(a)+v(b))*.5<12 || mix(u(a),u(b),t)>29.7;
+  for(let j=0;j<count;j++){
+   const t=(j+.5)/count,left=(j+.075)/count,right=(j+.925)/count;
+   for(let f=0;f<4;f++){
+    if(!visibleCourse(t,f))continue;
+    const low=.97+f*3.76,high=low+1.47;
+    strip(B.glass,left,right,low,high,.035,0x30404e);
+    strip(B.glass,left+.10/count,right-.06/count,low+.10,high-.12,.051,
+      [0x4d5d6b,0x525f70,0x5b6977,0x495b6f][(j+f)%4]);
+    strip(B.detail,t-.046/l,t+.046/l,low,high,.073,0x535760);
+    for(let k=0;k<4;k++){
+     const y=datum+high+.10+k*.15,d=.24+.05*k;
+     const start=out(a,.07),stop=out(b,.07),outerA=out(a,d),outerB=out(b,d);
+     const pt=(p,q,t,h)=>[mix(p[0],q[0],t),h,mix(p[1],q[1],t)];
+     B.detail.quad(pt(start,stop,left,y),pt(start,stop,right,y),
+       pt(outerA,outerB,right,y-.045),pt(outerA,outerB,left,y-.045),0x85888c,[0,1,0]);
+    }
+   }
+   strip(B.detail,j/count,(j+.013)/count,1.0,15.18,.091,0x939699);
+  }
+  strip(B.detail,0,1,16.28,16.42,.06,0xa7a7a8);
+ });
+ faces(p,(a,b,l,n)=>{
+  if(Math.min(v(a),v(b))<17||l<2)return;
+  const count=Math.max(1,Math.round(l/3.9));
+  for(let f=0;f<2;f++)for(let j=0;j<count;j++){
+   panel(B.glass,a,b,(j+.16)/count,(j+.83)/count,datum+.92+f*3.74,datum+2.36+f*3.74,0x455760,n);
+  }
+ });
+ const glyph={'E':['111','100','110','100','111'],'2':['111','001','111','100','111'],
+  '-':['000','000','110','000','000'],'1':['010','110','010','010','111']};
+ faces(core,(a,b,l,n)=>{
+  if(l<5.3 || n[0]<0)return;
+  if(n[0]*.544+n[2]*.839<.23 && n[0]*.839-n[2]*.544<.7)return;
+  const advance=(b[0]-a[0])*n[2]-(b[1]-a[1])*n[0]>0?1:-1,size=.205;
+  const front=q=>[q[0]+.06*n[0],q[1]+.06*n[2]];
+  for(const [i,ch] of Array.from('E2-1').entries())glyph[ch].forEach((row,j)=>{
+   for(let k=0;k<row.length;k++)if(row[k]==='1'){
+    const s=.5+advance*(i*3.8+k-6.8)*size/l,y=cap-1.68+(4-j)*size;
+    panel(B.detail,front(a),front(b),s-size/(2*l),s+size/(2*l),y,y+size,0xac6d3d,n);
+   }
+  });
+  if(n[0]*.839-n[2]*.544>.75)for(let f=0;f<4;f++)panel(B.glass,a,b,.36,.56,datum+1+3.76*f,datum+2.3+3.76*f,0x354852,n);
+ });
+ return {base:bottom,top:cap,height:cap-bottom,storeys:4,footprintPreserved:true,panoramas:
+  ['s7pyDY9qKs-woMR1xXK66g','ZQ2ev4fekJiDAr8yQpKxQQ','WNAIQBQp-P9GfHtbMREE-w']};
+}
 function building(B,b,cfg,hAt){
  const p=b.p,ref=b.ref,base=Math.min(...p.map(a=>hAt(...a)))-.4,H=cfg.height,top=base+H,style=cfg.style;
- faces(p,(a,b,L,n)=>panel(B.wall,a,b,0,1,base,top,cfg.color,n));roof(B.wall,p,top,0x78817e);
- if(style==='socTower'){
-  socFacade(B,p,base,H);
-  return {base,height:H,top,footprintPreserved:true,sourcePhotos:cfg.photos,style,dimensionStatus:'Six above-ground floors confirmed by KAIST; metric height estimated.',confidence:cfg.confidence};
+ if(style==='e2Sunshades')return {...e2Sunshades(B,p,hAt),sourcePhotos:cfg.photos,style,dimensionStatus:'Four window bands, a two-storey projecting entrance and a taller dark circulation core in the November panoramas. Heights are estimated.'};
+ if(style==='dorm'){
+  const attic=sejongHall(B,hAt,H);
+  return {base,height:attic-base,top:attic,footprintPreserved:true,parts:sejongParts.map(part=>part.id),sourcePhotos:cfg.photos,panoramas:cfg.panoramas,style,dimensionStatus:'Seven cream dormitory wings with gabled attic windows and lower connecting galleries, traced to mapped building parts. Facade dimensions are estimated from November 2026 imagery.'};
  }
+ if(style==='socTower'){
+  const structure=kraftonHall(B,p,hAt,H);
+  return {...structure,height:structure.top-structure.base,footprintPreserved:true,sourcePhotos:cfg.photos,style,
+   panoramas:['WNAIQBQp-P9GfHtbMREE-w'],dimensionStatus:'Two-storey street podium and a separate six-storey tower. Footprint and roof break traced from the public plan and aerial view. Metric dimensions are estimated.',confidence:cfg.confidence};
+ }
+ faces(p,(a,b,L,n)=>panel(B.wall,a,b,0,1,base,top,cfg.color,n));roof(B.wall,p,top,0x78817e);
  if(style==='energy'){
   energyPlant(B,p,base,H);
   return{base,height:H,top,footprintPreserved:true,sourcePhotos:cfg.photos,panoramas:cfg.panoramas,style,
    confidence:'Facade, equipment and flue silhouette matched to photos 59–60 and the November street view; heights and positions estimated.'};
  }
  faces(p,(a,b,L,n)=>{
-  if(L<1.2)return;const slots=Math.max(1,Math.round(L/(style==='ibsFins'?1.35:style==='ribs'?.85:3.1)));
+  if(L<1.2)return;const slots=Math.max(1,Math.round(L/(style==='ribs'?.85:3.1)));
   if(style==='ribs'){
    // E6-6's street-facing screen is silver, with glazing recessed in thin
    // horizontal bands and fine metal ribs continuing over the openings.
@@ -157,10 +407,6 @@ function building(B,b,cfg,hAt){
     const t=(j+.5)/slots;
     panel(B.detail,a,b,t-.043/L,t+.043/L,base+.15,top-.12,j%5===0?0x99a6af:0xabb5bd,n);
    }
-  }else if(['ibsFins','parkingFins'].includes(style)){
-   panel(B.glass,a,b,.012,.988,base+.45,top-.4,0x477481,n);
-   for(let j=0;j<slots;j++){const t=(j+.5)/slots,w=(style==='parkingFins'?.48:.19)/slots;panel(B.detail,a,b,t-w/2,t+w/2,base+.5,top-.3,style==='parkingFins'?[0xb9c6d0,0xe1e0d3,0x829aaf,0xd1c69b][j%4]:cfg.color,n);}
-   for(let f=0;f<=cfg.floors;f++){const y=base+f*H/cfg.floors;panel(B.detail,a,b,0,1,y,Math.min(top,y+(style==='ibsFins'?.65:.3)),cfg.color,n);}
   }else if(style==='chemistryBrick'){
    const floor=H/cfg.floors, bays=Math.max(1,Math.round(L/7.4));
    panel(B.glass,a,b,0,1,base+.12,base+floor-.22,0x33464a,n);
@@ -204,29 +450,21 @@ function building(B,b,cfg,hAt){
   }else if(style==='labTower'&&L<18){
    panel(B.glass,a,b,.47,.54,base+.6,top-2.4,0x47747b,n);
   }else{
-   const band=['ribbon','labTower','nanoGlass','service'].includes(style),F=cfg.floors;
+   const band=['ribbon','labTower','service'].includes(style),F=cfg.floors;
    for(let f=0;f<F;f++){
-    const y=base+.75+f*(H-.5)/F,wh=style==='nanoGlass'?H/F*.7:1.6;
-    if(band){panel(B.glass,a,b,.025,.975,y,Math.min(top-.45,y+wh),style==='nanoGlass'?0x3c6077:0x45656b,n);for(let j=1;j<Math.max(2,Math.round(L/2.5));j++){const t=j/Math.round(L/2.5);panel(B.detail,a,b,t-.025/L,t+.025/L,y,y+wh,0xa4b5b4,n);}}
+    const y=base+.75+f*(H-.5)/F,wh=1.6;
+    if(band){panel(B.glass,a,b,.025,.975,y,Math.min(top-.45,y+wh),0x45656b,n);for(let j=1;j<Math.max(2,Math.round(L/2.5));j++){const t=j/Math.round(L/2.5);panel(B.detail,a,b,t-.025/L,t+.025/L,y,y+wh,0xa4b5b4,n);}}
     else for(let j=0;j<slots;j++){const t=(j+.5)/slots,w=.61/slots;panel(B.glass,a,b,t-w/2,t+w/2,y,y+wh,0x4b686d,n);panel(B.detail,a,b,t-w/2,t+w/2,y-.08,y,0xbabeb4,n);}
     if(style==='framedBrick'){panel(B.detail,a,b,0,1,y-.7,y-.4,0xd5d8d0,n);for(let j=0;j<=slots;j++)panel(B.detail,a,b,Math.max(0,j/slots-.14/L),Math.min(1,j/slots+.14/L),base,top,0xc9d0c8,n);}
    }
   }
   // Fine facade joints add scale without external texture assets.
   if(style==='brick')for(let y=base+.2;y<top;y+=.28)panel(B.detail,a,b,0,1,y,y+.018,0x6e514a,n);
-  if(ref==='E2-1'&&L>6&&L<14){panel(B.detail,a,b,.05,.95,base,top,0x707a7b,n);panel(B.glass,a,b,.45,.55,base+1,top-1,0x3f646b,n);}
  });
  if(style==='glassPiers'){
   // Low dark roof monitor behind the stone parapet, visible on approach.
   B.detail.box(48,top+.52,-52,14,.98,2.9,0x899298,p,.57);
   B.detail.box(48,top+1.07,-52,17.6,.18,3.6,0x566169,p,.57);
- }
- if(style==='dorm'){
-  // Triangulated low hipped facets preserve concave source wings too.
-  for(const indices of THREE.ShapeUtils.triangulateShape(p.map(q=>new THREE.Vector2(...q)),[])){
-   const t=indices.map(i=>p[i]),q=[t.reduce((s,a)=>s+a[0],0)/3,t.reduce((s,a)=>s+a[1],0)/3];
-   for(let i=0;i<3;i++)B.detail.tri([t[i][0],top,t[i][1]],[t[(i+1)%3][0],top,t[(i+1)%3][1]],[q[0],top+Math.min(2.1,boundary(...q,p)*.55),q[1]],0x575d55,[0,1,0]);
-  }
  }
  if(style==='gasStore'){
   const q=interior(p,3.2);if(q)for(const dx of[-2,2]){const x=q[0]+dx,z=q[1];B.detail.add(new THREE.CylinderGeometry(1.65,1.65,12.5,16),new THREE.Matrix4().makeTranslation(x,base+6.25,z),0xe2e4db,p);B.detail.add(new THREE.SphereGeometry(1.65,12,6,0,Math.PI*2,0,Math.PI/2),new THREE.Matrix4().makeTranslation(x,base+12.5,z),0xe2e4db,p);}

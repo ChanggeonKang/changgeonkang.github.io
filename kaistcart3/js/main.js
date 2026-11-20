@@ -57,6 +57,7 @@ function stopMotion(){clearInputs();stepper.reset();sfx.quiet();last=0;}
 function cameraMode(){streetCamera=!streetCamera;P.mesh.visible=!streetCamera;P.mesh.userData.ao.visible=!streetCamera;lookYaw=0;lookPitch=0;cam.snap=true;$('cameraToggle').textContent=streetCamera?'Camera · Street level':'Camera · Chase';}
 let arrivalLook=false;
 function faceArrival(pose){
+  atlas.arrived(pose);
   arrivalLook=Number.isFinite(pose.viewHeading);
   lookYaw=arrivalLook?angDiff(pose.viewHeading,P.th):0;lookPitch=0;cam.snap=true;
 }
@@ -174,7 +175,7 @@ function tick(dt){
     if(lastHud<0||T-lastHud>.09){lastHud=T;atlas.update(P);$('speed').textContent=String(Math.round(Math.hypot(P.vx,P.vz)*3.6));$('notice').hidden=P.flipT<=.2;if(P.flipT>.2)$('notice').textContent='Righting the kart…';}
   }
   sun.target.position.set(P.x,gAt(P.x,P.z),P.z);sun.position.copy(sun.target.position).addScaledVector(W.sun,300);
-  updateWorld(T,camera);
+  updateWorld(T,camera,P);
   if(post.ok&&qual<2)post.render(scene,camera,clamp((Math.hypot(P.vx,P.vz)-20)/25,0,.4),0,T);
   else renderer.render(scene,camera);
 }
@@ -187,7 +188,7 @@ function frame(now){
 }
 async function init(){
   applyQuality();let count=0;
-  const views=fetch(new URL('../data/road-views.json?v=kaimaru-frontage-1',import.meta.url)).then(r=>{if(!r.ok)throw Error('Street view index unavailable');return r.json();});
+  const views=fetch(new URL('../data/road-views.json?v=campus-survey-20261121',import.meta.url)).then(r=>{if(!r.ok)throw Error('Street view index unavailable');return r.json();});
   const [,panoramas]=await Promise.all([loadWorld(scene,renderer,msg=>{$('loadMsg').textContent=msg+'…';$('loadProgress').value=Math.min(94,8+count++*12);}),views]);
   cameraClearance=createCameraClearance(W.D.buildings,W.G,hAt);
   dust=new Particles(scene,420,false);skids=new Skids(scene);
