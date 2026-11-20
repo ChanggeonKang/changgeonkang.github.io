@@ -247,18 +247,40 @@ const gapTrend = ms => ms < 0 ? 'ahead' : ms > 0 ? 'behind' : 'level';
 function updateSplitHud() {
   const visible = state === 'race' || state === 'finish' || state === 'pause';
   const official = replay?.result?.run?.splitsMs, splits = official || lap.splitsMs;
-  const valid = visible && (Boolean(official) || lap.valid) && !(replay?.terminal && replay.result?.status !== 'finished');
-  if (hud.tower) {
-    hud.tower(valid ? hud.standings?.[splits.length - 1] : null, splits.length, P.name, splits.at(-1));
+  const valid = (Boolean(official) || lap.valid) && !(replay?.terminal && replay.result?.status !== 'finished');
+  const count = splits.length, elapsed = splits.at(-1), previous = splits.at(-2) ?? 0;
+  if (hud.tower) hud.tower(visible && valid ? hud.standings?.[count - 1] : null, count, P.name, elapsed);
+
+  // An official split can correct the last sector even when the cumulative time matches.
+  if (hud.splitVisible === visible && hud.splitValid === valid && hud.splitCount === count &&
+      hud.splitElapsed === elapsed && hud.splitPrevious === previous && hud.splitLeader === leaderSnapshot) return;
+  hud.splitVisible = visible; hud.splitValid = valid; hud.splitCount = count;
+  hud.splitElapsed = elapsed; hud.splitPrevious = previous; hud.splitLeader = leaderSnapshot;
+  show('splitPanel', visible);
+  const comparison = visible && valid && count ? compareSplit(splits, leaderSnapshot) : null;
+  const trend = comparison ? gapTrend(comparison.gapMs) : 'neutral';
+  $('compactSplit').dataset.trend = trend;
+  setText('compactSplit', comparison ? formatGap(comparison.gapMs, '') : '');
+  if (!visible || !hud.tower) return;
+
+  setText('splitHeading', leaderSnapshot ? 'VS #1 AT START · ' + leaderSnapshot.name : 'LEADER COMPARISON');
+  setText('splitCheckpoint', 'CHECKPOINT ' + String(count).padStart(2, '0') + ' / 32');
+  $('splitPanel').dataset.trend = trend;
+  $('splitSector').dataset.trend = comparison ? gapTrend(comparison.sectorGapMs) : 'neutral';
+  if (!valid) {
+    setText('splitDelta', '—'); setText('splitStatus', 'Invalid route'); setText('splitSector', 'Pause to restart');
+  } else if (comparison) {
+    setText('splitDelta', formatGap(comparison.gapMs));
+    setText('splitStatus', comparison.gapMs < 0 ? 'Ahead at this checkpoint' : comparison.gapMs > 0 ? 'Behind at this checkpoint' : 'Level at this checkpoint');
+    setText('splitSector', 'Last sector ' + formatGap(comparison.sectorGapMs));
+  } else if (leaderSnapshot) {
+    setText('splitDelta', '—'); setText('splitStatus', 'First comparison at checkpoint 1');
+    setText('splitSector', 'Leader lap ' + fmt(leaderSnapshot.timeMs / 1000));
+  } else {
+    setText('splitDelta', count ? fmt(elapsed / 1000) : '—');
+    setText('splitStatus', count ? 'Your time · no leader splits yet' : 'No leader splits yet');
+    setText('splitSector', count ? 'Last sector ' + fmt((elapsed - previous) / 1000) : 'First ranked finish sets the reference');
   }
-  const elapsed = valid ? splits.at(-1) : null;
-  if (hud.splitCount === splits.length && hud.splitElapsed === elapsed && hud.splitLeader === leaderSnapshot) return;
-  hud.splitCount = splits.length; hud.splitElapsed = elapsed; hud.splitLeader = leaderSnapshot;
-  const comparison = elapsed ? compareSplit(splits, leaderSnapshot) : null;
-  $('leaderComparison').hidden = !comparison;
-  setText('leaderReference', comparison && hud.tower ? leaderSnapshot.name : '');
-  $('compactSplit').dataset.trend = comparison ? gapTrend(comparison.gapMs) : 'neutral';
-  setText('compactSplit', comparison ? formatGap(comparison.gapMs, hud.tower ? ' s' : '') : '');
 }
 function updateHud(dt) {
   const C = W.C, spd = Math.hypot(P.vx, P.vz) * 3.6;

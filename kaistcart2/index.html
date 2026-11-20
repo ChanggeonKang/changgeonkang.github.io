@@ -121,7 +121,6 @@
   .tower-rank{color:#a6b9c4;font-weight:650}.tower-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}.tower-time{font-weight:600}
   .tower-list li.own{background:#234153;border-left-color:#93d3ff;color:#f3faff;z-index:1}.tower-list li.own .tower-rank{color:#afe2ff}
   .tower-list li.beyond{margin-top:4px;border-top:1px dashed #7896a3}
-  #compactSplit[data-trend="ahead"]{color:#8de4b5}#compactSplit[data-trend="behind"]{color:#ffb4a5}
   @media(max-height:580px){#checkpointTower{--row-height:18px;width:183px;font-size:11px}.tower-header{padding:4px 8px}.tower-columns{min-height:15px}}
   @media(max-height:420px){#checkpointTower{--row-height:16px;width:169px}.tower-list li{font-size:10px}}
   @media(max-height:420px){
@@ -129,17 +128,22 @@
     html:not(.mobile-device) #timingSidebar:has(#checkpointTower:not([hidden])) #checkpointStatus{display:none}
     html:not(.mobile-device) #driverName{margin:2px 0 4px}
   }
-  #timingReadout{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:baseline;margin-top:8px}
-  #time{grid-column:1/-1;grid-row:2}
-  #leaderComparison{grid-column:1/-1;grid-row:3;display:flex;align-items:center;justify-content:space-between;gap:6px;max-width:170px;margin:5px 0;padding:5px 0 0;border-top:1px solid rgba(202,222,234,.2)}
-  #leaderComparison[hidden]{display:none}
-  .leader-target{min-width:0;font-size:9px;font-weight:650;letter-spacing:.04em;color:#b8cbd7}
-  #leaderReference{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;letter-spacing:0;color:#edf6f9}
-  #compactSplit{font-size:14px;line-height:1;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+  #splitPanel{left:50%;top:84px;transform:translateX(-50%);width:252px;box-sizing:border-box;padding:11px 15px;text-align:center;font-variant-numeric:tabular-nums}
+  #splitHeading{font-size:10px;letter-spacing:.07em;color:#b8cbd7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #splitCheckpoint{font-size:10px;letter-spacing:.08em;margin-top:6px;color:#9fbac8}
+  #splitDelta{font-size:29px;font-weight:750;line-height:1.2;margin-top:3px;color:#d8e6ed}
+  #splitStatus{font-size:11px;margin-top:2px;color:#bacbd5}
+  #splitSector{font-size:11px;margin-top:8px;padding-top:7px;border-top:1px solid rgba(200,220,235,.14);color:#bacbd5}
+  html:not(.mobile-device) #splitPanel:not(.hidden) ~ #msg{top:max(23%,228px);transform:translateX(-50%)}
+  #splitPanel[data-trend="ahead"] #splitDelta,#splitSector[data-trend="ahead"],#compactSplit[data-trend="ahead"]{color:#8de4b5}
+  #splitPanel[data-trend="behind"] #splitDelta,#splitSector[data-trend="behind"],#compactSplit[data-trend="behind"]{color:#ffb4a5}
+  #timerLabel{display:flex;align-items:baseline;justify-content:space-between;gap:6px;margin-top:8px}
+  #compactSplit{display:none;font-size:14px;line-height:1;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
   .mobile-device #timingSidebar{left:max(18px,env(safe-area-inset-left));top:max(16px,env(safe-area-inset-top))}
-  .mobile-device #checkpointTower{display:none}
-  .mobile-device #leaderComparison{grid-column:2;grid-row:1;margin:0;padding:0;border:0}
-  .mobile-device .leader-target{display:none}
+  .mobile-device #checkpointTower,.mobile-device #splitPanel{display:none}
+  .mobile-device #compactSplit:not(:empty){display:inline}
+  @media(max-width:760px){#splitPanel{top:16px;width:224px;padding:9px 12px}#splitDelta{font-size:25px}}
+  @media(max-height:520px){#splitPanel{top:82px;width:214px;padding:7px 10px}#splitDelta{font-size:23px}#splitSector{margin-top:4px;padding-top:4px}}
   #resSplit{font-variant-numeric:tabular-nums;color:#b1dcff;font-size:13px}
   .name-field{display:block;margin:18px 0 6px;font-size:12px;color:#c4d8e2}
   #playerName{display:block;box-sizing:border-box;width:100%;margin-top:8px;border:1px solid #617b8b;background:rgba(8,19,28,.75);border-radius:5px;padding:12px;color:#fff;font:16px inherit;user-select:text;-webkit-user-select:text;touch-action:auto}
@@ -164,10 +168,7 @@
   <div class="hud" id="timingSidebar">
   <div class="glass" id="pos">
     <div class="lbl" id="runMode">TIME ATTACK</div><div id="driverName"></div>
-    <div id="timingReadout">
-      <span class="lbl">TIME</span><div id="time">0:00.00</div>
-      <div id="leaderComparison" hidden><span class="leader-target">VS LAP #1<span id="leaderReference"></span></span><output id="compactSplit" aria-label="Your checkpoint gap to the fastest lap, in seconds"></output></div>
-    </div>
+    <div id="timerLabel"><span class="lbl">TIME</span><output id="compactSplit" aria-label="Your checkpoint gap to the fastest lap, in seconds"></output></div><div id="time">0:00.00</div>
     <div id="left">4.39 km to go</div><div id="checkpointStatus">CHECKPOINT 0 / 32</div>
   </div>
   <section id="checkpointTower" aria-label="Checkpoint standings" hidden>
@@ -178,6 +179,10 @@
   </div>
   <div class="hud glass" id="next"><span class="lbl">NEXT</span>&nbsp; <span id="nextName">-</span><span id="nextDist"></span></div>
   <div class="hud" id="prog"></div>
+  <div class="hud glass hidden" id="splitPanel" aria-label="Checkpoint comparison with the leader" data-trend="neutral">
+    <div id="splitHeading">VS #1 AT START</div><div id="splitCheckpoint">CHECKPOINT 0 / 32</div>
+    <div id="splitDelta">—</div><div id="splitStatus">Waiting for the first checkpoint</div><div id="splitSector">Last sector —</div>
+  </div>
   <canvas class="hud glass" id="mini" width="380" height="380"></canvas>
   <div class="hud" id="speedo">
     <svg viewBox="0 0 190 190">
@@ -275,6 +280,6 @@
   "./js/world.js":"./js/world.js?v=campus-lap-3"
 }}
 </script>
-<script type="module" src="js/main.js?v=checkpoint-leader-2"></script>
+<script type="module" src="js/main.js?v=center-splits-1"></script>
 </body>
 </html>
