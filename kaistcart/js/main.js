@@ -6,7 +6,8 @@ import { Vehicle, RIDE } from './vehicle-physics.js';
 import { FixedStepper, syncRacer, updateProgress, resolveWalls } from './race-sim.js';
 import { resolveCourseBarrier } from './course-barriers.js';
 import { LapTracker, normalizeName } from './time-attack.js';
-import { createRecordsClient, recordDevice } from './leaderboard.js?v=replay-sync-1';
+import { createRecordsClient, recordDevice } from './leaderboard.js?v=checkpoint-standings-1';
+import { attachCheckpointTower } from './checkpoint-standings.js?v=checkpoint-standings-1';
 import { stabilizeVehicle } from './stabilize.js';
 import { inputMask, ReplayUpload } from './replay-upload.js?v=replay-sync-1';
 import { replayPrediction, matchesReplay, restoreReplayState } from './replay-sync.js?v=replay-sync-1';
@@ -219,6 +220,7 @@ function updateCamera(dt) {
 const hud = { last: {}, dots: [] };
 function setText(id, v) { if (hud.last[id] !== v) { hud.last[id] = v; $(id).textContent = v; } }
 function buildHud() {
+  if (recordDevice() !== 'mobile') hud.tower = attachCheckpointTower($('checkpointTower'), {time:officialTime, gap:formatGap});
   const C = W.C, cv = $('mini'), S = cv.width;
   let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9;
   for (let i = 0; i < C.n; i++) { x0 = Math.min(x0, C.x[i]); x1 = Math.max(x1, C.x[i]); z0 = Math.min(z0, C.z[i]); z1 = Math.max(z1, C.z[i]); }
@@ -244,32 +246,15 @@ const formatGap = (ms, unit = ' s') => (ms > 0 ? '+' : ms < 0 ? '−' : '') + (M
 const gapTrend = ms => ms < 0 ? 'ahead' : ms > 0 ? 'behind' : 'level';
 function updateSplitHud() {
   const visible = state === 'race' || state === 'finish' || state === 'pause';
-  show('splitPanel', visible);
-  const officialSplits = replay?.result?.run?.splitsMs;
-  const splits = officialSplits || lap.splitsMs, count = splits.length;
-  setText('splitHeading', leaderSnapshot ? 'VS #1 AT START · ' + leaderSnapshot.name : 'LEADER COMPARISON');
-  setText('splitCheckpoint', 'CHECKPOINT ' + String(count).padStart(2, '0') + ' / 32');
-  const valid = Boolean(officialSplits) || lap.valid;
-  const comparison = valid ? compareSplit(splits, leaderSnapshot) : null;
-  const trend = comparison ? gapTrend(comparison.gapMs) : 'neutral';
-  $('splitPanel').dataset.trend = trend;
-  $('compactSplit').dataset.trend = trend;
-  setText('compactSplit', visible && comparison ? formatGap(comparison.gapMs, '') : '');
-  $('splitSector').dataset.trend = comparison ? gapTrend(comparison.sectorGapMs) : 'neutral';
-  if (!valid) {
-    setText('splitDelta', '—'); setText('splitStatus', 'Invalid route'); setText('splitSector', 'Pause to restart');
-  } else if (comparison) {
-    setText('splitDelta', formatGap(comparison.gapMs));
-    setText('splitStatus', comparison.gapMs < 0 ? 'Ahead at this checkpoint' : comparison.gapMs > 0 ? 'Behind at this checkpoint' : 'Level at this checkpoint');
-    setText('splitSector', 'Last sector ' + formatGap(comparison.sectorGapMs));
-  } else if (leaderSnapshot) {
-    setText('splitDelta', '—'); setText('splitStatus', 'First comparison at checkpoint 1');
-    setText('splitSector', 'Leader lap ' + fmt(leaderSnapshot.timeMs / 1000));
-  } else {
-    setText('splitDelta', count ? fmt(splits[count - 1] / 1000) : '—');
-    setText('splitStatus', count ? 'Your time · no leader splits yet' : 'No leader splits yet');
-    setText('splitSector', count ? 'Last sector ' + fmt((splits[count - 1] - (splits[count - 2] || 0)) / 1000) : 'First ranked finish sets the reference');
+  const official = replay?.result?.run?.splitsMs, splits = official || lap.splitsMs;
+  const valid = visible && (Boolean(official) || lap.valid) && !(replay?.terminal && replay.result?.status !== 'finished');
+  if (hud.tower) {
+    hud.tower(valid ? hud.standings?.[splits.length - 1] : null, splits.length, P.name, splits.at(-1));
+    return;
   }
+  const comparison = valid ? compareSplit(splits, leaderSnapshot) : null;
+  $('compactSplit').dataset.trend = comparison ? gapTrend(comparison.gapMs) : 'neutral';
+  setText('compactSplit', comparison ? formatGap(comparison.gapMs, '') : '');
 }
 function updateHud(dt) {
   const C = W.C, spd = Math.hypot(P.vx, P.vz) * 3.6;
@@ -416,6 +401,15 @@ async function startRace(isPractice = false) {
     practice = isPractice;
     placeGrid();
     leaderSnapshot = snapshotLeader(isPractice ? leaderboardLeader : session.leader);
+    if (hud.tower) {
+      hud.standings = session?.checkpointStandings ?? null;
+      if (isPractice) {
+        const startedLap = lap;
+        void records.list(P.name).then(data => {
+          if (lap === startedLap) hud.standings = data.checkpointStandings;
+        }).catch(() => {}); // Offline practice still starts immediately.
+      }
+    }
     $('touch').style.display = touchMode ? 'block' : 'none';
     show('title', false); show('results', false); show('pause', false); show('hud', true); show('touch', touchMode);
     $('help').style.opacity = 1; helpT = 9;

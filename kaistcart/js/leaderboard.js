@@ -35,8 +35,16 @@ export function createRecordsClient(origin = RECORDS_ORIGIN, fetcher = fetch) {
     } finally { clearTimeout(timeout); }
   }
   return {
-    list: () => request('/api/leaderboard?course=' + encodeURIComponent(COURSE_ID)),
-    start: name => request('/api/runs/start', { name, course: COURSE_ID, replayVersion: 1, device: recordDevice() }),
+    list: against => {
+      const query = new URLSearchParams({course: COURSE_ID});
+      if (against) query.set('against', against);
+      return request('/api/leaderboard?' + query);
+    },
+    start: name => {
+      const device = recordDevice();
+      return request('/api/runs/start', {name, course: COURSE_ID, replayVersion: 1, device,
+        ...(device === 'desktop' ? {checkpointStandings: true} : {})});
+    },
     inputs: (session, fromTick, inputs, final, sync = false) => request('/api/runs/inputs', {
       runId: session.runId, token: session.token, replayVersion: session.replayVersion, fromTick, inputs,
       ...(final ? {final: true} : {}),
