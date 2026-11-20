@@ -64,7 +64,9 @@ function faceArrival(pose){
 function openMap(){
   if(!atlas||mode==='atlas')return;
   if($('pause').open)$('pause').close();
-  stopMotion();mode='atlas';$('atlas').showModal();atlas.show(P,pose=>{
+  camera.getWorldDirection(v3);
+  const viewHeading=Math.atan2(v3.x,v3.z);
+  stopMotion();mode='atlas';$('atlas').showModal();atlas.show({...P,viewHeading},pose=>{
     if(!resetFreeDrive(P,pose,W.access))return false;
     skids.clear();faceArrival(pose);closeOverlays();lastHud=-1;return true;
   });$('atlasClose').focus({preventScroll:true});

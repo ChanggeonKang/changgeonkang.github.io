@@ -76,6 +76,23 @@ function distanceToPlace(place,x,z){
 }
 
 export function vehicleApproach(place,segments,access){
+  if(place.name==='Duck Pond'){
+    const pin=[24.13,239.68];
+    const bridge=snapToStreet(segments.filter(s=>s.road.id===426204521),...pin,access);
+    if(bridge){
+      const options=[];
+      const laneWidth=bridge.road.width/bridge.road.lanes;
+      for(const th of [bridge.th,bridge.th+Math.PI])for(let lane=0;lane<bridge.road.lanes/2;lane++){
+        const offset=(lane+.5)*laneWidth;
+        const x=bridge.x-Math.cos(th)*offset,z=bridge.z+Math.sin(th)*offset;
+        if(access.canPlace(x,z,th,bridge.groundHint)&&access.canPlace(x+8*Math.sin(th),z+8*Math.cos(th),th,bridge.groundHint))
+          options.push({x,z,th,pinDistance:Math.hypot(x-pin[0],z-pin[1])});
+      }
+      const lane=options.sort((a,b)=>a.pinDistance-b.pinDistance)[0];
+      if(lane)return {...bridge,x:lane.x,z:lane.z,th:lane.th,distance:distanceToPlace(place,lane.x,lane.z),
+        panoramaId:'Q9EvVWWDpiYl2M2xeSXUyg',viewHeading:Math.PI*(1-63/180)};
+    }
+  }
   if(place.ref==='E8'){
     const forecourt=segments.filter(s=>s.road.id===504188913);
     const arrival=snapToStreet(forecourt,397,-71.5,access);
@@ -100,7 +117,7 @@ export function vehicleApproach(place,segments,access){
     if(arrival){
       // Reproduce the north-facing panorama from the far half of the road.
       const z=access.canPlace(arrival.x,arrival.z+1.35,arrival.th) ? arrival.z+1.35 : arrival.z;
-      return {...arrival,z,distance:distanceToPlace(place,arrival.x,z),viewHeading:-Math.PI+.07};
+      return {...arrival,z,distance:distanceToPlace(place,arrival.x,z),panoramaId:'71dTQjANr-zbtcRwz97MLA',viewHeading:-Math.PI+.07};
     }
   }
   // The W2 pedestrian esplanade and visitor drop-off lie on opposite sides of
@@ -155,7 +172,12 @@ function arrow(ctx,x,y,angle,r){
 export function createCampusMap(world,panoramas){
   const texture=mapTexture(world), bounds=texture.bounds, segments=segmentsFor(world.explore.roads), places=makePlaces(world);
   const extent={w:bounds.x1-bounds.x0,h:bounds.z1-bounds.z0}, lonScale=111320*Math.cos(world.D.origin.lat*Math.PI/180);
-  for(const v of panoramas){v.x=(v.lon-world.D.origin.lon)*lonScale;v.z=(world.D.origin.lat-v.lat)*latScale;}
+  const indexedPanoramas=new Map();
+  for(const v of panoramas){
+    v.x=(v.lon-world.D.origin.lon)*lonScale;v.z=(world.D.origin.lat-v.lat)*latScale;
+    const id=new URL(v.url).searchParams.get('p')?.split(',')[0];
+    if(id)indexedPanoramas.set(id,v);
+  }
   const mini=$('mini'),full=$('mapCanvas'), origin=world.D.origin;
   let player={x:0,z:0,th:0}, zoom=1, focus, selected, transform, open=false, drag=null, onTravel=null, arrivalView=null;
   const setFocus=()=>{focus={x:(bounds.x0+bounds.x1)/2,z:(bounds.z0+bounds.z1)/2};};setFocus();
@@ -201,8 +223,20 @@ export function createCampusMap(world,panoramas){
   function links(p){
     const {lat,lon}=geographicPoint(origin,p.x,p.z),r=Math.PI/180, mx=6378137*lon*r,my=6378137*Math.log(Math.tan(Math.PI/4+lat*r/2));
     const nearby=panoramas.reduce((v,a)=>{const d=Math.hypot(a.x-p.x,a.z-p.z);return d<v.d?{a,d}:v;},{d:35});
-    const panorama=p.panorama||nearby.a;
-    $('streetLink').href=panorama?panorama.url:'https://map.kakao.com/link/roadview/'+lat.toFixed(6)+','+lon.toFixed(6);
+    const arrival=selected?p:arrivalView;
+    const panorama=arrival?.panorama||indexedPanoramas.get(arrival?.panoramaId)||nearby.a;
+    let streetUrl=panorama?.url;
+    if(streetUrl && Number.isFinite(p.viewHeading??p.th)){
+      // Retain the recorded station, date, field of view and pitch. Only the
+      // bearing of an existing Naver camera link follows the game view.
+      const heading=p.viewHeading??p.th;
+      const bearing=Math.round(Math.atan2(Math.sin(heading),-Math.cos(heading))*180/Math.PI);
+      const u=new URL(streetUrl);
+      if(u.origin==='https://map.naver.com' && u.pathname==='/p'){
+        streetUrl=streetUrl.replace(/([?&]p=[\w-]+,)-?[\d.]+(?=,)/,(_match,start)=>start+bearing);
+      }
+    }
+    $('streetLink').href=streetUrl||'https://map.kakao.com/link/roadview/'+lat.toFixed(6)+','+lon.toFixed(6);
     const capture=panorama?.captured;
     const label=capture?new Intl.DateTimeFormat('en',{month:'short',year:'numeric',timeZone:'UTC'}).format(new Date(capture+'-01T00:00:00Z')):'';
     $('streetLink').textContent=panorama?'Naver street view'+(label?' · '+label:'')+' ↗':'Kakao road view ↗';
@@ -255,7 +289,7 @@ export function createCampusMap(world,panoramas){
   full.onpointerup=e=>{if(!drag)return;const click=!drag.moved;drag=null;if(click){const p=point(e);select(p.x,p.z,null,false);}};full.onpointercancel=()=>{drag=null;};
   $('placeSearch').oninput=list;$('travel').onclick=()=>{if(selected&&!onTravel(selected))$('mapMessage').textContent='This spot is obstructed. Select another road nearby.';};
   new ResizeObserver(draw).observe(full);
-  return {update,arrived(pose){arrivalView=pose.approachLabel?pose:null;},initialPose(destination){
+  return {update,arrived(pose){arrivalView=Number.isFinite(pose.viewHeading)?pose:null;},initialPose(destination){
     const place=destination && (places.find(p=>p.ref===destination) || places.find(p=>p.name===destination));
     if(place){const arrival=vehicleApproach(place,segments,world.access);if(arrival)return arrival;}
     const s=snapToStreet(segments,159,462,world.access);if(!s)throw Error('Missing main gate road');if(Math.cos(s.th)>0)s.th+=Math.PI;return s;},
