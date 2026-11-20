@@ -439,8 +439,8 @@ export function buildCapturedRoadside(scene, D, C, hAt, surfAt) {
     for(const a of[-1.5,1.5]){const lo=point(f,a,-2.2,y+.9),hi=point(f,a,2.0,y+2.3);rod(solid,lo,hi,.035,0x525d5b);}
   }}
 
-  function bicycle(f,along,lateral,y,seed){
-    const paint=[0x557579,0x795a4d,0x6c7273,0x9b845b][seed%4],q=new THREE.Quaternion().setFromUnitVectors(FORWARD,new THREE.Vector3(f.tx,0,f.tz));
+  function bicycle(f,along,lateral,y,seed,frameColor){
+    const paint=frameColor??[0x557579,0x795a4d,0x6c7273,0x9b845b][seed%4],q=new THREE.Quaternion().setFromUnitVectors(FORWARD,new THREE.Vector3(f.tx,0,f.tz));
     // The bicycle plane faces across the shelter, leaving the circulation side open.
     const p=(a,h)=>point(f,along,lateral+a,y+h), wheelCenters=[p(-.51,.34),p(.51,.34)];
     for(const c of wheelCenters){solid.add(wheelGeometry,c,q,scale(1,1,1),0x323b39);solid.add(rimGeometry,c,q,scale(1,1,1),0xa6b0a7);
@@ -448,6 +448,36 @@ export function buildCapturedRoadside(scene, D, C, hAt, surfAt) {
     for(const[a,b]of[[[-.51,.34],[-.13,.81]],[[-.13,.81],[.14,.36]],[[.14,.36],[-.51,.34]],[[.14,.36],[.44,.87]],[[.44,.87],[-.13,.81]],[[.51,.34],[.44,1.02]]])rod(solid,p(...a),p(...b),.022,paint);
     rod(solid,p(-.13,.65),p(-.13,.99),.018,0x73817a);const seat=p(-.13,1.0);box(solid,seat.x,seat.y,seat.z,.26,.06,.16,0x3a403e,f.angle);
     const handle=p(.44,1.03);rod(solid,new THREE.Vector3(handle.x-f.tx*.18,handle.y,handle.z-f.tz*.18),new THREE.Vector3(handle.x+f.tx*.18,handle.y,handle.z+f.tz*.18),.018,0x53645d);
+  }
+  // The north verge opposite the N11 shuttle stop is lined with bicycles.
+  // The middle gap at the approach steps is visible in the 2013 and 2023 views.
+  const northEdge=x=>-385.78-Math.max(0,x+232.7)*.081;
+  const verge=(x,d,raise=0)=>new THREE.Vector3(x,hAt(x,northEdge(x)-d)+.245+raise,northEdge(x)-d);
+  for(let x=-252.55;x<-245.45;x+=1.2){
+    const end=Math.min(-245.45,x+1.2);
+    solid.quad(verge(x,0),verge(end,0),verge(end,2.55),verge(x,2.55),0x898782);
+  }
+  for(const [left,right] of [[-273.6,-252.55],[-245.45,-220]]){
+    for(let x=left;x<right;x+=1.2){
+      const end=Math.min(right,x+1.2);
+      solid.quad(verge(x,0),verge(end,0),verge(end,2.55),verge(x,2.55),0x898782);
+      solid.quad(verge(x,2.40,.009),verge(end,2.40,.009),verge(end,2.53,.009),verge(x,2.53,.009),0x68665d);
+      solid.quad(verge(x,2.55),verge(end,2.55),verge(end,2.55,.12),verge(x,2.55,.12),0x775b50);
+    }
+    const count=Math.floor((right-left)/1.12);
+    for(let i=0;i<count;i++){
+      const x=left+.55+i*1.12+.14*Math.sin(i+left);
+      const p=verge(x,1.35+.18*Math.sin(x));
+      const a=.17*Math.sin(i*53+x);
+      const f={x:p.x,z:p.z,tx:Math.cos(a),tz:Math.sin(a),nx:Math.sin(a),nz:-Math.cos(a),angle:Math.PI/2-a};
+      if(i%8===3){
+        // Parked kick scooter, a small deck, wheels and upright stem.
+        box(solid,p.x,p.y+.13,p.z,.15,.07,.77,0x5e5866,0);
+        for(const dz of [-.34,.34])solid.add(wheelGeometry,point(f,0,dz,p.y+.11),new THREE.Quaternion().setFromAxisAngle(UP,Math.PI/2),scale(.31,.31,.7),0x383837);
+        rod(solid,point(f,0,.28,p.y+.15),point(f,0,.38,p.y+1.02),.027,0x735d97);
+        rod(solid,point(f,-.21,.38,p.y+1.02),point(f,.21,.38,p.y+1.02),.02,0x373738);
+      }else if(i%7!==5)bicycle(f,0,0,p.y,i+21,[0x576676,0x923f45,0x32587b,0x6f8276,0x404a4e,0x887e6c,0x797e81][i%7]);
+    }
   }
   function canopy(from,to,side,extra,photos){
     for(let i=from;i<=to;i+=3){const f=frame(i,side,extra),length=5.8,depth=2.8;

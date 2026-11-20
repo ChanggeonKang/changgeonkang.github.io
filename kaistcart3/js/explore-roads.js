@@ -1,5 +1,6 @@
 import * as THREE from '../lib/three.module.min.js';
 import { isMotorRoad, physicalBarrier, roadLift } from './explore-surfaces.js';
+import { paintMappedCrossings } from './street-fixtures.js';
 
 const up = [0, 1, 0], uv = p => [p[0] / 4, p[2] / 4];
 const paint = new THREE.Color(0xf1ede2), yellow = new THREE.Color(0xdbb45c);
@@ -17,6 +18,36 @@ function surfaceStyle(r) {
   if (r.surface === 'asphalt') return 'street';
   if (r.surface === 'wood') return 'trail';
   return r.roadClass;
+}
+
+// A separately surveyed footpath can be closer to a railing than the
+// centreline of a much wider street. Clip against the entire car surface,
+// including the rail thickness, before tessellating the visible remainder.
+function roadsideSpans(a,b,depth,access) {
+  const dx=b[0]-a[0],dz=b[1]-a[1],len=Math.hypot(dx,dz);
+  if(len<.02)return [];
+  const nx=dz*depth/len,nz=-dx*depth/len;
+  const point=t=>[a[0]+dx*t,a[1]+dz*t];
+  const clear=t=>{
+    const [x,z]=point(t);
+    return !access.isDrivable(x,z) && !access.isDrivable(x+nx,z+nz) && !access.isDrivable(x-nx,z-nz);
+  };
+  const spans=[],steps=Math.ceil(len/.45);
+  let open=clear(0),start=0;
+  for(let i=1;i<=steps;i++){
+    const end=i/steps,nextOpen=clear(end);
+    if(nextOpen===open)continue;
+    let lo=(i-1)/steps,hi=end;
+    for(let j=0;j<9;j++){
+      const mid=(hi+lo)/2;
+      if(clear(mid)===open)lo=mid;else hi=mid;
+    }
+    if(open)spans.push([point(start),point(lo)]);
+    else start=hi;
+    open=nextOpen;
+  }
+  if(open)spans.push([point(start),b]);
+  return spans;
 }
 
 export function buildExploreRoads(scene, world, height, texture, MB, flat, referenceRoadStyles) {
@@ -41,21 +72,23 @@ export function buildExploreRoads(scene, world, height, texture, MB, flat, refer
     return photoStyles.find(s => s.from <= nearest && nearest <= s.to) || null;
   };
   const quad = (batch, a, b, c, d, colour) => batch.quad(a, b, c, d, up, uv(a), uv(b), uv(c), uv(d), colour);
-  const face = (s, along, offset, y) => {
-    const x = s.a[0] + s.dx * along + s.dz * offset, z = s.a[1] + s.dz * along - s.dx * offset;
+  const roadVertex = (s, along, x, z, y) => {
     const way = roadIndex.ways.get(s.road), deck = way.deck, f = (s.start + along) / way.length;
     const base = deck ? deck[0] + f * (deck[1] - deck[0]) : height(x, z);
     return [x, Math.max(way.fordLevel ?? -Infinity,base + pavementLift(s.road,x,z)) + y, z];
   };
+  const face = (s,along,o,y)=>roadVertex(s,along,s.a[0]+s.dx*along+s.dz*o,s.a[1]+s.dz*along-s.dx*o,y);
   const strip = (s, a, b, left, right, lift, batch, colour) =>
     quad(batch, face(s, a, left, lift), face(s, a, right, lift), face(s, b, right, lift), face(s, b, left, lift), colour);
   const masks = new Map();
+  const cornerStyle = new Map();
   // A strip crossing a shared node leaves triangles uncovered at sharp bends.
   // Fill the joint once using the incident road's actual width and material.
   for (const [road, way] of roadIndex.ways) {
     const style = surfaceStyle(road), colour = colours[style] || colours.walk, motor = isMotorRoad(road);
     const batch = style === 'gravel' || style === 'trail' ? unsealed : style === 'redPavers' ? paving : motor || style === 'street' ? asphalt : paving;
     const half = road.width / 2;
+    if(road.drivable)cornerStyle.set(road.id,{road,colour,batch});
     for (const s of way.segments) {
       if(road.ford==='stepping_stones'){
         const stones=Math.ceil(s.span/.94);
@@ -71,23 +104,50 @@ export function buildExploreRoads(scene, world, height, texture, MB, flat, refer
         const n = roadIndex.nodes.get(id);
         return n.motor.size >= 3 ? n.halfWidth + 1 : 0;
       });
+      // Parallel markings on adjacent survey segments share an end section.
+      // At a hard bend keep the stripe on the rounded asphalt envelope.
+      const offsets=s.ids.map((id,end)=>{
+        const n=roadIndex.nodes.get(id);
+        if(n.motor.size!==2 || !motor)return [s.dz,-s.dx];
+        const neighbour=[...n.motor].find(k=>k!==s.ids[1-end]),p=roadIndex.nodes.get(neighbour)?.p;
+        if(!p)return [s.dz,-s.dx];
+        const sign=end?1:-1,dx=(p[0]-n.p[0])*sign,dz=(p[1]-n.p[1])*sign,span=Math.hypot(dx,dz);
+        if(span<.02)return [s.dz,-s.dx];
+        const ox=s.dz+dz/span,oz=-s.dx-dx/span,den=1+(s.dx*dx+s.dz*dz)/span;
+        if(den<.1)return [s.dz,-s.dx];
+        const scale=Math.max(den, Math.hypot(ox,oz)/(1+.12/half));
+        return [ox/scale,oz/scale];
+      });
+      const paintFace=(t,o,y)=>{
+        const blend=Math.min(s.span/2,Math.max(1.25,half)),u=Math.max(0,1-t/blend),v=Math.max(0,1-(s.span-t)/blend);
+        const ox=s.dz*(1-u-v)+offsets[0][0]*u+offsets[1][0]*v,oz=-s.dx*(1-u-v)+offsets[0][1]*u+offsets[1][1]*v;
+        return roadVertex(s,t,s.a[0]+s.dx*t+ox*o,s.a[1]+s.dz*t+oz*o,y);
+      };
+      const line=(a,b,left,right,y,colour,dashed=false)=>{
+        const part=(from,to)=>quad(markings,paintFace(from,left,y),paintFace(from,right,y),paintFace(to,right,y),paintFace(to,left,y),colour);
+        if(!dashed){part(a,b);return;}
+        for(let dash=Math.floor((s.start+a)/8)*8-s.start;dash<b;dash+=8){
+          const from=Math.max(a,dash),to=Math.min(b,dash+4);
+          if(to>from)part(from,to);
+        }
+      };
       for (let j = 0; j < count; j++) {
-        const a = s.span * j / count, b = s.span * (j + 1) / count, mid = (a + b) / 2;
-        strip(s, a, b, half, -half, 0, batch, colour);
-        if (mid < junction[0] || s.span - mid < junction[1]) continue;
-        if (!motor || half < 2.45) continue;
-        const captured = courseStyle(s.a[0] + s.dx * mid, s.a[1] + s.dz * mid, s.dx, s.dz);
+        const from = s.span * j / count, to = s.span * (j + 1) / count;
+        strip(s, from, to, half, -half, 0, batch, colour);
+        const a=Math.max(junction[0],from),b=Math.min(s.span-junction[1],to),mid=(a+b)/2;
+        if (b<=a || !motor || half < 2.45) continue;
+        const captured = road.id === 426204521 ? {center:'double',edges:'yellow'} : courseStyle(s.a[0] + s.dx * mid, s.a[1] + s.dz * mid, s.dx, s.dz);
         const center = captured?.center || (road.roadClass === 'street' && road.width >= 6.5 ? (road.oneway ? 'none' : 'single') : 'none');
-        if (center === 'single' || center === 'dashed' && Math.floor((s.start + mid) / 4) % 2 === 0) strip(s, a, b, .07, -.07, .016, markings, yellow);
+        if (center === 'single' || center === 'dashed')line(a,b,.07,-.07,.016,yellow,center==='dashed');
         if (center === 'double') {
-          strip(s, a, b, .20, .07, .016, markings, yellow);
-          strip(s, a, b, -.07, -.20, .016, markings, yellow);
+          line(a,b,.20,.07,.016,yellow);
+          line(a,b,-.07,-.20,.016,yellow);
         }
         if (captured?.edges === 'white' || captured?.edges === 'yellow') {
-          for (const sign of [-1,1]) strip(s, a, b, sign * (half - .20), sign * (half - .32), .016, markings, captured.edges === 'yellow' ? yellow : paint);
+          for (const sign of [-1,1])line(a,b,sign*(half-.20),sign*(half-.32),.016,captured.edges==='yellow'?yellow:paint);
         }
-        if ((road.lanes || 0) >= 4 && Math.floor((s.start + mid) / 4) % 2 === 0) {
-          for (const sign of [-1, 1]) strip(s, a, b, sign * (half * .5 - .055), sign * (half * .5 + .055), .022, markings, paint);
+        if ((road.lanes || 0) >= 4) {
+          for (const sign of [-1,1])line(a,b,sign*(half*.5-.055),sign*(half*.5+.055),.022,paint,true);
         }
       }
       // Each join uses a fan constrained to its width. Keep the original node
@@ -107,7 +167,7 @@ export function buildExploreRoads(scene, world, height, texture, MB, flat, refer
     }
   }
   for (const { s, along, half, batch, colour } of masks.values()) {
-    const ctr = face(s, along, 0, 0), sides = Math.max(8, Math.min(24, Math.ceil(half * 2)));
+    const ctr = face(s, along, 0, 0), sides = Math.max(12,Math.ceil(Math.PI / Math.acos(1 - .022 / half)));
     const ring = [];
     for (let i = 0; i < sides; i++) {
       const angle = i / sides * Math.PI * 2;
@@ -120,14 +180,19 @@ export function buildExploreRoads(scene, world, height, texture, MB, flat, refer
       batch.tri(ctr, a, b, up, uv(ctr), uv(a), uv(b), colour);
     }
   }
-  for (const [x, z] of D.crossings) {
-    const snap = roadIndex.nearest(x, z, 9, isMotorRoad);
-    if (!snap || snap.distance > snap.s.road.width / 2 + 1.2) continue;
-    const { s, along } = snap, half = s.road.width / 2 - .40;
-    for (let o = -half + .12; o + .47 <= half; o += .94) {
-      strip(s, along - 1.5, along + 1.5, o, o + .47, .033, markings, paint);
+  // The same civil corner radius used by the drivable polygon also gets
+  // asphalt. This closes the unpaved wedge between turning cars and the kerb.
+  for(const [id,ring] of world.access.outlines.corners){
+    const style=cornerStyle.get(id);
+    if(!style)continue;
+    const points=ring.map(([x,z])=>new THREE.Vector2(x,z));
+    const vertices=ring.map(([x,z])=>[x,height(x,z)+roadLift(style.road),z]);
+    for(const [i,j,k] of THREE.ShapeUtils.triangulateShape(points,[])){
+      const a=vertices[i],b=vertices[k],c=vertices[j];
+      style.batch.tri(a,b,c,up,uv(a),uv(b),uv(c),style.colour);
     }
   }
+  paintMappedCrossings(roadIndex,face,quad,markings,paint);
   const finish = (mb, name, mat, offset) => {
     if (!mb.p.length) return;
     flat(scene, mb, new THREE.MeshStandardMaterial({vertexColors:true, roughness:.93, ...mat}), offset).name = name;
@@ -150,8 +215,8 @@ export function buildExploreRoads(scene, world, height, texture, MB, flat, refer
   for (const f of D.barriers) {
     if (!physicalBarrier(f)) continue;
     const full = f.t.includes('wall') || f.t === 'hedge', top = f.height || (full ? 1.4 : f.t === 'guard_rail' ? .72 : 1.13);
-    for (let i = 1; i < f.p.length; i++) {
-      const a = f.p[i - 1], b = f.p[i], dx = b[0] - a[0], dz = b[1] - a[1], len = Math.hypot(dx, dz), steps = Math.ceil(len / 2.15);
+    for (let i = 1; i < f.p.length; i++) for(const [a,b] of roadsideSpans(f.p[i-1],f.p[i],full?.18:.055,world.access)){
+      const dx = b[0] - a[0], dz = b[1] - a[1], len = Math.hypot(dx, dz), steps = Math.ceil(len / 2.15);
       for (let j = 0; j < steps; j++) {
         const p = [a[0] + dx * j / steps, a[1] + dz * j / steps], q = [a[0] + dx * (j + 1) / steps, a[1] + dz * (j + 1) / steps];
         const mx = (p[0]+q[0])/2, mz = (p[1]+q[1])/2;

@@ -110,7 +110,14 @@ function buildOne(B,b,p,base,cfg){
     if(style==='archedDorm'){let chosen;faces(wall,(a,b,L,n)=>{if(n[2]>.7&&L>12&&(!chosen||L>chosen[2]))chosen=[a,b,L,n];});if(chosen)arch(B,chosen[0],chosen[1],base,top,chosen[3]);feature.push('red brick dormitory','white belt','tall arched blue-glass stair opening');}
     else feature.push(style==='yellowDorm'?'yellow vertical glass core and three yellow balcony bands':style==='faculty'?'mustard end walls and white-grey residential bands':style==='tower'?'white tower and pink end-wall panels':style==='greyDorm'?'gray dormitory with orange lower facade':style==='village'?'white balcony housing with blue panels and red dormer roof':'brick dormitory with white belt and repeated windows');
   }
-  if(deep){volume(B.detail,p,top,top+.48,PALETTE.roof);hipRoof(B.detail,p,top+.48,style==='facultyClub'?2.9:1.8,PALETTE.roof);}
+  if(deep){
+    volume(B.detail,p,top,top+.48,PALETTE.roof);
+    for(let i=0;i<p.length;i++){
+      const j=(i+1)%p.length, corners=[p[i],p[j],wall[j],wall[i]].map(q=>[q[0],top,q[1]]);
+      B.detail.quad(...corners,PALETTE.roof,[0,-1,0]);
+    }
+    hipRoof(B.detail,p,top+.48,style==='facultyClub'?2.9:1.8,PALETTE.roof);
+  }
   if(style==='village'){
     hipRoof(B.detail,p,top,3.0,C(0x89544d));faces(p,(a,b,L,n)=>{if(L<18)return;for(let s=5;s<L-3;s+=9){const t=s/L,w=1.9/L;panel(B.detail,a,b,t-w/2,t+w/2,top+.2,top+1.4,PALETTE.white,n);panel(B.glass,a,b,t-w*.36,t+w*.36,top+.4,top+1.1,PALETTE.glass,n);const p0=[mix(a[0],b[0],t-w/2),top+1.4,mix(a[1],b[1],t-w/2)],p1=[mix(a[0],b[0],t),top+2,mix(a[1],b[1],t)],p2=[mix(a[0],b[0],t+w/2),top+1.4,mix(a[1],b[1],t+w/2)];B.detail.tri(p0,p1,p2,PALETTE.white,n);}});
   }

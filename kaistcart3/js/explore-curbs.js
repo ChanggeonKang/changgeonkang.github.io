@@ -1,58 +1,11 @@
 import * as THREE from '../lib/three.module.min.js';
 
-// Trace the union of the actual driving areas. A driveway connected to a
-// parking polygon or to another street has no edge at the join.
-export function vehicleContours(grid) {
-  const {d,w,h,x0,z0}=grid,stride=w+1,edges=new Map();
-  function add(a,b){const next=edges.get(a);if(next)next.push(b);else edges.set(a,[b]);}
-  for(let z=0;z<h;z++)for(let x=0;x<w;x++){
-    const k=z*w+x;if(!d[k])continue;
-    const a=z*stride+x;
-    // An excerpt boundary can cut through a real road. Do not cap it with stone.
-    if(z>0 && !d[k-w])add(a,a+1);
-    if(x<w-1 && !d[k+1])add(a+1,a+stride+1);
-    if(z<h-1 && !d[k+w])add(a+stride+1,a+stride);
-    if(x>0 && !d[k-1])add(a+stride,a);
-  }
-  const contours=[];
-  for(const [start] of edges){
-    let k=start;const vertices=[];
-    for(;;){
-      vertices.push([x0+k%stride,z0+Math.floor(k/stride)]);
-      const next=edges.get(k);if(!next)break;
-      const to=next.pop();if(!next.length)edges.delete(k);
-      k=to;
-      if(k===start){vertices.push(vertices[0]);break;}
-    }
-    if(vertices.length<3)continue;
-    const original=vertices.slice();
-    for(let i=1;i<original.length-1;i++){
-      const a=original[i-1],p=original[i],b=original[i+1];
-      vertices[i]=[(a[0]+6*p[0]+b[0])/8,(a[1]+6*p[1]+b[1])/8];
-    }
-    // Remove the one-metre occupancy staircase while staying inside its
-    // half-diagonal measurement precision. The game keeps the original mask.
-    const keep=new Uint8Array(vertices.length), stack=[[0,vertices.length-1]];
-    keep[0]=keep[vertices.length-1]=1;
-    while(stack.length){
-      const [l,r]=stack.pop(),a=vertices[l],b=vertices[r],dx=b[0]-a[0],dz=b[1]-a[1],den=dx*dx+dz*dz || 1;
-      let best=.63*.63,index=-1;
-      for(let i=l+1;i<r;i++){
-        const x=vertices[i][0]-a[0],z=vertices[i][1]-a[1],t=Math.min(1,Math.max(0,(x*dx+z*dz)/den));
-        const dist=(x-t*dx)**2+(z-t*dz)**2;
-        if(dist>best){best=dist;index=i;}
-      }
-      if(index>=0){keep[index]=1;stack.push([l,index],[index,r]);}
-    }
-    contours.push(vertices.filter((_,i)=>keep[i]));
-  }
-  return contours;
-}
+import { crossingSurvey, tactileKerbs } from './street-inventory.js';
 
-export function buildAccessEdges(scene,W,surfaceAt,MB,flat) {
+export function buildAccessEdges(scene,W,surfaceAt,MB,flat,terrainAt) {
   const access=W.access, geometry=new MB(),up=[0,1,0],uv=[0,0],bounds=W.D.bounds;
-  const shades=[0xb6b7ad,0xb9b9af,0xb3b3ab,0xaaaea8].map(x=>new THREE.Color(x));
-  const front=new THREE.Color(0x9a9e98),tactile=new THREE.Color(0xdaa84f),tactileDot=new THREE.Color(0xe7bc66);
+  const shades=[0xa6a69c,0xaaaaa1,0xa5a59d,0x9fa198].map(x=>new THREE.Color(x));
+  const front=new THREE.Color(0x8f928a),gutter=new THREE.Color(0x898b83),tactile=new THREE.Color(0xdaa84f),tactileDot=new THREE.Color(0xe7bc66);
   const crossingEdges=[],roadIndex=W.roadIndex,gateData=W.explore.vehicleGates||[],posts=[],postBins=new Map(),arms=[],fixtures=[];
   const near=(a,x,z,r)=>(a[0]-x)**2+(a[1]-z)**2<r*r;
   const bin=(x,z,size)=>Math.floor(x/size)*65536+Math.floor(z/size);
@@ -63,13 +16,22 @@ export function buildAccessEdges(scene,W,surfaceAt,MB,flat) {
   const closeToSourceGate=(x,z,r)=>gateData.some(g=>near(g.p,x,z,r));
   const sourceKerbs=W.explore.kerbs || [];
   const flush=sourceKerbs.filter(k=>k.t==='flush'||k.t==='lowered').map(k=>k.p);
+  // The Kaimaru approach is flush at the street. The steps further inside
+  // separate the entrance from the shuttle road in both photographed years.
+  flush.push([-251,-385.8],[-249,-385.8],[-247,-385.8]);
   const raised=sourceKerbs.filter(k=>k.t==='raised').map(k=>k.p);
-  for(const [x,z] of W.D.crossings){
-    const hit=roadIndex.nearest(x,z,7,carRoad);
+  for(const crossing of crossingSurvey){
+    const [x,z]=crossing.p;
+    const hit=roadIndex.nearest(x,z,7,r=>r.id===crossing.way&&carRoad(r)) || roadIndex.nearest(x,z,7,carRoad);
     if(!hit || hit.distance>hit.s.road.width/2+1)continue;
     for(const side of [-1,1]){
-      const o=side*hit.s.road.width/2,ex=hit.x+hit.s.dz*o,ez=hit.z-hit.s.dx*o;
+      const o=side*hit.s.road.width/2,angle=(crossing.angle??0)*Math.PI/180;
+      const wx=Math.cos(angle),wz=Math.sin(angle),normalProjection=wx*hit.s.dz-wz*hit.s.dx;
+      const along=crossing.angle!==undefined && Math.abs(normalProjection)>.45
+        ? o*(wx*hit.s.dx+wz*hit.s.dz)/normalProjection : 0;
+      const ex=hit.x+hit.s.dz*o+along*hit.s.dx,ez=hit.z-hit.s.dx*o+along*hit.s.dz;
       crossingEdges.push([ex,ez]);
+      if(crossing.tactile!=='yes' && !tactileKerbs.some(p=>near(p,ex,ez,1.5)))continue;
       const nx=side*hit.s.dz,nz=-side*hit.s.dx,tx=hit.s.dx,tz=hit.s.dz;
       const point=(u,v,y)=>[ex+tx*u+nx*v,y,ez+tz*u+nz*v];
       const mid=point(0,.65,0);
@@ -88,21 +50,57 @@ export function buildAccessEdges(scene,W,surfaceAt,MB,flat) {
     const id=bin(...point,8);if(!drops.has(id))drops.set(id,[]);
     drops.get(id).push(point);
   }
-  const dropped=(x,z)=>{
+  const curbHeight=(x,z)=>{
     const id=bin(x,z,8);
+    let distance=Infinity;
     for(let dx=-1;dx<=1;dx++)for(let dz=-1;dz<=1;dz++){
-      for(const p of drops.get(id+dx*65536+dz)||[])if(near(p,x,z,1.95))return true;
+      for(const p of drops.get(id+dx*65536+dz)||[])distance=Math.min(distance,(p[0]-x)**2+(p[1]-z)**2);
     }
-    return false;
+    if(distance>2.65**2 || raised.some(p=>near(p,x,z,1.1)))return .14;
+    return .02+.12*Math.min(1,Math.max(0,(Math.sqrt(distance)-1.45)/1.20));
   };
   const allow=access.isDrivable.bind(access);
-  const kerbTiles=new Map(),faces=[[0,1],[1,2],[2,3],[3,4]],vec=new THREE.Vector3();
+  const kerbTiles=new Map(),vec=new THREE.Vector3();
   let kerbMetres=0, concretePieces=0;
-  for(const line of vehicleContours(access.grid)){
-    for(let i=1;i<line.length;i++){
-      const a=line[i-1],b=line[i],dx=b[0]-a[0],dz=b[1]-a[1],length=Math.hypot(dx,dz);
-      if(length<.2)continue;
-      const n=Math.ceil(length/2.8),nx=dz/length,nz=-dx/length;
+  const decks=new Map();
+  for(const [road,way] of roadIndex.ways)if(road.drivable && way.deck){
+    const reach=road.width/2+.35;
+    for(const s of way.segments){
+      const cell={way,s,limit:reach*reach};
+      for(let x=Math.floor((Math.min(s.a[0],s.b[0])-reach)/16);x<=Math.floor((Math.max(s.a[0],s.b[0])+reach)/16);x++){
+        for(let z=Math.floor((Math.min(s.a[1],s.b[1])-reach)/16);z<=Math.floor((Math.max(s.a[1],s.b[1])+reach)/16);z++){
+          const id=x*65536+z;
+          if(!decks.has(id))decks.set(id,[]);
+          decks.get(id).push(cell);
+        }
+      }
+    }
+  }
+  const edgeHeight=(x,z)=>{
+    const nearby=decks.get(bin(x,z,16));
+    if(nearby)for(const {way,s,limit} of nearby){
+      const dx=x-s.a[0],dz=z-s.a[1],t=Math.max(0,Math.min(s.span,dx*s.dx+dz*s.dz));
+      if((dx-s.dx*t)**2+(dz-s.dz*t)**2<=limit)return way.deck[0]+(way.deck[1]-way.deck[0])*(s.start+t)/way.length+.20;
+    }
+    return terrainAt(x,z)+.20;
+  };
+  for(const line of access.outlines.rings){
+    const tangents=line.map(([x,z],i)=>{
+      const next=line[(i+1)%line.length],dx=next[0]-x,dz=next[1]-z,length=Math.hypot(dx,dz);
+      return [dx/length,dz/length];
+    });
+    // The swept bevel and gutter share a section at each corner. This avoids
+    // hairline cracks and overlapping rectangular stones at street-scale bends.
+    const offsets=tangents.map(([dx,dz],i)=>{
+      const prev=tangents[(i+line.length-1)%line.length];
+      const den=Math.max(.5,1+dx*prev[0]+dz*prev[1]);
+      return [(dz+prev[1])/den,-(dx+prev[0])/den];
+    });
+    let distanceAlong=0;
+    for(let i=0;i<line.length;i++){
+      const next=(i+1)%line.length,a=line[i],b=line[next],dx=b[0]-a[0],dz=b[1]-a[1],length=Math.hypot(dx,dz);
+      if(length<.009)continue;
+      const n=Math.ceil(length/2.25),nx=dz/length,nz=-dx/length;
       for(let j=0;j<n;j++){
         const u=j/n,v=(j+1)/n,m=(u+v)/2,x=a[0]+dx*m,z=a[1]+dz*m;
         if(!inBounds(x,z) || closeToSourceGate(x,z,1.8))continue;
@@ -110,29 +108,49 @@ export function buildAccessEdges(scene,W,surfaceAt,MB,flat) {
         // through a building wall. A real facade is its own boundary.
         const outsideX=x+nx*.85,outsideZ=z+nz*.85;
         const outside=(Math.floor(outsideZ)-W.G.z0)*W.G.w+Math.floor(outsideX)-W.G.x0;
-        if(allow(outsideX,outsideZ) || W.G.d[outside]===9 || W.G.d[outside]===8)continue;
-        const low=dropped(x,z) && !raised.some(p=>near(p,x,z,1.1)),h=low?.017:.14;
+        if(W.G.d[outside]===9)continue;
         const top=shades[(concretePieces++ + Math.floor((x+z)*.7))&3];
         const key=bin(x,z,160);
-        if(!kerbTiles.has(key))kerbTiles.set(key,{p:[],n:[],c:[],index:[]});
+        if(!kerbTiles.has(key))kerbTiles.set(key,{p:[],n:[],c:[],stone:[],index:[]});
         const tile=kerbTiles.get(key),first=tile.p.length/3;
         for(const f of [u,v]){
-          const px=a[0]+dx*f,pz=a[1]+dz*f,y=ground(px-nx*.65,pz-nz*.65);
-          for(const [off,raise,normal,vertical,col] of [[.015,-.08,-1,0,front],[.015,h-.018,-.9,.35,front],
-                [.045,h,-.16,.99,top],[.245,h,.3,.95,top],[.245,-.18,1,0,front]]){
-            tile.p.push(px+nx*off,y+raise,pz+nz*off);vec.set(nx*normal,vertical,nz*normal).normalize();
+          const px=a[0]+dx*f,pz=a[1]+dz*f,h=curbHeight(px,pz);
+          const ox=offsets[i][0]*(1-f)+offsets[next][0]*f,oz=offsets[i][1]*(1-f)+offsets[next][1]*f;
+          for(const [off,raise,normal,vertical,col] of [[-.22,.011,0,1,gutter],[-.015,.011,0,1,gutter],
+                [-.015,h-.012,-.96,.25,front],[.018,h,-.25,.97,top],[.215,h,.14,.99,top],[.215,-.22,1,0,front]]){
+            const vx=px+ox*off,vz=pz+oz*off;
+            const y=edgeHeight(vx,vz);
+            tile.p.push(vx,y+raise,vz);vec.set(ox*normal,vertical,oz*normal).normalize();
             tile.n.push(vec.x,vec.y,vec.z);tile.c.push(col.r,col.g,col.b);
+            tile.stone.push(distanceAlong+length*f,off+raise);
           }
         }
-        for(const [left,right] of faces)tile.index.push(first+left,first+5+right,first+right,first+left,first+5+left,first+5+right);
+        for(let left=0;left<5;left++){const right=left+1;tile.index.push(first+left,first+6+right,first+right,first+left,first+6+left,first+6+right);}
         kerbMetres+=length/n;
       }
+      distanceAlong+=length;
     }
   }
   const kerbMat=new THREE.MeshStandardMaterial({vertexColors:true,roughness:.94});
+  kerbMat.onBeforeCompile=shader=>{
+    shader.vertexShader=shader.vertexShader.replace('#include <common>',
+      '#include <common>\nattribute vec2 curbStation; varying vec2 vStone;')
+      .replace('#include <begin_vertex>','#include <begin_vertex>\nvStone=curbStation;');
+    shader.fragmentShader=shader.fragmentShader.replace('#include <common>','#include <common>\nvarying vec2 vStone;')
+      .replace('#include <color_fragment>',`#include <color_fragment>
+        float pixel=max(fwidth(vStone.x),.001);
+        float period=vStone.y < -.02 ? 3.10 : 1.55;
+        float joint=abs(fract(vStone.x/period+.5)-.5)*period;
+        float coverage=(1.-smoothstep(.004,.012+pixel*.35,joint))*min(1.,.02/pixel);
+        vec2 grains=floor(vStone*69.);
+        float grain=fract(sin(dot(grains,vec2(41.3,16.91)))*1879.172)-.5;
+        diffuseColor.rgb*= (1.-.40*coverage)*(1.+grain*.095*(1.-smoothstep(.009,.035,pixel)));
+      `);
+  };
   for(const tile of kerbTiles.values()){
     const g=new THREE.BufferGeometry();
     for(const [key,values] of [['position',tile.p],['normal',tile.n],['color',tile.c]])g.setAttribute(key,new THREE.Float32BufferAttribute(values,3));
+    g.setAttribute('curbStation',new THREE.Float32BufferAttribute(tile.stone,2));
     g.setIndex(tile.index);
     const mesh=new THREE.Mesh(g,kerbMat);mesh.name='Roadside kerbs and dropped pedestrian crossings';mesh.receiveShadow=true;scene.add(mesh);
   }
@@ -163,6 +181,7 @@ export function buildAccessEdges(scene,W,surfaceAt,MB,flat) {
   const entrances=[];
   for(const [road,way] of roadIndex.ways){
     if(road.drivable || !['walk','cycle','steps','trail'].includes(road.roadClass))continue;
+    if(road.id===470177363)continue; // N11 entry steps have no row of bollards.
     for(const s of way.segments){
       const n=Math.ceil(s.span/1.3);
       let previous=allow(s.a[0],s.a[1]);

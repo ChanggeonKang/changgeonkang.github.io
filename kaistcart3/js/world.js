@@ -1,5 +1,6 @@
 // World: terrain, course, roads, buildings, vegetation, props, sky.
 import * as THREE from '../lib/three.module.min.js';
+import {buildStreetFixtures} from './street-fixtures.js';
 import { buildLandmarks } from './landmarks.js';
 import { campusName, buildingProfile } from './campus-identity.js';
 import { buildParking } from './campus-parking.js';
@@ -8,8 +9,12 @@ import { buildCapturedLandscape, isCaptureLandscapeManaged } from './capture-lan
 import { buildCapturedArchitecture } from './capture-architecture.js';
 import { buildCapturedRoadside, capturedRoadStyles, capturedSpeedMarks, capturedBumps } from './capture-roadside.js';
 import { buildGate } from './campus-gate.js';
+import { locateHumps } from './campus-humps.js';
+import { leafyCrown, leafSprayMaterial } from './campus-canopy.js';
+import { buildKaimaruGarden } from './kaimaru-garden.js';
 import { buildRoadElevationField, roadHeightOffset } from './road-elevation-field.js';
 import { createDrivingAccess } from './drivable-access.js';
+import { mappedRoadBoundaries } from './mapped-road-boundaries.js';
 import { trackSceneryDistance } from './scenery-distance.js';
 import { applyObservedGrades } from './capture-elevation.js';
 import { buildCaptureEast, isCaptureEastManaged, eastRoadStyles, eastSpeedMarks, eastBumps } from './capture-extension-east.js';
@@ -17,10 +22,12 @@ import { buildCaptureWest, isCaptureWestManaged, westRoadStyles, westSpeedMarks,
 import { buildExploreRoads } from './explore-roads.js';
 import { buildExploreGrounds } from './explore-grounds.js';
 import { buildOutdoorTheater } from './explore-theater.js';
+import { buildKaimaru } from './kaimaru.js';
 import { buildAccessEdges } from './explore-curbs.js';
 import { partitionCampusBatches } from './explore-visibility.js';
 import { buildStreetviewDetails,streetviewPalette } from './streetview-buildings.js';
-import { prepareRoads, prepareSurfaceGrid, isMotorRoad, isPassage } from './explore-surfaces.js';
+import { facadeFinish, finishLandmarkMaterials } from './facade-materials.js';
+import { prepareRoads, prepareSurfaceGrid, isFacadePassage } from './explore-surfaces.js';
 
 const referenceRoadStyles = [...capturedRoadStyles, ...eastRoadStyles, ...westRoadStyles];
 const referenceSpeedMarks = [...capturedSpeedMarks, ...eastSpeedMarks, ...westSpeedMarks];
@@ -438,10 +445,12 @@ function makeTextures() {
   const r = rng(77);
   TEX = {
     asphalt: canvasTex(256, 256, (x, w, h) => {
-      x.fillStyle = '#bdbdbd'; x.fillRect(0, 0, w, h);
-      for (let i = 0; i < 9000; i++) { const v = 150 + r() * 105 | 0; x.fillStyle = `rgba(${v},${v},${v},${.25 + r() * .5})`; x.fillRect(r() * w, r() * h, 1 + r() * 2, 1 + r() * 2); }
-      x.strokeStyle = 'rgba(70,70,70,.35)'; x.lineWidth = 1;
-      for (let i = 0; i < 5; i++) { x.beginPath(); let px = r() * w, py = r() * h; x.moveTo(px, py); for (let k = 0; k < 6; k++) { px += (r() - .5) * 50; py += (r() - .5) * 50; x.lineTo(px, py); } x.stroke(); }
+      const pixels=x.createImageData(w,h);
+      for(let i=0;i<pixels.data.length;i+=4){
+        const v=188+(r()+r()+r()-1.5)*26;
+        pixels.data[i]=v+2;pixels.data[i+1]=v+1;pixels.data[i+2]=v;pixels.data[i+3]=255;
+      }
+      x.putImageData(pixels,0,0);
     }),
     paver: canvasTex(256, 256, (x, w, h) => {
       x.fillStyle = '#d9d9d9'; x.fillRect(0, 0, w, h);
@@ -452,29 +461,18 @@ function makeTextures() {
       }
     }),
     bump: canvasTex(128, 128, (x, w, h) => {
-      x.fillStyle = '#f4f4f0'; x.fillRect(0, 0, w, h);
-      x.fillStyle = '#f5c518';
+      x.fillStyle = '#e1dfcf'; x.fillRect(0, 0, w, h);
+      x.fillStyle = '#dfb64a';
       for (let i = -2; i < 4; i++) { x.beginPath(); x.moveTo(i * 64, 0); x.lineTo(i * 64 + 32, 0); x.lineTo(i * 64 + 32 + 128, 128); x.lineTo(i * 64 + 128, 128); x.fill(); }
+      x.fillStyle='rgba(102,99,88,.25)';
+      for(let i=0;i<2000;i++)x.fillRect(r()*w,r()*h, .65+r()*2.1, .65+r());
     }),
   };
   TEX.paver.repeat.set(2.55,2.55);
 }
 function buildBumps(scene) {
   const D = W.D, C = W.C;
-  W.bumps = [];
-  const attach = (x,z,source,ci) => {
-    const snap = W.roadIndex.nearest(x,z,8,isMotorRoad);
-    if(!snap || snap.distance > snap.s.road.width/2 + 2 || surfAt(snap.x,snap.z)!==2) return;
-    if(W.bumps.some(b=>(b.x-snap.x)**2+(b.z-snap.z)**2 < (ci<0?2:10)**2))return;
-    const width=Math.min(snap.s.road.width,source.width || snap.s.road.width);
-    W.bumps.push({...source,x:snap.x,z:snap.z,dx:snap.s.dx,dz:snap.s.dz,hw:width/2,width,
-      height:source.height || BUMP_H,length:source.length || BUMP_L*2,ci});
-  };
-  for(const b of D.bumps || [])attach(b.x,b.z,b,-1);
-  for(const obs of referenceBumps) {
-    const i=mod(Math.round(obs.progress),C.n);
-    attach(C.x[i],C.z[i],{height:obs.heightM,length:obs.lengthM,source:'street-level capture'},i);
-  }
+  W.bumps = locateHumps(W.explore, D.bumps, W.roadIndex, C, referenceBumps);
   W.courseBumps = W.bumps.filter(b => b.ci >= 0).map(b => b.ci).sort((a, b) => a - b);
   C.slow = new Uint8Array(C.n);
   for (const ci of W.courseBumps) for (let i = ci - 16; i <= ci + 1; i++) C.slow[mod(i, C.n)] = 1;
@@ -512,7 +510,7 @@ function buildBumps(scene) {
   }
   const g = mb.geo(); g.computeVertexNormals();
   const mat = new THREE.MeshStandardMaterial({ map: TEX.bump, roughness: .8, polygonOffset: true, polygonOffsetFactor: -6, polygonOffsetUnits: -6 });
-  const m = new THREE.Mesh(g, mat); m.receiveShadow = true; scene.add(m);
+  const m = new THREE.Mesh(g, mat); m.name='Painted speed humps'; m.receiveShadow = true; scene.add(m);
 }
 
 // ───────────────────────── buildings ─────────────────────────
@@ -530,6 +528,7 @@ function buildBuildings(scene) {
     APT = [0xe6e2d8, 0xd9d4c8, 0xcfd2d6], MISC = [0xcfc8ba, 0xb9b2a4, 0xa9a59c, 0xc4a58a, 0xb7bcc2];
   const roofC = col(0x8b8f94), roofD = col(0x6f7378);
   D.buildings.forEach((b, bi) => {
+    if(b.ref==='N11'){labels.push(buildKaimaru(scene,b,hAt,MB));return;}
     if(theater?.ids.has(b.id))return;
     if (specialized.handledRefs.has(b.ref) || captured.handledIds.has(b.id) || east.handledIds.has(b.id) || west.handledIds.has(b.id)) return;
     const p = b.p, n = p.length;
@@ -584,13 +583,15 @@ function buildBuildings(scene) {
     if (b.ref) labels.push({ ref: b.ref, name: campusName(b), en: b.en || '', x: cx, y: top + 3, z: cz });
   });
   const mat = patch(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .86, metalness: 0 }), {
-    vHead: 'attribute vec4 aInfo; varying vec4 vInfo; varying vec2 vBuv;', vBody: 'vInfo = aInfo; vBuv = uv;',
-    fHead: 'varying vec4 vInfo; varying vec2 vBuv; float winMask;',
+    vHead: 'attribute vec4 aInfo; varying vec4 vInfo; varying vec2 vBuv; varying vec3 vWallNormal;',
+    vBody: 'vInfo = aInfo; vBuv = uv; vWallNormal = mat3(modelMatrix) * normal;',
+    fHead: 'varying vec4 vInfo; varying vec2 vBuv; varying vec3 vWallNormal; float winMask;' + facadeFinish,
     fColor: `
       winMask = 0.0;
       float style = floor(vInfo.z + 0.001);
       if (style > -0.5) {
         float wallLen = vInfo.x, bh = vInfo.y;
+        diffuseColor.rgb = facadeWall(diffuseColor.rgb, vBuv);
         diffuseColor.rgb *= mix(0.80, 1.0, smoothstep(0.0, 5.0, vBuv.y)) * mix(0.94, 1.04, vnoise(vec2(vBuv.x * 0.15 + vInfo.w * 40.0, vBuv.y * 0.6)));
         if (wallLen > 2.4) {
           float nCol = max(1.0, floor(wallLen / (style > 1.5 ? 2.2 : 3.3) + 0.5));
@@ -604,12 +605,23 @@ function buildBuildings(scene) {
           float hsh = h21(vec2(floor(cu) + vInfo.w * 91.0, floor(fl) + vInfo.w * 53.0));
           vec3 glass = mix(vec3(0.05, 0.09, 0.13), vec3(0.10, 0.20, 0.22), hsh);
           if (style > 1.5) glass = mix(vec3(0.07, 0.17, 0.22), vec3(0.14, 0.30, 0.33), hsh);
-          glass = mix(glass, vec3(0.62, 0.60, 0.55), step(0.83, hsh) * (1.0 - far) * 0.7);
+          float blind = step(.74, hsh) * smoothstep(.45 + .25 * fract(hsh * 239.), .58 + .25 * fract(hsh * 239.), fy);
+          glass = facadeGlass(glass, vWp, vWallNormal);
+          glass = mix(glass, vec3(.32,.35,.35), blind * .72 * (1.0 - far));
+          float divider = facadeJoint(cu * 2.0, .014) * (1.0 - far);
+          float transom = facadeJoint(fl - mix(.68,.73,step(1.5,style)), .013);
+          glass = mix(glass, vec3(.075,.095,.099), max(divider,transom) * .85);
+          // Sun and shadow sides of the reveal frame the actual window opening.
+          float hood = 1.0 - smoothstep(0.0, .065, max(e.w - fy, 0.0));
+          float jamb = 1.0 - smoothstep(0.0, .032, max(fx - e.x, 0.0));
+          glass *= 1.0 - .33 * max(hood, jamb) * (1.0 - far);
+          float sill = wx * (1.0 - smoothstep(.005,.022 + fwy, abs(fy - e.z))) * (1.0 - far);
+          diffuseColor.rgb *= 1.0 + .18 * sill;
           diffuseColor.rgb = mix(diffuseColor.rgb, glass, win);
           winMask = win * (1.0 - step(0.83, hsh) * 0.7);
         }
       }`,
-    fRough: 'roughnessFactor = mix(roughnessFactor, 0.07, winMask); metalnessFactor = mix(metalnessFactor, 0.9, winMask);',
+    fRough: 'roughnessFactor = mix(roughnessFactor, 0.19, winMask); metalnessFactor = mix(metalnessFactor, 0.22, winMask);',
   });
   const m = new THREE.Mesh(mb.geo(), mat);
   m.castShadow = true; m.receiveShadow = true;
@@ -637,7 +649,7 @@ function labelTex(ref, name) {
 function buildNature(scene) {
   const D = W.D, C = W.C, b = D.bounds;
   const water = new THREE.MeshStandardMaterial({ color: 0x315c60, roughness: .18, metalness: .28, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
-  const trees = { conifer: [], leaf: [], cherry: [] };
+  const trees = [];
   let pond = null;
   for (const a of D.areas) {
     if (a.p.length < 3) continue;
@@ -661,10 +673,15 @@ function buildNature(scene) {
       if((stems.get(cell(x+6*i,z+6*j))||[]).some(t=>Math.hypot(x-t[0],z-t[1])<3.2))return false;
     }
     const k=cell(x,z);if(!stems.has(k))stems.set(k,[]);stems.get(k).push([x,z]);
-    trees.leaf.push([x,z,1,height]);return true;
+    trees.push([x,z,height]);return true;
   };
   // Tree tags and rows take precedence over neighbouring satellite crown peaks.
   for(const tree of D.trees || []){const [x,z]=Array.isArray(tree)?tree:[tree.x,tree.z];tryTree(x,z,0,.65);}
+  // This frontage has two lines of mature street trees in the May panoramas.
+  // Keep the central approach to the N11 stairs between the near-side trunks.
+  for(const [x,z,h] of [[-272,-390,8.6],[-262,-391,7.9],[-254,-391,8.1],[-243.2,-391.8,7.3],[-238,-391,8.5],
+    [-231,-391,8.4],[-218,-392,7.7],[-269,-376,8.6],[-258,-376,9.6],[-233,-375,9.3]])
+    tryTree(x,z,h,.6);
   for(const row of D.treeRows){
     let next=2;
     for(let i=1;i<row.p.length;i++){
@@ -682,42 +699,42 @@ function buildNature(scene) {
       if(tryTree(x+Math.cos(angle)*off,z+Math.sin(angle)*off,height,.65))break;
     }
   }
-  W.canopyTreeCount=trees.leaf.length;
-  const ico = new THREE.IcosahedronGeometry(1, 2), white = col(0xffffff);
-  const leafG = merged([[ico, M4(0, .77, 0, .26, .28, .28), white], [ico, M4(.21, .66, .09, .23, .22, .25), col(0xe6eedb)], [ico, M4(-.20, .68, -.08, .25, .23, .24), col(0xe1ead8)], [ico, M4(.02, .63, -.23, .22, .21, .23), col(0xd7e3cf)], [ico, M4(-.10, .60, .20, .21, .21, .23), col(0xe8eddb)]]);
-  const distantCrown = new THREE.IcosahedronGeometry(1, 1);
-  const leafFarG = merged([[distantCrown, M4(0, .73, 0, .37, .31, .37), white], [distantCrown, M4(.12, .62, -.08, .27, .23, .30), col(0xdfe9d3)]]);
-  const coneG = merged([[new THREE.ConeGeometry(.2, .5, 9), M4(0, .45, 0), white], [new THREE.ConeGeometry(.16, .45, 9), M4(0, .68, 0), white], [new THREE.ConeGeometry(.11, .38, 9), M4(0, .87, 0), white]]);
+  W.canopyTreeCount=trees.length;
+  const white = col(0xffffff), leafMaterial=leafSprayMaterial(rng(822));
   const branch = new THREE.CylinderGeometry(.018, .027, .3, 6);
-  const trunkG = merged([[new THREE.CylinderGeometry(.022, .035, .65, 8), M4(0, .325, 0), white], [branch, M4(.06, .49, 0, 1, 1, 1, 0, 0, -.6), white], [branch, M4(-.06, .52, .02, 1, 1, 1, .2, 0, .55), white]]);
-  const trunkM = new THREE.MeshStandardMaterial({ color: 0x6a4d35, roughness: 1 });
+  const trunkG = merged([[new THREE.CylinderGeometry(.014, .029, .56, 8), M4(0, .28, 0), white],
+    [branch,M4(.068,.49,0,.70,1,.70,0,0,-.55),white], [branch,M4(-.073,.51,.03,.67,1,.67,.18,0,.6),white],
+    [branch,M4(.03,.605,-.08,.55,1,.55,-.48,.1,-.2),white], [branch,M4(.135,.606,.03,.35,.70,.35,.3,0,-.40),white],
+    [branch,M4(-.144,.63,.07,.38,.82,.38,.3,0,.42),white]]);
+  const trunkM = patch(new THREE.MeshStandardMaterial({color:0x776d5f,roughness:1}),{
+    vBody:'vWp=(modelMatrix*instanceMatrix*vec4(transformed,1.)).xyz;',
+    fColor:`float barkAxis=vWp.x*.82+vWp.z*.56;
+      float bark=vnoise(vec2(barkAxis*23.,vWp.y*3.2))+vnoise(vec2(barkAxis*59.,vWp.y*13.))*.33;
+      diffuseColor.rgb*=mix(.73,1.18,smoothstep(.30,.99,bark));`
+  });
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), c = new THREE.Color(), e = new THREE.Euler();
-  const make = (list, geo, hue, sat, lig, hmin, hmax, wide, distantGeo) => {
+  const make = (list, seed) => {
     if (!list.length) return;
-    const mesh = new THREE.InstancedMesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .95, envMapIntensity: .45 }), list.length);
+    const mesh = new THREE.InstancedMesh(leafyCrown(seed), leafMaterial, list.length);
     const tr = new THREE.InstancedMesh(trunkG, trunkM, list.length);
-    const far = distantGeo ? new THREE.InstancedMesh(distantGeo, mesh.material, list.length) : null, instances = [];
-    list.forEach(([x, z, sc, observedHeight], i) => {
-      const h = observedHeight || (hmin + rnd() * (hmax - hmin)) * sc, y = hAt(x, z) + liftAt(x, z);
+    const far = new THREE.InstancedMesh(leafyCrown(seed,true), leafMaterial,list.length), instances = [];
+    list.forEach(([x, z, observedHeight], i) => {
+      const h = observedHeight || (8.5 + rnd() * 5.5), y = hAt(x, z) + liftAt(x, z), wide=.83+rnd()*.38;
       q.setFromEuler(e.set(0, rnd() * 6.28, 0));
       m4.compose(new THREE.Vector3(x, y, z), q, new THREE.Vector3(h * wide, h, h * wide)); mesh.setMatrixAt(i, m4);
-      const treeMatrix = far ? m4.clone() : null;
+      const treeMatrix = m4.clone();
       m4.compose(new THREE.Vector3(x, y, z), q, new THREE.Vector3(h * 1.1, h, h * 1.1)); tr.setMatrixAt(i, m4);
-      mesh.setColorAt(i, c.setHSL(hue + (rnd() - .5) * .05, sat, lig + (rnd() - .5) * .1, THREE.SRGBColorSpace));
-      if (far) { far.setMatrixAt(i, treeMatrix); far.setColorAt(i, c); instances.push({ x, z, matrix: treeMatrix, color: c.clone() }); }
+      mesh.setColorAt(i, c.setHSL(.273 + (rnd() - .5) * .072, .29+rnd()*.12, .38+rnd()*.13, THREE.SRGBColorSpace));
+      far.setMatrixAt(i, treeMatrix); far.setColorAt(i, c); instances.push({ x, z, matrix: treeMatrix, color: c.clone() });
     });
     mesh.castShadow = tr.castShadow = true; mesh.receiveShadow = true;
+    mesh.name='Near deciduous tree crowns';tr.name='Mapped tree trunks';far.name='Distant deciduous tree crowns';
     scene.add(mesh, tr);
-    if (far) {
-      // Pack only nearby crowns into the detailed draw. Distant foliage uses
-      // fewer vertices; zero-scaling would still execute every high-detail vertex.
-      mesh.frustumCulled = far.frustumCulled = false; far.receiveShadow = true;
-      scene.add(far); (W.treeLods ||= []).push({ near: mesh, far, instances });
-    }
+    // Pack only nearby crowns into the detailed draw.
+    mesh.frustumCulled = far.frustumCulled = false; far.receiveShadow = true;
+    scene.add(far); (W.treeLods ||= []).push({ near: mesh, far, instances });
   };
-  make(trees.conifer, coneG, .36, .42, .25, 8, 14, 1);
-  make(trees.leaf, leafG, .26, .38, .30, 8.5, 14, 1.05, leafFarG);
-  make(trees.cherry, leafG, .93, .75, .86, 5.5, 8, 1.3);
+  for(let variant=0;variant<3;variant++)make(trees.filter((_,i)=>i%3===variant),1201+variant*754);
 
   // lamp posts
   const metal = col(0x3a3f47), lampG = merged([[new THREE.CylinderGeometry(.07, .1, 7, 8), M4(0, 3.5, 0), metal],
@@ -914,7 +931,7 @@ function polygonBounds(p) {
 // Only facade edges intersecting a mapped passage need openings.
 function buildingPassages(buildings,index) {
   const result=new Map(), passages=[];
-  for(const [road,{segments}] of index.ways) if(isPassage(road))passages.push(...segments);
+  for(const [road,{segments}] of index.ways) if(isFacadePassage(road))passages.push(...segments);
   for(const b of buildings) {
     const bb=polygonBounds(b.p);
     for(const s of passages){
@@ -955,16 +972,34 @@ export function initializeMapData(campus,network,terrain=campus.terrain) {
     barriers:network.barriers || [],crossings:network.crossings || [],treeRows:network.treeRows || [],
     parking:areas.filter(a=>a.k==='parking')}};
   W.roadIndex=prepareRoads(network.roads);
+  const bridgeLevels=[];
+  for (const [road,way] of W.roadIndex.ways) {
+    if (!road.bridge) continue;
+    const start=hAt(...road.p[0]), end=hAt(...road.p.at(-1));
+    // The coarse terrain model measures nearby banks. Keep the estimated high
+    // water line below each mapped deck and preserve its gentle approach grade.
+    const clearance=road.drivable?1.3:.85;
+    for (const segment of way.segments) {
+      const samples=Math.max(1,Math.ceil(segment.span/2));
+      for (let i=0;i<=samples;i++) {
+        const along=segment.span*i/samples;
+        bridgeLevels.push([segment.a[0]+segment.dx*along,segment.a[1]+segment.dz*along,
+          start+(end-start)*(segment.start+along)/way.length-clearance]);
+      }
+    }
+  }
   W.waterLevels=new Map(areas.filter(a=>a.k==='water').map(a=>{
     const shore=a.p.map(p=>hAt(p[0],p[1])).sort((a,b)=>a-b);
-    return [a,shore[Math.floor(shore.length/2)]+.05];
+    let level=shore[Math.floor(shore.length/2)]+.05;
+    for (const [x,z,limit] of bridgeLevels) if (limit<level && inPoly(x,z,a.p) && !a.holes.some(hole=>inPoly(x,z,hole))) level=limit;
+    return [a,level];
   }));
   for(const [r,way] of W.roadIndex.ways)if(r.ford){
     const water=[...W.waterLevels].find(([a])=>r.p.some(([x,z])=>inPoly(x,z,a.p) && !a.holes.some(p=>inPoly(x,z,p))));
     if(water)way.fordLevel=water[1]+.18;
   }
   W.G=prepareSurfaceGrid(W.D,W.roadIndex,hAt);
-  W.access=createDrivingAccess(W.D,network,W.roadIndex,W.G);
+  W.access=createDrivingAccess(W.D,network,W.roadIndex,W.G,mappedRoadBoundaries);
   W.passageEdges=buildingPassages(buildings,W.roadIndex);
   const C=W.C;
   C.side=[new Uint8Array(C.n),new Uint8Array(C.n)];
@@ -983,7 +1018,7 @@ export async function loadWorld(scene, renderer, progress) {
     if(!response.ok)throw Error('Campus map unavailable ('+response.status+')');
     return response.json();
   };
-  const [campus,network,terrain,canopy]=await Promise.all([download('campus.json'),download('explore-map.json'),download('terrain-approaches.json'),download('canopy.json')]);
+  const [campus,network,terrain,canopy]=await Promise.all([download('campus.json'),download('explore-map.json?v=kaimaru-frontage-1'),download('terrain-approaches.json'),download('canopy.json')]);
   W.canopy=canopy;
   W.scene=scene;
   await step('Opening campus roads and paths',()=>{initializeMapData(campus,network,terrain);makeTextures();});
@@ -992,12 +1027,13 @@ export async function loadWorld(scene, renderer, progress) {
   await step('Paving campus streets', () => {
     buildExploreGrounds(scene,W.D,hAt,MB,flat,TEX);
     buildExploreRoads(scene,W,hAt,TEX,MB,flat,referenceRoadStyles);
-    W.accessScenery=buildAccessEdges(scene,W,baseSurfaceAt,MB,flat);
+    W.accessScenery=buildAccessEdges(scene,W,baseSurfaceAt,MB,flat,hAt);
     buildBumps(scene);
   });
   await step('Raising campus buildings', () => {
     const start=scene.children.length;
     buildBuildings(scene);
+    finishLandmarkMaterials(scene.children.slice(start));
     buildStreetviewDetails(scene,W.D,hAt,surfAt);
     applyArcadeOpenings(scene.children.slice(start));
   });
@@ -1008,10 +1044,12 @@ export async function loadWorld(scene, renderer, progress) {
     };
     buildParking(scene,W.D,hAt,parkingSurface,TEX);
     buildGate(scene,W.D,hAt); buildNature(scene);
+    buildKaimaruGarden(scene,hAt,surfAt,rng(702));
     buildStreetscape(scene,W.D,W.C,hAt,surfAt);
     W.capturedLandscape=buildCapturedLandscape(scene,W.D,W.C,hAt,surfAt).metadata;
     W.capturedRoadside=buildCapturedRoadside(scene,W.D,W.C,hAt,surfAt).metadata;
     buildProps(scene);
+    buildStreetFixtures(scene,W,baseSurfaceAt,hAt,MB,flat);
     partitionCampusBatches(scene,W.treeLods || []);
     W.updateSceneDistance=trackSceneryDistance(scene);
   });

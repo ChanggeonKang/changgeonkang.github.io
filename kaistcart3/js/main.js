@@ -54,12 +54,17 @@ function updateKeys(){for(const k of Object.values(keymap))keys[k]=false;for(con
 function clearInputs(){pressed.clear();updateKeys();drag=null;document.querySelectorAll('.held').forEach(b=>b.classList.remove('held'));}
 function stopMotion(){clearInputs();stepper.reset();sfx.quiet();last=0;}
 function cameraMode(){streetCamera=!streetCamera;P.mesh.visible=!streetCamera;P.mesh.userData.ao.visible=!streetCamera;lookYaw=0;lookPitch=0;cam.snap=true;$('cameraToggle').textContent=streetCamera?'Camera · Street level':'Camera · Chase';}
+let arrivalLook=false;
+function faceArrival(pose){
+  arrivalLook=Number.isFinite(pose.viewHeading);
+  lookYaw=arrivalLook?angDiff(pose.viewHeading,P.th):0;lookPitch=0;cam.snap=true;
+}
 function openMap(){
   if(!atlas||mode==='atlas')return;
   if($('pause').open)$('pause').close();
   stopMotion();mode='atlas';$('atlas').showModal();atlas.show(P,pose=>{
     if(!resetFreeDrive(P,pose,W.access))return false;
-    skids.clear();cam.snap=true;lookYaw=0;lookPitch=0;closeOverlays();lastHud=-1;return true;
+    skids.clear();faceArrival(pose);closeOverlays();lastHud=-1;return true;
   });$('atlasClose').focus({preventScroll:true});
 }
 function closeOverlays(){if(mode==='load')return;atlas.hide();for(const d of ['pause','atlas'])if($(d).open)$(d).close();mode='drive';last=0;clearInputs();}
@@ -84,7 +89,7 @@ for(const b of document.querySelectorAll('[data-drive]')){
   b.onpointerup=b.onpointercancel=b.onlostpointercapture=release;
 }
 const gl=$('gl');gl.style.touchAction='none';
-gl.onpointerdown=e=>{if(mode!=='drive'||!e.isPrimary||e.button!==0)return;drag={id:e.pointerId,x:e.clientX,y:e.clientY,yaw:lookYaw,pitch:lookPitch};gl.setPointerCapture(e.pointerId);};
+gl.onpointerdown=e=>{if(mode!=='drive'||!e.isPrimary||e.button!==0)return;arrivalLook=false;drag={id:e.pointerId,x:e.clientX,y:e.clientY,yaw:lookYaw,pitch:lookPitch};gl.setPointerCapture(e.pointerId);};
 gl.onpointermove=e=>{if(drag?.id===e.pointerId){lookYaw=drag.yaw+(e.clientX-drag.x)*.006;lookPitch=clamp(drag.pitch+(e.clientY-drag.y)*.006,-.75,.85);}};
 gl.onpointerup=gl.onpointercancel=()=>{drag=null;};gl.ondblclick=()=>{lookYaw=0;lookPitch=0;cam.snap=true;};
 function effects(dt) {
@@ -116,6 +121,10 @@ function effects(dt) {
 
 const cam = { pos: new THREE.Vector3(), look: new THREE.Vector3(), yaw: 0, y: 0, snap: true };
 function updateCamera(dt) {
+  if(arrivalLook && (keys.up || keys.down || Math.abs(P.vf)>1)){
+    lookYaw*=Math.exp(-dt*5);
+    if(Math.abs(lookYaw)<.005){lookYaw=0;arrivalLook=false;}
+  }
   const gy = gAt(P.x, P.z, P.body.y - RIDE);
   const spd = Math.hypot(P.vx, P.vz);
   const ty = spd > 4 && P.vf > 0 ? P.th + angDiff(Math.atan2(P.vx, P.vz), P.th) * .55 : P.th; // lean toward the travel direction: drifts show their slip angle
@@ -167,12 +176,15 @@ function frame(now){
 }
 async function init(){
   applyQuality();let count=0;
-  const views=fetch(new URL('../data/road-views.json',import.meta.url)).then(r=>{if(!r.ok)throw Error('Street view index unavailable');return r.json();});
+  const views=fetch(new URL('../data/road-views.json?v=kaimaru-frontage-1',import.meta.url)).then(r=>{if(!r.ok)throw Error('Street view index unavailable');return r.json();});
   const [,panoramas]=await Promise.all([loadWorld(scene,renderer,msg=>{$('loadMsg').textContent=msg+'…';$('loadProgress').value=Math.min(94,8+count++*12);}),views]);
   dust=new Particles(scene,420,false);skids=new Skids(scene);
   P.mesh=makeNubzuki(scene,{body:0x2f95e8,accent:0xf4f4f4,helmet:0xffffff});
   atlas=createCampusMap(W,panoramas);
-  if(!resetFreeDrive(P,atlas.initialPose(),W.access))throw Error('Main gate road is obstructed.');
+  const arrival=atlas.initialPose(Q.get('place'));
+  if(!resetFreeDrive(P,arrival,W.access))throw Error('The starting road is obstructed.');
+  if(Number.isFinite(arrival.viewHeading))cameraMode();
+  faceArrival(arrival);
   $('drive').hidden=false;mode='drive';tick(0);$('loading').hidden=true;requestAnimationFrame(frame);
 }
 init().catch(e=>{console.error(e);$('loading').hidden=false;$('loadMsg').textContent='The campus could not load. '+e.message;$('loadProgress').hidden=true;});

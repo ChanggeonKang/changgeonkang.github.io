@@ -1,12 +1,33 @@
 import { physicalBarrier, rasterPolygon, rasterSegment } from './explore-surfaces.js';
 import { resolveWalls } from './race-sim.js';
+import { indexRoadBoundary, sampleRoadGrid } from './road-boundary-index.js';
 
 // Rounded front corners preserve space to turn in tight entrances. The same
 // outline governs spawning, movement and recovery.
 const hull = [[-.58,1.07],[.58,1.07],[-.73,.72],[.73,.72],[-.73,-.75],[.73,-.75],
   [-.62,-1.05],[.62,-1.05],[0,1.08],[0,-1.05],[-.73,0],[.73,0],[0,0]];
 
-export function createDrivingAccess(data, network, index, surfaceGrid) {
+function hasChassisClearance(isDrivable,x,z,heading,groundHint=Infinity){
+  const s=Math.sin(heading),c=Math.cos(heading);
+  for(const [lx,lz] of hull)if(!isDrivable(x+lx*c+lz*s,z-lx*s+lz*c,groundHint))return false;
+  return true;
+}
+
+export function createDrivingAccess(data, network, index, surfaceGrid, outlines) {
+  if(outlines){
+    const {bounds}=data, grid=sampleRoadGrid(outlines.rings,bounds);
+    const pavement=indexRoadBoundary(outlines.rings,bounds), bridge=indexRoadBoundary(outlines.deck,bounds);
+    const lower=indexRoadBoundary(outlines.under,bounds);
+    const isDrivable=(x,z,level=Infinity)=>{
+      if(!pavement(x,z))return false;
+      const k=(Math.floor(z)-grid.z0)*grid.w+Math.floor(x)-grid.x0;
+      const deck=surfaceGrid.decks.get(k);
+      if(deck===undefined || !surfaceGrid.lowerDecks.has(k))return true;
+      if(level>=deck-.45)return bridge(x,z);
+      return !bridge(x,z) || lower(x,z);
+    };
+    return {grid,outlines,isDrivable,canPlace:(x,z,heading,level)=>hasChassisClearance(isDrivable,x,z,heading,level)};
+  }
   const { x0,z0,x1,z1 } = data.bounds;
   const w=x1-x0,h=z1-z0,d=new Uint8Array(w*h);
   const grid={x0,z0,w,h,d};
@@ -71,9 +92,7 @@ export function createDrivingAccess(data, network, index, surfaceGrid) {
     return value>=.5;
   }
   function canPlace(x,z,heading,groundHint=Infinity){
-    const s=Math.sin(heading),c=Math.cos(heading);
-    for(const [lx,lz] of hull)if(!isDrivable(x+lx*c+lz*s,z-lx*s+lz*c,groundHint))return false;
-    return true;
+    return hasChassisClearance(isDrivable,x,z,heading,groundHint);
   }
   return {grid,isDrivable,canPlace};
 }

@@ -76,6 +76,15 @@ function distanceToPlace(place,x,z){
 }
 
 export function vehicleApproach(place,segments,access){
+  if(place.ref==='N11'){
+    const frontage=segments.filter(s=>s.road.motorAccess==='kaimaru_streetview_drive');
+    const arrival=snapToStreet(frontage,-242.8,-382.5,access);
+    if(arrival){
+      // Reproduce the north-facing panorama from the far half of the road.
+      const z=access.canPlace(arrival.x,arrival.z+1.35,arrival.th) ? arrival.z+1.35 : arrival.z;
+      return {...arrival,z,distance:distanceToPlace(place,arrival.x,z),viewHeading:-Math.PI+.07};
+    }
+  }
   // The W2 pedestrian esplanade and visitor drop-off lie on opposite sides of
   // the building. Its documented vehicle arrival is the small one-way loop.
   if(place.ref==='W2'){
@@ -171,7 +180,8 @@ export function createCampusMap(world,panoramas){
     const p=selected||player;
     $('selectedLabel').textContent=selected?'Selected location':'Your location';
     $('selectedName').textContent=selected?.name||here(p.x,p.z);
-    $('mapMessage').textContent=selected?(selected.place?'Vehicle approach · '+Math.round(selected.distance)+' m from this place.':''):'Choose a drivable road, car park or building.';
+    $('mapMessage').textContent=selected?.place?.ref==='N11'?'Shuttle frontage · open for in-game exploration.':
+      selected?(selected.place?'Vehicle approach · '+Math.round(selected.distance)+' m from this place.':''):'Choose a drivable road, car park or building.';
     $('travel').disabled=!selected;links(p);draw();
   }
   function select(x,z,place,pan=false){
@@ -209,6 +219,9 @@ export function createCampusMap(world,panoramas){
   full.onpointerup=e=>{if(!drag)return;const click=!drag.moved;drag=null;if(click){const p=point(e);select(p.x,p.z,null,false);}};full.onpointercancel=()=>{drag=null;};
   $('placeSearch').oninput=list;$('travel').onclick=()=>{if(selected&&!onTravel(selected))$('mapMessage').textContent='This spot is obstructed. Select another road nearby.';};
   new ResizeObserver(draw).observe(full);
-  return {update,initialPose(){const s=snapToStreet(segments,159,462,world.access);if(!s)throw Error('Missing main gate road');if(Math.cos(s.th)>0)s.th+=Math.PI;return s;},
+  return {update,initialPose(ref){
+    const place=ref && places.find(p=>p.ref===ref);
+    if(place){const arrival=vehicleApproach(place,segments,world.access);if(arrival)return arrival;}
+    const s=snapToStreet(segments,159,462,world.access);if(!s)throw Error('Missing main gate road');if(Math.cos(s.th)>0)s.th+=Math.PI;return s;},
     show(p,travel){open=true;player=p;zoom=1;setFocus();selected=null;onTravel=travel;$('placeSearch').value='';list();refreshSelection();},hide(){open=false;drag=null;}};
 }

@@ -2,6 +2,10 @@
 export const isMotorRoad = road => ['street', 'service', 'parking'].includes(road.roadClass);
 export const roadLift = road => isMotorRoad(road) ? .2 : .12;
 export const isPassage = road => Boolean(road.tunnel || road.covered || road.layer < 0 || road.t === 'corridor');
+// Surface arcades have an exterior opening. A path ending at a closed door,
+// an underground corridor, or an elevated link does not open that facade.
+export const isFacadePassage = road => road.tunnel === 'building_passage' ||
+  Boolean(road.covered && !road.layer && !road.tunnel && road.t !== 'corridor');
 const key = (x, z) => x * 16384 + z;
 const cellSize = 32;
 
@@ -116,6 +120,16 @@ export function prepareSurfaceGrid(data, index, terrainAt) {
   for (const a of data.areas) if (a.k === 'water') rasterPolygon(grid, a, 8);
   for (const building of data.buildings) if (building.t !== 'roof' && !(building.minHeight >= 2)) rasterPolygon(grid, building, 9);
   const original=grid.d.slice(), lower=new Uint8Array(w*h);
+  const insideBuilding=(x,z)=>original[(Math.floor(z)-b.z0)*w+Math.floor(x)-b.x0]===9;
+  const crossesBuilding=(s,t)=>{
+    const along=t*s.span;
+    for(const delta of [0,-2.4,2.4]){
+      const distance=Math.max(0,Math.min(s.span,along+delta));
+      const x=s.a[0]+s.dx*distance, z=s.a[1]+s.dz*distance;
+      if(insideBuilding(x+s.dz*.55,z-s.dx*.55) && insideBuilding(x-s.dz*.55,z+s.dx*.55))return true;
+    }
+    return false;
+  };
   const adjacentSolid=k=>original[k]===9 || original[k+1]===9 || original[k-1]===9 ||
     original[k+w]===9 || original[k-w]===9 || original[k+w+1]===9 || original[k-w-1]===9 || original[k+w-1]===9 || original[k-w+1]===9;
   for (const motor of [false, true]) {
@@ -126,9 +140,9 @@ export function prepareSurfaceGrid(data, index, terrainAt) {
       if (bridge) way.deck = [terrainAt(...first), terrainAt(...last)];
       for (const s of way.segments) rasterSegment(grid, s.a, s.b, width, (k, t) => {
         if (grid.d[k] === 8 && !bridge && !road.ford && !isPassage(road)) return;
-        // The source sometimes maps an arcade as a plain footway through a
-        // building. Retain the narrow documented corridor and its opening.
-        if(adjacentSolid(k)){
+        // Wider kerbs or a driveway running beside a glazed lobby can touch
+        // its wall. Cut only an arcade or an actual through-driving corridor.
+        if(adjacentSolid(k) && (isFacadePassage(road) || (motor && !road.layer && crossesBuilding(s,t)))){
           const x=b.x0+k%w+.5,z=b.z0+Math.floor(k/w)+.5;
           grid.portals[k]=Math.max(1,Math.min(255,Math.ceil(terrainAt(x,z)+3.75+48)));
         }

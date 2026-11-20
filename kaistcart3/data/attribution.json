@@ -1,4 +1,32 @@
 {
+  "kaimaruFrontage": {
+    "osmWays": [
+      1531169495,
+      1525583178,
+      1525583177
+    ],
+    "gameAccess": "The south entrance of Oreum-gil and the west lift gate are open for exploration only. The real-world map marks both as vehicle-restricted. Only the connecting frontage and its exit are open.",
+    "streetLevel": {
+      "latest": "May 2023",
+      "views": [
+        "https://map.naver.com/p?c=19.00,0,0,0,adh&p=PvKtQD6sG64JSm8RpQgb-Q,0,3,87,Float",
+        "https://map.naver.com/p?c=19.00,0,0,0,adh&p=Z2lLGhJ_zSMnfjmLbKUNlA,-35,3,87,Float",
+        "https://map.naver.com/p?c=19.00,0,0,0,adh&p=71dTQjANr-zbtcRwz97MLA,0,3,87,Float",
+        "https://map.naver.com/p?c=19.00,0,0,0,adh&p=fX_slKi1gDvR2KwFMBCrHg,15,3,87,Float",
+        "https://map.naver.com/p?c=19.00,0,0,0,adh&p=u-Q_VBl4VPfmjSW4wLivcw,38,3,87,Float"
+      ],
+      "historic": "May 2013",
+      "historicView": "https://map.naver.com/p?c=19.00,0,0,0,adh&p=p9zjOx9Z1MzRMfKzyZUf3w,-90,6,80,Float"
+    },
+    "architecture": {
+      "references": [
+        "https://kaist.ac.kr/leaderkr/img/kaist/Kaist_White_Paper2026.pdf#page=94",
+        "https://blog.naver.com/hanback_story/223119117324",
+        "https://www.kaist.ac.kr/kr/html/campus/053001.html"
+      ],
+      "reconstruction": "Entrance and glazing, brick piers, stair approach, N11 marker, planted verge, cycle row and bus waiting area use the May 2023 street scene. The KAIST white paper shows the entrance at its April 2025 reopening. Sizes, small planting and the arrangement of parked bicycles are estimates."
+    }
+  },
   "title": "KAIST Kart 3 · Campus Drive",
   "campus": "KAIST Daejeon main campus and nearby roads",
   "geography": {
@@ -15,7 +43,7 @@
     "collected": "2026-11-21",
     "method": "Projected the outdoor map into local metres. Road vertices retain shared OSM IDs. Road widths and building heights are estimates where OSM has no measurements. Plazas, parking and mapped courtyards retain their outlines. Topology follows the source and no link is inferred from overlapping lines at different heights.",
     "imagery": "The 3D campus is reconstructed from geographic data and available visual references. This dataset does not establish NAVER panorama coverage.",
-    "carAccess": "Driving follows connected outdoor motor streets, service roads and surface parking. Visitor/customer and destination-only roads admit cars approaching the facility. Walks, trails, steps, cycleways, sidewalks, lawns and pedestrian plazas are scenery. Private, permit-only, emergency-only and conditional vehicle access are excluded. Mapped physical blockers and actual gates retain their restrictions."
+    "carAccess": "Driving follows connected outdoor motor streets, service roads and surface parking. Visitor/customer and destination-only roads admit cars approaching the facility. Walks, trails, steps, cycleways, sidewalks, lawns and pedestrian plazas are scenery. Private, permit-only, emergency-only and conditional vehicle access are excluded. Mapped physical blockers and actual gates retain their restrictions. In Campus Drive the 72 m photographed Kaimaru frontage from Oreum-gil to the west gate is open as a game exception. OSM marks both real-world gates motor_vehicle=no."
   },
   "terrain": {
     "dataset": "GEDTM30 v1.2",
@@ -55,7 +83,7 @@
       "Kakao Map Road View"
     ],
     "panoramaIndex": "road-views.json",
-    "linkedNaverViews": 112,
+    "linkedNaverViews": 115,
     "userReferencePhotos": 109,
     "notes": "Original 3D geometry informed by user photographs, campus sources and public street views. The game opens reference imagery on its provider’s site. Camera links use estimated locations. Links to nearby imagery do not certify vehicle access. Access rules use mapped roads, motor access tags, parking areas, physical barriers and vehicle entrances. Most unsurveyed roadside kerb and bollard designs are approximate.",
     "source": "https://map.naver.com/",
