@@ -1,0 +1,64 @@
+{
+  "title": "KAIST Kart 3 · Campus Drive",
+  "campus": "KAIST Daejeon main campus and nearby roads",
+  "geography": {
+    "attribution": "© OpenStreetMap contributors",
+    "copyright": "https://www.openstreetmap.org/copyright",
+    "license": "Open Database License 1.0",
+    "licenseUrl": "https://opendatacommons.org/licenses/odbl/1-0/",
+    "mapUrl": "https://api.openstreetmap.org/api/0.6/map.json?bbox=127.352,36.362,127.3725,36.3785",
+    "riverUrl": "https://api.openstreetmap.org/api/0.6/relation/67488/full.json",
+    "campusBoundary": "https://www.openstreetmap.org/way/73679850",
+    "officialMap": "https://www.kaist.ac.kr/site/map/index.html",
+    "officialDirectory": "https://www.kaist.ac.kr/site/map/map_json.php",
+    "officialPlan": "https://www.kaist.ac.kr/Upload/map/Campus_Map_202605.pdf",
+    "collected": "2026-11-21",
+    "method": "Projected the outdoor map into local metres. Road vertices retain shared OSM IDs. Road widths and building heights are estimates where OSM has no measurements. Plazas, parking and mapped courtyards retain their outlines. Topology follows the source and no link is inferred from overlapping lines at different heights.",
+    "imagery": "The 3D campus is reconstructed from geographic data and available visual references. This dataset does not establish NAVER panorama coverage.",
+    "carAccess": "Driving follows connected outdoor motor streets, service roads and surface parking. Visitor/customer and destination-only roads admit cars approaching the facility. Walks, trails, steps, cycleways, sidewalks, lawns and pedestrian plazas are scenery. Private, permit-only, emergency-only and conditional vehicle access are excluded. Mapped physical blockers and actual gates retain their restrictions."
+  },
+  "terrain": {
+    "dataset": "GEDTM30 v1.2",
+    "attribution": "Ho, Y.-F., Grohmann, C. H., Lindsay, J., Reuter, H. I., Parente, L., Witjes, M., and Hengl, T. (2025). Global ensemble digital terrain modeling and parametrization at 30 m resolution (GEDTM30): a data fusion approach based on ICESat-2, GEDI and multisource data. PeerJ 13:e19673. OpenGeoHub / OpenTopography.",
+    "publication": "https://doi.org/10.7717/peerj.19673",
+    "datasetDoi": "https://doi.org/10.5069/G9BV7DT1",
+    "license": "CC BY 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+    "changes": "Cropped to the Daejeon campus and surrounding hills. Interpolated in local metres. Known road profiles use the supplied grade observations. Pavement and bridge elevations between observations are reconstructed.",
+    "limitations": "Approximate 30 m machine-learning bare-earth model, not a pavement survey. Source Float32 values treated as metres after independent cross-check; an inconsistent GDAL scale tag is retained in the offline audit."
+  },
+  "officialCampusDirectory": {
+    "source": "https://www.kaist.ac.kr/site/map/index.html",
+    "scope": "Campus locations and public building directory."
+  },
+  "canopy": {
+    "source": "Meta and World Resources Institute, High Resolution Canopy Height Maps v2 (2026), source imagery © 2016 Vantor. Accessed 21 November 2026.",
+    "registry": "https://registry.opendata.aws/dataforgood-fb-forestsv2/",
+    "license": "CC BY 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+    "changes": "Local maxima in the smoothed canopy-height raster after reprojection, minimum crown separation and filtering. Positions are crown estimates, not surveyed trunks."
+  },
+  "architecture": {
+    "sources": [
+      "https://www.kaist.ac.kr/site/map/index.html",
+      "https://kaist.ac.kr/kr/html/kaist/01.html",
+      "https://kds.kaist.ac.kr/dormInfo/dormInfo.do",
+      "https://naver.me/xIF5lerm"
+    ],
+    "changes": "Original code-generated geometry based on reference photographs and mapped footprints; no photograph textures redistributed. The supplied street-view captures inform distinctive building facades, roof forms, planting, sidewalks, parking context and roadside features. Building models retain their mapped footprint boundaries.",
+    "limitations": "Camera locations and viewing directions are visually matched to the existing map and course, not extracted survey coordinates. Building heights, facade divisions and decorative details are estimated unless separately sourced; gate pylon positions ±10 m. Parking spaces, parked cars and supplementary vegetation are illustrative. April foliage, blossoms and dormant grass describe the capture season. Review of the supplied images does not establish surveyed accuracy or current conditions across the entire campus.",
+    "outdoorTheater": "https://indico.cern.ch/event/801577/attachments/1801881/3076941/KAISTHandbook.pdf"
+  },
+  "streetViews": {
+    "providers": [
+      "NAVER Maps Street View",
+      "Kakao Map Road View"
+    ],
+    "panoramaIndex": "road-views.json",
+    "linkedNaverViews": 112,
+    "userReferencePhotos": 109,
+    "notes": "Original 3D geometry informed by user photographs, campus sources and public street views. The game opens reference imagery on its provider’s site. Camera links use estimated locations. Links to nearby imagery do not certify vehicle access. Access rules use mapped roads, motor access tags, parking areas, physical barriers and vehicle entrances. Most unsurveyed roadside kerb and bollard designs are approximate.",
+    "source": "https://map.naver.com/",
+    "fallback": "https://apis.map.kakao.com/web/guide/"
+  }
+}

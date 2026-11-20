@@ -1,12 +1,45 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>KAIST Kart 2</title>
-  <link rel="canonical" href="https://changgeonkang.github.io/kaistcart2/">
-  <script>location.replace('../kaistcart2/' + location.search + location.hash);</script>
-  <meta http-equiv="refresh" content="0; url=../kaistcart2/">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#132922">
+<title>KAIST Kart 3 · Campus Drive</title>
+<link rel="stylesheet" href="campus.css">
 </head>
-<body><a href="../kaistcart2/">Play KAIST Kart 2</a></body>
-</html>
+<body>
+<canvas id="gl" aria-label="KAIST main campus driving view"></canvas>
+<section id="loading" aria-live="polite"><div class="load-box"><span class="wordmark">KAIST KART <b>3</b></span><h1>Campus Drive</h1><p id="loadMsg">Loading the Daejeon main campus…</p><progress id="loadProgress" max="100" value="3"></progress></div></section>
+<main id="drive" hidden>
+  <header id="location" class="glass"><div class="wordmark">KAIST KART <b>3</b></div><div id="placeName">Main Gate</div></header>
+  <button id="mapBtn" class="glass" type="button" aria-label="Open campus map"><canvas id="mini" width="300" height="240"></canvas><span class="mini-north">N</span><span class="mini-caption">Campus map <kbd>M</kbd></span></button>
+  <button id="pauseBtn" class="glass" type="button" aria-label="Pause drive">Ⅱ</button>
+  <div id="dash" class="glass"><strong id="speed">0</strong><span>km/h</span></div>
+  <p id="controls" class="glass"><kbd>W</kbd> <kbd>S</kbd> Gas / brake <span>·</span> <kbd>A</kbd> <kbd>D</kbd> Steer <span>·</span> <kbd>Shift</kbd> Drift</p>
+  <p id="notice" class="glass" role="status" hidden></p>
+  <div id="touch">
+    <div class="touch-side"><button type="button" data-drive="left" aria-label="Steer left">◀</button><button type="button" data-drive="right" aria-label="Steer right">▶</button></div>
+    <div class="touch-side"><button type="button" data-drive="drift">Drift</button><button type="button" data-drive="down">Brake</button><button type="button" data-drive="up" class="gas">Gas</button></div>
+  </div>
+</main>
+<dialog id="atlas" aria-labelledby="atlasTitle">
+  <header class="sheet-head"><div><span class="wordmark">KAIST KART <b>3</b></span><h2 id="atlasTitle">Campus map</h2></div><button class="close" id="atlasClose" type="button" aria-label="Close campus map">×</button></header>
+  <div class="atlas-body">
+    <div class="sheet-map"><canvas id="mapCanvas" aria-label="Campus map. Select a drivable road or car park, or choose a place from the list."></canvas><span class="north">↑ N</span><div class="map-tools"><button id="zoomOut" aria-label="Zoom out">−</button><button id="zoomIn" aria-label="Zoom in">+</button><button id="fit" aria-label="Show full campus">⌖</button></div><div class="map-key"><i></i>Drivable <i class="walk"></i>Footpath <i class="closed"></i>Gate <i class="you"></i>You</div></div>
+    <section class="places"><label for="placeSearch">Find a place</label><input type="search" id="placeSearch" placeholder="Building name or code" autocomplete="off"><div id="placeList"></div>
+      <div class="choice"><span class="selection-label" id="selectedLabel">Your location</span><h3 id="selectedName">Main Gate</h3><p id="mapMessage" role="status"></p><button class="primary" id="travel" type="button" disabled>Drive from here</button><div class="view-links"><a id="streetLink" target="_blank" rel="noopener noreferrer">Road view ↗</a><a id="naverLink" target="_blank" rel="noopener noreferrer">Naver Map ↗</a></div></div>
+    </section>
+  </div>
+  <footer><span>KAIST · Daejeon main campus</span><span><a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a> · <a href="data/attribution.json" target="_blank" rel="noopener noreferrer">Map credits</a></span></footer>
+</dialog>
+<dialog id="pause" aria-labelledby="pauseTitle"><div class="pause-inner"><span class="wordmark">KAIST KART <b>3</b></span><h2 id="pauseTitle">Drive paused</h2><button id="resume" class="primary">Resume driving</button><button id="openAtlas">Campus map</button><button id="cameraToggle">Camera · Chase</button><p class="help-camera">Drag to look around. Double-click to face forward.</p><button id="mute">Sound on</button></div></dialog>
+<script type="module">
+  import('./js/main.js').catch(error=>{
+    document.getElementById('loadProgress').hidden=true;
+    document.getElementById('loadMsg').textContent=/webgl/i.test(error.message)
+      ? 'This browser could not start 3D graphics. Enable hardware acceleration and reload.'
+      : 'The game files could not load. Reload to try again.';
+    console.error(error);
+  });
+</script>
+</body></html>
