@@ -730,9 +730,9 @@ function industrialDesignSouthEntrance(scene,world,ground,terrain){
         const pieces=Math.ceil((right-left)/(stair<2?1.1:2.8));
         for(let k=0;k<pieces;k++){
           const l=left+(right-left)*k/pieces,r=left+(right-left)*(k+1)/pieces;
-          quad(level(l,a,top),level(r,a,top),level(r,b,top),level(l,b,top),shades[(row*3+k)%shades.length]);
-          const seam=b+Math.min(.012,(a-b)*.10);
-          quad(level(l,seam,top+.003),level(r,seam,top+.003),level(r,b,top+.003),level(l,b,top+.003),0x443b34);
+          const seam=b+Math.min(.009,(a-b)*.10);
+          quad(level(l,a,top),level(r,a,top),level(r,seam,top),level(l,seam,top),shades[(row*3+k)%shades.length]);
+          quad(level(l,seam,top),level(r,seam,top),level(r,b,top),level(l,b,top),0x584b40);
           if(!row)quad(level(l,a,-.03),level(r,a,-.03),level(r,a,top),level(l,a,top),0x483a31);
         }
         for(const x of [left,right])quad(level(x,a,-.03),level(x,b,-.03),level(x,b,top),level(x,a,top),0x534338);
