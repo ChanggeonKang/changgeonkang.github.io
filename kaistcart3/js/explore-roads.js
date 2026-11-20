@@ -1,6 +1,7 @@
 import * as THREE from '../lib/three.module.min.js';
 import { isMotorRoad, physicalBarrier, roadLift } from './explore-surfaces.js';
 import { paintMappedCrossings } from './street-fixtures.js';
+import { createHumpPaintMask } from './road-paint-mask.js';
 
 const up = [0, 1, 0], uv = p => [p[0] / 4, p[2] / 4];
 const paint = new THREE.Color(0xf1ede2), yellow = new THREE.Color(0xdbb45c);
@@ -71,7 +72,15 @@ export function buildExploreRoads(scene, world, height, texture, MB, flat, refer
     if (nearest < 0) return null;
     return photoStyles.find(s => s.from <= nearest && nearest <= s.to) || null;
   };
-  const quad = (batch, a, b, c, d, colour) => batch.quad(a, b, c, d, up, uv(a), uv(b), uv(c), uv(d), colour);
+  const maskHumpPaint = createHumpPaintMask(world.bumps);
+  const quad = (batch, a, b, c, d, colour) => {
+    const pieces = batch === markings ? maskHumpPaint(a,b,c,d) : null;
+    if (!pieces) return batch.quad(a, b, c, d, up, uv(a), uv(b), uv(c), uv(d), colour);
+    for (const vertices of pieces) for (let i=2;i<vertices.length;i++) {
+      const [p,q,r] = [vertices[0],vertices[i-1],vertices[i]];
+      batch.tri(p,q,r,up,uv(p),uv(q),uv(r),colour);
+    }
+  };
   const roadVertex = (s, along, x, z, y) => {
     const way = roadIndex.ways.get(s.road), deck = way.deck, f = (s.start + along) / way.length;
     const base = deck ? deck[0] + f * (deck[1] - deck[0]) : height(x, z);

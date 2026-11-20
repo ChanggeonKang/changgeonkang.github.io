@@ -29,6 +29,7 @@ export function prepareRoads(roads) {
         if (isMotorRoad(road)) {
           n.motor.add(ids[1 - end]);
           n.halfWidth = Math.max(n.halfWidth, road.width / 2);
+          if(road.drivable && !road.bridge)n.groundCar=true;
         }
       }
       const r = road.width / 2 + 1;
@@ -163,6 +164,21 @@ export function prepareSurfaceGrid(data, index, terrainAt) {
   for(const k of grid.decks.keys()){
     for(let dz=-3;dz<=3 && !grid.lowerDecks.has(k);dz++)for(let dx=-3;dx<=3;dx++){
       if(dx*dx+dz*dz<=9 && lower[k+dz*w+dx]){grid.lowerDecks.add(k);break;}
+    }
+  }
+  // At a shared bridge end the approach and deck are one carriageway.
+  // Treating its round end cap as an underpass makes an invisible wall where
+  // the metre-grid deck and the exact pavement outline cross a cell differently.
+  for(const [road,way] of index.ways)if(road.drivable && road.bridge && way.segments.length){
+    const start=way.segments[0],finish=way.segments.at(-1);
+    for(const [id,p] of [[start.ids[0],start.a],[finish.ids[1],finish.b]]){
+      if(!index.nodes.get(id).groundCar)continue;
+      rasterSegment(grid,p,p,road.width/2+Math.SQRT1_2,k=>{
+        const deck=grid.decks.get(k);
+        if(deck===undefined)return;
+        const x=b.x0+k%w+.5,z=b.z0+Math.floor(k/w)+.5;
+        if(Math.abs(deck-(terrainAt(x,z)+roadLift(road)))<1)grid.lowerDecks.delete(k);
+      });
     }
   }
   for (const fence of data.barriers) {

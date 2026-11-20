@@ -10,6 +10,7 @@ import { buildCapturedArchitecture } from './capture-architecture.js';
 import { buildCapturedRoadside, capturedRoadStyles, capturedSpeedMarks, capturedBumps } from './capture-roadside.js';
 import { buildGate } from './campus-gate.js';
 import { locateHumps } from './campus-humps.js';
+import { APPROACH, indexHumpPavement, indexPavement } from './hump-pavement.js';
 import { leafyCrown, leafSprayMaterial } from './campus-canopy.js';
 import { buildKaimaruGarden } from './kaimaru-garden.js';
 import { buildRoadElevationField, roadHeightOffset } from './road-elevation-field.js';
@@ -27,7 +28,8 @@ import { buildAccessEdges } from './explore-curbs.js';
 import { partitionCampusBatches } from './explore-visibility.js';
 import { buildStreetviewDetails,streetviewPalette } from './streetview-buildings.js';
 import { facadeFinish, finishLandmarkMaterials } from './facade-materials.js';
-import { prepareRoads, prepareSurfaceGrid, isFacadePassage } from './explore-surfaces.js';
+import { prepareRoads, prepareSurfaceGrid } from './explore-surfaces.js';
+import { buildVestibule, lineArcades, planDoorways, ringSign } from './building-interiors.js';
 
 const referenceRoadStyles = [...capturedRoadStyles, ...eastRoadStyles, ...westRoadStyles];
 const referenceSpeedMarks = [...capturedSpeedMarks, ...eastSpeedMarks, ...westSpeedMarks];
@@ -92,6 +94,7 @@ function liftAt(x, z) { // smooth (bilinear) road/curb height above terrain
 }
 const BCELL = 16;
 let bumpGrid = new Map();
+let humpPavement;
 function bumpProfile(b, ex, ez) {
   const halfLength = (b.length || BUMP_L * 2) / 2, height = b.height ?? BUMP_H;
   const al = ex * b.dx + ez * b.dz;
@@ -117,9 +120,14 @@ function bumpSurfaceVertex(b, ia, il, na, nl) {
 /** Ground height including road surfaces, curbs and speed bumps. */
 export const gAt = (x, z, referenceHeight = Infinity) => {
   const list = bumpGrid.get(Math.floor(x / BCELL) * 4096 + Math.floor(z / BCELL));
-  let height = -Infinity;
-  for (const b of list || []) {
+  if(!list?.length || !humpPavement)return baseSurfaceAt(x,z,referenceHeight);
+  const k=(Math.floor(z)-W.G.z0)*W.G.w+Math.floor(x)-W.G.x0;
+  if(W.G.lowerDecks.has(k) && referenceHeight<W.G.decks.get(k)-.45)return baseSurfaceAt(x,z,referenceHeight);
+  let height = -Infinity, approach = 0;
+  for (const b of list) {
     const ex = x - b.x, ez = z - b.z, al = ex * b.dx + ez * b.dz, la = ex * b.dz - ez * b.dx, s = b.surface;
+    const distance=Math.max(0,Math.abs(al)-b.length/2,Math.abs(la)-b.hw);
+    approach=Math.max(approach,1-distance/APPROACH);
     if (!s || Math.abs(al) > b.length / 2 + 1e-7 || Math.abs(la) > b.hw + 1e-7) continue;
     const u = clamp((al / b.length + .5) * s.na, 0, s.na), v = clamp((la / (b.hw * 2) + .5) * s.nl, 0, s.nl);
     const i = Math.min(s.na - 1, Math.floor(u)), j = Math.min(s.nl - 1, Math.floor(v)), fu = u - i, fv = v - j, o = i * (s.nl + 1) + j;
@@ -129,7 +137,11 @@ export const gAt = (x, z, referenceHeight = Infinity) => {
     const y = fu >= fv ? a * (1 - fu) + c * (fu - fv) + e * fv : a * (1 - fv) + e * fu + d * (fv - fu);
     height = Math.max(height, y);
   }
-  return Number.isFinite(height) ? height : baseSurfaceAt(x,z,referenceHeight) + bumpH(x, z);
+  if(Number.isFinite(height))return height;
+  const base=baseSurfaceAt(x,z,referenceHeight);
+  if(approach<=0)return base;
+  const pavement=humpPavement.heightAt(x,z);
+  return Number.isFinite(pavement) ? lerp(base,pavement,approach*approach*(3-2*approach)) : base;
 };
 const baseSurfaceAt = (x,z,referenceHeight = Infinity) => {
   const G = W.G;
@@ -470,15 +482,16 @@ function makeTextures() {
   };
   TEX.paver.repeat.set(2.55,2.55);
 }
-function buildBumps(scene) {
+function prepareBumps() {
   const D = W.D, C = W.C;
   W.bumps = locateHumps(W.explore, D.bumps, W.roadIndex, C, referenceBumps);
   W.courseBumps = W.bumps.filter(b => b.ci >= 0).map(b => b.ci).sort((a, b) => a - b);
   C.slow = new Uint8Array(C.n);
   for (const ci of W.courseBumps) for (let i = ci - 16; i <= ci + 1; i++) C.slow[mod(i, C.n)] = 1;
   bumpGrid = new Map();
+  humpPavement = undefined;
   for (const b of W.bumps) {
-    const r = b.hw + b.length / 2;
+    const r = Math.hypot(b.hw+APPROACH,b.length/2+APPROACH);
     for (let ix = Math.floor((b.x - r) / BCELL); ix <= Math.floor((b.x + r) / BCELL); ix++)
       for (let iz = Math.floor((b.z - r) / BCELL); iz <= Math.floor((b.z + r) / BCELL); iz++) {
         const k = ix * 4096 + iz;
@@ -486,6 +499,9 @@ function buildBumps(scene) {
         bumpGrid.get(k).push(b);
       }
   }
+}
+function buildBumps(scene) {
+  humpPavement = indexHumpPavement(W.bumps,scene.children);
   // Construct the height samples once. Mesh and collision both use these exact
   // triangles; the smooth profile above supplies the samples, not a second collider.
   for (const b of W.bumps) {
@@ -494,9 +510,11 @@ function buildBumps(scene) {
     for (let ia = 0; ia <= na; ia++) for (let il = 0; il <= nl; il++) {
       const al = -b.length / 2 + ia * b.length / na, la = -b.hw + il * 2 * b.hw / nl;
       const x = b.x + b.dx * al + b.dz * la, z = b.z + b.dz * al - b.dx * la;
-      heights[ia * (nl + 1) + il] = baseSurfaceAt(x,z) + bumpH(x, z);
+      const bed=humpPavement.heightAt(x,z);
+      heights[ia * (nl + 1) + il] = (Number.isFinite(bed)?bed:baseSurfaceAt(x,z)) + bumpH(x, z);
     }
     b.surface = { na, nl, heights };
+    humpPavement.fitSeams(b);
   }
   const mb = new MB(), one = col(0xffffff);
   for (const b of W.bumps) {
@@ -526,8 +544,11 @@ function buildBuildings(scene) {
   W.capturedArchitecture = captured.metadata;
   const BRICK = [0xa5553c, 0xb0644a, 0x9a5a48, 0xb86a4c], STONE = [0xd6c4a2, 0xcdb994, 0xdccdb0, 0xc9bda8, 0xbfb5a3, 0xd9d2c4],
     APT = [0xe6e2d8, 0xd9d4c8, 0xcfd2d6], MISC = [0xcfc8ba, 0xb9b2a4, 0xa9a59c, 0xc4a58a, 0xb7bcc2];
-  const roofC = col(0x8b8f94), roofD = col(0x6f7378);
+  const roofC = col(0x8b8f94), roofD = col(0x6f7378), interior=new MB();
+  const doorRegions=D.buildings.flatMap(b=>(b.entrances||[]).map(([x,z])=>({x,z,radius:3})));
+  const entryPavement=indexPavement(doorRegions,scene.children);
   D.buildings.forEach((b, bi) => {
+    lineArcades(interior,b,W.G,hAt,Math.max(...b.p.map(q=>hAt(...q)))+buildingProfile(b).height);
     if(b.ref==='N11'){labels.push(buildKaimaru(scene,b,hAt,MB));return;}
     if(theater?.ids.has(b.id))return;
     if (specialized.handledRefs.has(b.ref) || captured.handledIds.has(b.id) || east.handledIds.has(b.id) || west.handledIds.has(b.id)) return;
@@ -546,33 +567,46 @@ function buildBuildings(scene) {
     let wc = col(pal[(bi * 7 + n) % pal.length]);
     if (REAL[b.ref]) { wc = col(REAL[b.ref][0]); style = REAL[b.ref][1]; }
     const hh = profile.height, floor = b.t === 'roof' ? Math.max(2.6, b.minHeight || 0) : b.minHeight || 0;
-    const base = floor ? (lo + hi)/2 + floor : lo - 1, top = Math.max(base + .28, (lo + hi) / 2 + (b.t === 'roof' && !b.hh ? floor + .30 : hh)), H = top - base, sgn = area > 0 ? 1 : -1, seed = (bi * 0.6180339) % 1;
-    for (let i = 0; i < n; i++) {
-      const a = p[i], c = p[(i + 1) % n], dx = c[0] - a[0], dz = c[1] - a[1], len = Math.hypot(dx, dz);
-      if (len < .05) continue;
-      const nr = [sgn * dz / len, 0, -sgn * dx / len], ex = [len, H, style + profile.floorHeight / 10, seed];
-      // OSM building_passage and covered ways can enter the facade mid-edge.
-      // Split only the intersected intervals and leave a full-height portal.
-      const intervals = W.passageEdges.get(b.id)?.[i] || [];
-      const stops = [...new Set([0, 1, ...intervals.flat()])].sort((l,r) => l-r);
-      for (let j=1; j<stops.length; j++) {
-        const u=stops[j-1], v=stops[j], middle=(u+v)/2;
-        const portal=intervals.some(([l,r])=>l<=middle && middle<=r);
-        const y=portal ? Math.max(base, hAt(a[0]+dx*middle,a[1]+dz*middle)+3.6) : base;
-        if(y>=top)continue;
-        mb.quad([a[0]+dx*u,y,a[1]+dz*u],[a[0]+dx*v,y,a[1]+dz*v],
-          [a[0]+dx*v,top,a[1]+dz*v],[a[0]+dx*u,top,a[1]+dz*u],
-          nr,[len*u,y-base],[len*v,y-base],[len*v,H],[len*u,H],wc,ex);
+    const base = floor>0 ? (lo + hi)/2 + floor : lo - 1, top = Math.max(base + .28, (lo + hi) / 2 + (b.t === 'roof' && !b.hh ? floor + .30 : hh)), H = top - base, seed = (bi * 0.6180339) % 1;
+    const doors=planDoorways(b,W.G,hAt,top,entryPavement.heightAt);
+    for(const door of doors)buildVestibule(interior,door);
+    const holes=b.holes || [];
+    for(const ring of [p,...holes]){
+      const sgn=ringSign(ring)*(ring===p?1:-1);
+      for(let i=0;i<ring.length;i++){
+        const a=ring[i],c=ring[(i+1)%ring.length],dx=c[0]-a[0],dz=c[1]-a[1],len=Math.hypot(dx,dz);
+        if(len<.05)continue;
+        const nr=[sgn*dz/len,0,-sgn*dx/len],ex=[len,H,style+profile.floorHeight/10,seed];
+        const panel=(u,v,y0,y1)=>{
+          if(v-u<.00001 || y1<=y0)return;
+          mb.quad([a[0]+dx*u,y0,a[1]+dz*u],[a[0]+dx*v,y0,a[1]+dz*v],
+            [a[0]+dx*v,y1,a[1]+dz*v],[a[0]+dx*u,y1,a[1]+dz*u],
+            nr,[len*u,y0-base],[len*v,y0-base],[len*v,y1-base],[len*u,y1-base],wc,ex);
+        };
+        const start=ring===p && doors.find(d=>d.vertex===i);
+        const end=ring===p && doors.find(d=>d.vertex===(i+1)%ring.length);
+        const u=start?start.half/len:0,v=end?1-end.half/len:1;
+        panel(u,v,base,top);
+        for(const [door,l,r] of [[start,0,u],[end,v,1]])if(door){
+          panel(l,r,base,door.threshold);panel(l,r,door.y+door.height,top);
+        }
       }
     }
-    const holes = b.holes || [], roofPoints = [...p,...holes.flat()];
+    const roofPoints = [...p,...holes.flat()];
     const tris = THREE.ShapeUtils.triangulateShape(p.map(q => new THREE.Vector2(...q)), holes.map(h=>h.map(q=>new THREE.Vector2(...q)))), rex = [0, 0, -1, seed];
     const roofColor = profile.redRoof ? col(0x974c38) : roofC;
     for (const t of tris) mb.tri([roofPoints[t[0]][0], top, roofPoints[t[0]][1]], [roofPoints[t[1]][0], top, roofPoints[t[1]][1]], [roofPoints[t[2]][0], top, roofPoints[t[2]][1]], UP, [0, 0], [0, 0], [0, 0], roofColor, rex);
+    if(floor>0)for(const t of tris){
+      const vertices=t.map(i=>[roofPoints[i][0],base,roofPoints[i][1]]);
+      mb.tri(...vertices,[0,-1,0],[0,0],[0,0],[0,0],roofD,rex);
+    }
     const A = Math.abs(area) / 2;
     if (A > 350) for (let k = 0; k < Math.min(4, 1 + A / 900); k++) { // rooftop plant boxes
       const sx = 2 + rnd() * 4, sz = 2 + rnd() * 4, sh = 1.4 + rnd() * 1.8, ox = cx + (rnd() - .5) * Math.sqrt(A) * .6, oz = cz + (rnd() - .5) * Math.sqrt(A) * .6;
-      if (![[-1, -1], [1, -1], [1, 1], [-1, 1]].every(q => inPoly(ox + q[0] * sx, oz + q[1] * sz, p))) continue;
+      if (![[-1, -1], [1, -1], [1, 1], [-1, 1]].every(q => {
+        const x=ox+q[0]*sx,z=oz+q[1]*sz;
+        return inPoly(x,z,p)&&!holes.some(hole=>inPoly(x,z,hole));
+      })) continue;
       const c4 = [[ox - sx, oz - sz], [ox + sx, oz - sz], [ox + sx, oz + sz], [ox - sx, oz + sz]];
       for (let i = 0; i < 4; i++) {
         const a = c4[i], c = c4[(i + 1) % 4], dx = c[0] - a[0], dz = c[1] - a[1], len = Math.hypot(dx, dz);
@@ -624,8 +658,13 @@ function buildBuildings(scene) {
     fRough: 'roughnessFactor = mix(roughnessFactor, 0.19, winMask); metalnessFactor = mix(metalnessFactor, 0.22, winMask);',
   });
   const m = new THREE.Mesh(mb.geo(), mat);
+  m.name='Campus building envelopes and courtyard walls';
   m.castShadow = true; m.receiveShadow = true;
   scene.add(m);
+  const inside=new THREE.Mesh(interior.geo(),new THREE.MeshStandardMaterial({vertexColors:true,roughness:.87}));
+  inside.name='Recessed entrances and lined building passages';
+  inside.userData.passageLining=true;
+  inside.castShadow=true;inside.receiveShadow=true;scene.add(inside);
   for (const l of labels) {
     const name = campusName(D.buildings.find(b => b.ref === l.ref) || l);
     const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: labelTex(l.ref, name), transparent: true, depthWrite: false }));
@@ -914,7 +953,7 @@ function applyArcadeOpenings(objects) {
   const depth=new THREE.MeshDepthMaterial({depthPacking:THREE.RGBADepthPacking});
   clip(depth);
   for(const root of objects)root.traverse(m=>{
-    if(!m.isMesh)return;
+    if(!m.isMesh || m.userData.passageLining)return;
     for(const material of Array.isArray(m.material)?m.material:[m.material])clip(material);
     if(m.castShadow)m.customDepthMaterial=depth;
   });
@@ -927,29 +966,6 @@ function polygonBounds(p) {
   let x0=Infinity,z0=Infinity,x1=-Infinity,z1=-Infinity;
   for(const [x,z] of p){ x0=Math.min(x,x0); z0=Math.min(z,z0); x1=Math.max(x,x1); z1=Math.max(z,z1); }
   return {x0,x1,z0,z1};
-}
-// Only facade edges intersecting a mapped passage need openings.
-function buildingPassages(buildings,index) {
-  const result=new Map(), passages=[];
-  for(const [road,{segments}] of index.ways) if(isFacadePassage(road))passages.push(...segments);
-  for(const b of buildings) {
-    const bb=polygonBounds(b.p);
-    for(const s of passages){
-      const r=s.road.width/2+.15;
-      if(Math.min(s.a[0],s.b[0])-r>bb.x1 || Math.max(s.a[0],s.b[0])+r<bb.x0 ||
-         Math.min(s.a[1],s.b[1])-r>bb.z1 || Math.max(s.a[1],s.b[1])+r<bb.z0)continue;
-      for(let i=0;i<b.p.length;i++){
-        const a=b.p[i], c=b.p[(i+1)%b.p.length], vx=c[0]-a[0],vz=c[1]-a[1];
-        const cross=vx*s.dz-vz*s.dx; if(Math.abs(cross)<.0001)continue;
-        const ox=s.a[0]-a[0],oz=s.a[1]-a[1], u=(ox*s.dz-oz*s.dx)/cross,t=(ox*vz-oz*vx)/cross;
-        const spread=r/Math.abs(cross);
-        if(u+spread<0||u-spread>1||t< -r||t>s.span+r)continue;
-        if(!result.has(b.id))result.set(b.id,{});
-        (result.get(b.id)[i] ||= []).push([Math.max(0,u-spread),Math.min(1,u+spread)]);
-      }
-    }
-  }
-  return result;
 }
 export function initializeMapData(campus,network,terrain=campus.terrain) {
   // Reconstruct the photo registration from its original calibrated references
@@ -999,8 +1015,8 @@ export function initializeMapData(campus,network,terrain=campus.terrain) {
     if(water)way.fordLevel=water[1]+.18;
   }
   W.G=prepareSurfaceGrid(W.D,W.roadIndex,hAt);
+  prepareBumps();
   W.access=createDrivingAccess(W.D,network,W.roadIndex,W.G,mappedRoadBoundaries);
-  W.passageEdges=buildingPassages(buildings,W.roadIndex);
   const C=W.C;
   C.side=[new Uint8Array(C.n),new Uint8Array(C.n)];
   for(let i=0;i<C.n;i++)for(let s=0;s<2;s++){
@@ -1018,7 +1034,7 @@ export async function loadWorld(scene, renderer, progress) {
     if(!response.ok)throw Error('Campus map unavailable ('+response.status+')');
     return response.json();
   };
-  const [campus,network,terrain,canopy]=await Promise.all([download('campus.json'),download('explore-map.json?v=kaimaru-frontage-1'),download('terrain-approaches.json'),download('canopy.json')]);
+  const [campus,network,terrain,canopy]=await Promise.all([download('campus.json'),download('explore-map.json?v=pond-entrances-1'),download('terrain-approaches.json'),download('canopy.json')]);
   W.canopy=canopy;
   W.scene=scene;
   await step('Opening campus roads and paths',()=>{initializeMapData(campus,network,terrain);makeTextures();});
@@ -1028,7 +1044,6 @@ export async function loadWorld(scene, renderer, progress) {
     buildExploreGrounds(scene,W.D,hAt,MB,flat,TEX);
     buildExploreRoads(scene,W,hAt,TEX,MB,flat,referenceRoadStyles);
     W.accessScenery=buildAccessEdges(scene,W,baseSurfaceAt,MB,flat,hAt);
-    buildBumps(scene);
   });
   await step('Raising campus buildings', () => {
     const start=scene.children.length;
@@ -1043,6 +1058,7 @@ export async function loadWorld(scene, renderer, progress) {
       return W.G.mappedLane[k] ? 3 : surfAt(x,z);
     };
     buildParking(scene,W.D,hAt,parkingSurface,TEX);
+    buildBumps(scene);
     buildGate(scene,W.D,hAt); buildNature(scene);
     buildKaimaruGarden(scene,hAt,surfAt,rng(702));
     buildStreetscape(scene,W.D,W.C,hAt,surfAt);

@@ -1,6 +1,6 @@
 // Campus Drive uses Kart 1's vehicle, camera, sound and scenery in a free-roaming world.
 import * as THREE from '../lib/three.module.min.js';
-import {W, loadWorld, updateWorld, gAt, surfAt, clamp, rng} from './world.js';
+import {W, loadWorld, updateWorld, hAt, gAt, surfAt, clamp, rng} from './world.js';
 import {makeNubzuki, poseKart} from './kart.js';
 import {Vehicle,RIDE} from './vehicle-physics.js';
 import {FixedStepper} from './race-sim.js';
@@ -8,6 +8,7 @@ import {resetFreeDrive,stepFreeDrive} from './free-drive.js';
 import {Particles,Skids,Post} from './fx.js';
 import {Sfx} from './audio.js';
 import {createCampusMap} from './campus-map.js';
+import {createCameraClearance} from './chase-camera-clearance.js';
 const $=id=>document.getElementById(id);
 const Q=new URLSearchParams(location.search),rnd=rng(99);
 const angDiff=(a,b)=>Math.atan2(Math.sin(a-b),Math.cos(a-b));
@@ -120,6 +121,8 @@ function effects(dt) {
 
 
 const cam = { pos: new THREE.Vector3(), look: new THREE.Vector3(), yaw: 0, y: 0, snap: true };
+const cameraAnchor=new THREE.Vector3();
+let cameraClearance;
 function updateCamera(dt) {
   if(arrivalLook && (keys.up || keys.down || Math.abs(P.vf)>1)){
     lookYaw*=Math.exp(-dt*5);
@@ -142,6 +145,14 @@ function updateCamera(dt) {
     const yaw=P.th+lookYaw, faceX=Math.sin(yaw),faceZ=Math.cos(yaw),eyeY=gy+2.05;
     camera.position.set(P.x+Math.sin(P.th)*.95,eyeY,P.z+Math.cos(P.th)*.95);
     cam.look.set(camera.position.x+faceX*8,eyeY-lookPitch*5,camera.position.z+faceZ*8);
+  } else {
+    cameraAnchor.set(P.x,Math.max(gy,P.body.y-RIDE)+1.05,P.z);
+    const lensRadius=Math.min(.65,camera.near*Math.tan(camera.fov*Math.PI/360)*Math.max(1,camera.aspect)+.05);
+    const fraction=cameraClearance(cameraAnchor,camera.position,lensRadius);
+    if(fraction<1){
+      camera.position.lerpVectors(cameraAnchor,camera.position,fraction);
+      cam.pos.copy(camera.position);
+    }
   }
   camera.lookAt(cam.look);
   camera.rotateZ(clamp(-P.wy * .035, -.08, .08));
@@ -178,6 +189,7 @@ async function init(){
   applyQuality();let count=0;
   const views=fetch(new URL('../data/road-views.json?v=kaimaru-frontage-1',import.meta.url)).then(r=>{if(!r.ok)throw Error('Street view index unavailable');return r.json();});
   const [,panoramas]=await Promise.all([loadWorld(scene,renderer,msg=>{$('loadMsg').textContent=msg+'…';$('loadProgress').value=Math.min(94,8+count++*12);}),views]);
+  cameraClearance=createCameraClearance(W.D.buildings,W.G,hAt);
   dust=new Particles(scene,420,false);skids=new Skids(scene);
   P.mesh=makeNubzuki(scene,{body:0x2f95e8,accent:0xf4f4f4,helmet:0xffffff});
   atlas=createCampusMap(W,panoramas);

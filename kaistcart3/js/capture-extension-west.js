@@ -93,10 +93,55 @@ function glasshouse(B,p,ground,base){
   }
   return {heightM:eaves+rise-base,top:eaves+rise,heightBasis:'Mapped greenhouses; estimated eaves and roof span.'};
 }
-function architecture(B,b,p,base,cfg){
+// Photo 98 shows a recessed service core to the right of the columns. The
+// southwestern side of the cantilever looks through to the parking court.
+function kiwoomGroundFloor(B,p,base,hAt,door){
+  const [x,z]=door,tx=.837,tz=-.547,nx=-tz,nz=tx;
+  const along=q=>(q[0]-x)*tx+(q[1]-z)*tz,depth=q=>-(q[0]-x)*nx-(q[1]-z)*nz;
+  function cut(ring,distance){
+    const out=[];
+    ring.forEach((a,i)=>{
+      const b=ring[(i+1)%ring.length],da=distance(a),db=distance(b);
+      if(da>=0)out.push(a);
+      if((da>=0)!==(db>=0)){
+        const t=da/(da-db);out.push([lerp(a[0],b[0],t),lerp(a[1],b[1],t)]);
+      }
+    });
+    return out;
+  }
+  const top=base+3.3;
+  // The beam soffit faces the viewer below, even from the open parking side.
+  for(const t of THREE.ShapeUtils.triangulateShape(p.map(a=>new THREE.Vector2(...a)),[]))
+    B.detail.tri(...t.map(i=>[p[i][0],top,p[i][1]]),P.stone,[0,-1,0]);
+  const core=cut(cut(p,q=>along(q)+4.1),q=>depth(q)-2.15);
+  if(core.length<3)return;
+  faces(core,(a,b,L,n)=>{
+    const lower=Math.min(base,hAt(...a),hAt(...b))-.28;
+    panel(B.wall,a,b,0,1,lower,top,P.stone,n);
+    // Glazing and metal panel seams on the sheltered walls.
+    const bays=Math.max(1,Math.round(L/2.7));
+    for(let j=0;j<bays;j++){
+      const t=(j+.5)/bays;
+      panel(B.detail,a,b,t-.018/L,t+.018/L,lower,top,P.silver,n);
+      if(L>3)panel(B.glass,a,b,t-.17/bays,t+.17/bays,top-.91,top-.36,P.dark,n);
+    }
+    if(Math.abs(depth(a)-2.15)<.01 && Math.abs(depth(b)-2.15)<.01){
+      const t=-along(a)/(along(b)-along(a)),w=.92/L;
+      if(t>w && t<1-w){
+        panel(B.detail,a,b,t-w,t-w+.065/L,base+.08,base+2.51,P.silver,n);
+        panel(B.detail,a,b,t+w-.065/L,t+w,base+.08,base+2.51,P.silver,n);
+        panel(B.detail,a,b,t-w,t+w,base+2.42,base+2.51,P.silver,n);
+        panel(B.glass,a,b,t-w+.065/L,t+w-.065/L,base+.08,base+2.42,colour(0x293636),n);
+        panel(B.detail,a,b,t-.035/L,t+.035/L,base+.13,base+2.42,P.silver,n);
+      }
+    }
+  });
+}
+function architecture(B,b,p,base,cfg,hAt){
   const top=base+cfg.height,style=cfg.style,lo=style==='kiwoom'?base+3.3:base;
   const wall=style==='engineering'||style==='church'?P.brick:style==='mansard'?P.cream:style==='guardPost'?colour(0xc5ded9):P.white;
-  volume(B.wall,p,base,base+.22,P.stone);volume(B.wall,p,lo,top,wall);
+  if(style!=='kiwoom')volume(B.wall,p,base,base+.22,P.stone);
+  volume(B.wall,p,lo,top,wall);
   if(style==='guardPost'){
     faces(p,(a,b,L,n)=>{
       panel(B.detail,a,b,0,1,top-.22,top,colour(0xf0efdf),n);
@@ -125,9 +170,14 @@ function architecture(B,b,p,base,cfg){
     windows(B,p,base,cfg.height,4,4.3,.45);faces(p,(a,b,L,n)=>{if(n[0]>.3&&L>9){panel(B.glass,a,b,.08,.88,base+.5,top-1,P.glass,n);for(let k=1;k<7;k++)panel(B.detail,a,b,.08+k*.8/7,.08+k*.8/7+.035/L,base+.5,top-1,P.stone,n);for(let y=base+2.6;y<top;y+=2.5)panel(B.detail,a,b,.08,.88,y,y+.08,P.stone,n);}});
     boundedBox(B.wall,p,-317,630,4.3,5.3,top,16.3,P.brick,-.61);
   }else if(style==='kiwoom'){
+    kiwoomGroundFloor(B,p,base,hAt,[-342.1,405.6]);
     windows(B,p,base+3.3,cfg.height-3.3,4,3.3,.40);grid(B,p,base+3.3,top,3.4);
     faces(p,(a,b,L,n)=>{if(L>13&&n[0]<-.3){panel(B.glass,a,b,.11,.49,top-5,top-1.5,P.dark,n);panel(B.detail,a,b,.10,.13,top-5,top-1.4,P.white,n);panel(B.detail,a,b,.47,.5,top-5,top-1.4,P.white,n);}});
-    faces(p,(a,b,L,n)=>{if(L>7){const count=Math.ceil(L/6);for(let k=0;k<=count;k++){const t=(k+.35)/(count+1),x=lerp(a[0],b[0],t)-n[0]*.7,z=lerp(a[1],b[1],t)-n[2]*.7;const g=new THREE.CylinderGeometry(.4,.43,3.3,8).translate(x,base+1.65,z);B.detail.geometry(g,P.white,p);}}});
+    faces(p,(a,b,L,n)=>{if(L>7){const count=Math.ceil(L/6);for(let k=0;k<=count;k++){
+      const t=(k+.35)/(count+1),x=lerp(a[0],b[0],t)-n[0]*.7,z=lerp(a[1],b[1],t)-n[2]*.7;
+      const foot=hAt(x,z)-.12,head=base+3.3;
+      if(foot<head)B.detail.geometry(new THREE.CylinderGeometry(.4,.43,head-foot,8).translate(x,(head+foot)/2,z),P.white,p);
+    }}});
   }else if(style==='mansard'){
     windows(B,p,base,cfg.height,4,3.7,.46); // The top roof is triangulated inside the existing footprint.
     const height=q=>top+Math.min(3.4,edgeDistance(q[0],q[1],p)*.75);
@@ -351,8 +401,8 @@ export function buildCaptureWest(scene,D={},C,hAt=()=>0,surfAt=()=>0){
   futsalFootprint=null;
   const result={handledIds:new Set(),labels:[],models:[],metadata:{reference:'audit/capture-review-79-102.json',greenhouseReference:'audit/capture-review-01-19.json',sourceDates:['2025-04','2026-04'],drawCalls:0,models:[],props:[],excluded:['source photograph textures','centreline bollards inside the racing corridor','existing W4-1/W4-2/W4-3/W4-4 buildings','existing W4 tree screen north of z=465'],estimated:true}};
   const B={wall:new Batch(),glass:new Batch(),detail:new Batch(),foliage:new Batch()};
-  for(const b of D.buildings||[]){const cfg=CONFIG[b.id]||(westGlasshouses.has(b.id)&&b.p?.length===4?glasshouseProfile:null);if(!cfg||!b.p||b.p.length<3)continue;const p=b.p.filter((a,i)=>i===0||Math.hypot(a[0]-b.p[i-1][0],a[1]-b.p[i-1][1])>.01).map(a=>[...a]);if(Math.hypot(p[0][0]-p.at(-1)[0],p[0][1]-p.at(-1)[1])<.01)p.pop();if(p.length<3||p.some(a=>!a.every(Number.isFinite)))continue;const ys=p.map(a=>hAt(...a));if(!ys.every(Number.isFinite))continue;const base=Math.min(...ys)-.55,start=Object.fromEntries(Object.entries(B).map(([k,v])=>[k,v.p.length/3]));
-    const shape=cfg===glasshouseProfile?glasshouse(B,p,Math.max(...ys),base):architecture(B,b,p,base,cfg),model={id:b.id,ref:b.ref||'',name:cfg.name,sourceFootprint:p,baseElevationM:base,...shape,capturePhotos:cfg.photos,features:cfg.features,matchConfidence:cfg.confidence||'High building/route match; facade dimensions approximate',geometryRanges:Object.fromEntries(Object.entries(B).map(([k,v])=>[k,[start[k],v.p.length/3]]))};result.models.push(model);result.metadata.models.push(model);result.handledIds.add(b.id);if(cfg!==glasshouseProfile)result.labels.push({ref:b.ref||'',name:cfg.name,en:cfg.name,x:p.reduce((s,a)=>s+a[0],0)/p.length,z:p.reduce((s,a)=>s+a[1],0)/p.length,y:shape.top+4});
+  for(const b of D.buildings||[]){const cfg=CONFIG[b.id]||(westGlasshouses.has(b.id)&&b.p?.length===4?glasshouseProfile:null);if(!cfg||!b.p||b.p.length<3)continue;const p=b.p.filter((a,i)=>i===0||Math.hypot(a[0]-b.p[i-1][0],a[1]-b.p[i-1][1])>.01).map(a=>[...a]);if(Math.hypot(p[0][0]-p.at(-1)[0],p[0][1]-p.at(-1)[1])<.01)p.pop();if(p.length<3||p.some(a=>!a.every(Number.isFinite)))continue;const ys=p.map(a=>hAt(...a));if(!ys.every(Number.isFinite))continue;const base=cfg.style==='kiwoom'?hAt(-342.1,405.6):Math.min(...ys)-.55,start=Object.fromEntries(Object.entries(B).map(([k,v])=>[k,v.p.length/3]));
+    const shape=cfg===glasshouseProfile?glasshouse(B,p,Math.max(...ys),base):architecture(B,b,p,base,cfg,hAt),model={id:b.id,ref:b.ref||'',name:cfg.name,sourceFootprint:p,baseElevationM:base,...shape,capturePhotos:cfg.photos,features:cfg.features,matchConfidence:cfg.confidence||'High building/route match; facade dimensions approximate',geometryRanges:Object.fromEntries(Object.entries(B).map(([k,v])=>[k,[start[k],v.p.length/3]]))};result.models.push(model);result.metadata.models.push(model);result.handledIds.add(b.id);if(cfg!==glasshouseProfile)result.labels.push({ref:b.ref||'',name:cfg.name,en:cfg.name,x:p.reduce((s,a)=>s+a[0],0)/p.length,z:p.reduce((s,a)=>s+a[1],0)/p.length,y:shape.top+4});
   }
   if(C?.n>1100&&D.buildings?.length)roadside(B,D,C,hAt,surfAt,result);
   for(const[kind,b]of Object.entries(B)){if(!b.p.length)continue;const m=b.mesh(kind);scene.add(m);result.metadata.drawCalls++;}

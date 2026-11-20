@@ -13,7 +13,7 @@ export const eastRoadStyles=Object.freeze([
 export const eastSpeedMarks=Object.freeze([{progress:359,photos:[67]},{progress:576,photos:[76]},{progress:607,photos:[77]}]);
 export const eastBumps=Object.freeze([
   {progress:94,progressRange:[84,104],photoNumbers:[58],evidence:'Yellow/white hump foreground at the E6-5 west approach; aligned to existing OSM node11740688257 within camera-position uncertainty.',matchedOsmId:11740688257},
-  {progress:413,progressRange:[403,423],photoNumbers:[69],evidence:'Yellow/white hump immediately south-east of E19 at the bend.'},
+  {progress:405,progressRange:[403,413],photoNumbers:[69],evidence:'Foreground hump across both lanes south-east of E19. The service entrances and their crosswalks are still ahead of the camera, roughly 15–20 m beyond the hump.'},
   {progress:487,progressRange:[477,497],photoNumbers:[71],evidence:'Hump ahead on the southern straight; matched to existing OSM node13895389602. Separate from the following junction hump.',matchedOsmId:13895389602},
   {progress:504,progressRange:[494,514],photoNumbers:[73],evidence:'Yellow/white hump foreground at the E2-1 junction; matched to existing OSM node13895374977.',matchedOsmId:13895374977},
   {progress:588,progressRange:[578,598],photoNumbers:[76],evidence:'Raised yellow/white crossing east of the main-gate junction; matched to existing OSM node13895377385.',matchedOsmId:13895377385},

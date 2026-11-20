@@ -219,8 +219,8 @@ export function createCampusMap(world,panoramas){
   full.onpointerup=e=>{if(!drag)return;const click=!drag.moved;drag=null;if(click){const p=point(e);select(p.x,p.z,null,false);}};full.onpointercancel=()=>{drag=null;};
   $('placeSearch').oninput=list;$('travel').onclick=()=>{if(selected&&!onTravel(selected))$('mapMessage').textContent='This spot is obstructed. Select another road nearby.';};
   new ResizeObserver(draw).observe(full);
-  return {update,initialPose(ref){
-    const place=ref && places.find(p=>p.ref===ref);
+  return {update,initialPose(destination){
+    const place=destination && (places.find(p=>p.ref===destination) || places.find(p=>p.name===destination));
     if(place){const arrival=vehicleApproach(place,segments,world.access);if(arrival)return arrival;}
     const s=snapToStreet(segments,159,462,world.access);if(!s)throw Error('Missing main gate road');if(Math.cos(s.th)>0)s.th+=Math.PI;return s;},
     show(p,travel){open=true;player=p;zoom=1;setFocus();selected=null;onTravel=travel;$('placeSearch').value='';list();refreshSelection();},hide(){open=false;drag=null;}};
