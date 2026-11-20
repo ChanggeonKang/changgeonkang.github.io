@@ -102,6 +102,31 @@ export function buildCapturedRoadside(scene, D, C, hAt, surfAt) {
     metadata.models.push({id,kind,photos,progress:f.i,x:f.x,z:f.z,estimated:true,lengthM:length,depthM:depth,minimumCorridorMarginM:min,...extra}); return true;
   };
 
+  // The left bank on the W11 bend carries two boards facing the two approaches.
+  // Orient each face to its approaching driver so the arrows read correctly.
+  function bendBoard(progress, approach, direction) {
+    const f = frame(progress,1,2.9), facing = -direction;
+    if (!register('w11-bend-board-'+progress,'curve-chevron-board',[9,10],f,2.8,2.8)) return;
+    const nx = C.tx[approach]*facing, nz = C.tz[approach]*facing;
+    const angle = Math.atan2(nx,nz), y = ground(f.x,f.z);
+    const at = (across,height,depth) => new THREE.Vector3(f.x+nz*across+nx*depth,y+height,f.z-nx*across+nz*depth);
+    for (const across of [-.79,.79]) rod(solid,at(across,0,0),at(across,2.15,0),.055,0x778078);
+    box(solid,f.x,y+1.65,f.z,2.36,1.23,.085,0x727876,angle);
+    function face(left,right,bottom,top,color,depth) {
+      solid.quad(at(left,bottom,depth),at(right,bottom,depth),at(right,top,depth),at(left,top,depth),color);
+    }
+    face(-1.15,1.15,1.31,2.23,0xe8b31c,.047);
+    face(-1.15,1.15,1.06,1.30,direction>0 ? 0x9e4039 : 0x3a607c,.047);
+    for (const mid of [-.74,0,.74]) {
+      for (const [top,bottom,dTop,dBottom] of [[2.23,1.77,-.31,0],[1.77,1.31,0,-.31]]) {
+        const a = mid+dTop*direction, b = mid+dBottom*direction;
+        solid.quad(at(b-.14,bottom,.052),at(b+.14,bottom,.052),at(a+.14,top,.052),at(a-.14,top,.052),0x232729);
+      }
+    }
+  }
+  bendBoard(1318,1331,-1);
+  bendBoard(1323,1311,1);
+
   function wall(from,to,side,extra,height,depth,kind,photos,color) {
     for(let i=from;i<=to;i+=2){const f=frame(i,side,extra),length=3.85;
       if(!register(`${kind}-${i}`,kind,photos,f,length,depth))continue;

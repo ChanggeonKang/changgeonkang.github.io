@@ -33,15 +33,72 @@ export function getStreetscapeZones(C) {
 function random(seed){let s=seed>>>0;return()=>((s=(Math.imul(s,1664525)+1013904223)>>>0)/4294967296);}
 const transform=(x,y,z,sx=1,sy=1,sz=1,rz=0)=>new THREE.Matrix4().compose(new THREE.Vector3(x,y,z),new THREE.Quaternion().setFromEuler(new THREE.Euler(0,0,rz)),new THREE.Vector3(sx,sy,sz));
 function merge(parts,foliage=false){
-  const pos=[],nor=[],cols=[];
-  for(const [input,matrix,colour=0xffffff]of parts){const g=input.index?input.toNonIndexed():input,P=g.attributes.position,N=g.attributes.normal,nm=new THREE.Matrix3().getNormalMatrix(matrix),v=new THREE.Vector3(),c=new THREE.Color(colour);
-    for(let i=0;i<P.count;i++){v.fromBufferAttribute(P,i).applyMatrix4(matrix);pos.push(v.x,v.y,v.z);const mottling=foliage?.87+.13*Math.sin(v.x*89+v.y*121+v.z*103):1;v.fromBufferAttribute(N,i).applyMatrix3(nm).normalize();nor.push(v.x,v.y,v.z);cols.push(c.r*mottling,c.g*mottling,c.b*mottling);}if(g!==input)g.dispose();input.dispose();}
-  const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));g.setAttribute('normal',new THREE.Float32BufferAttribute(nor,3));g.setAttribute('color',new THREE.Float32BufferAttribute(cols,3));g.computeBoundingSphere();return g;
+  const pos=[],nor=[],cols=[],uv=[];
+  for (const [input, matrix, colour=0xffffff] of parts) {
+    const g = input.index ? input.toNonIndexed() : input;
+    const {position, normal, uv: inputUV} = g.attributes;
+    const normalMatrix = new THREE.Matrix3().getNormalMatrix(matrix), v = new THREE.Vector3(), c = new THREE.Color(colour);
+    for (let i = 0; i < position.count; i++) {
+      v.fromBufferAttribute(position,i).applyMatrix4(matrix);
+      pos.push(v.x,v.y,v.z);
+      const mottling = foliage ? .87 + .13 * Math.sin(v.x*89 + v.y*121 + v.z*103) : 1;
+      v.fromBufferAttribute(normal,i).applyMatrix3(normalMatrix).normalize();
+      nor.push(v.x,v.y,v.z);
+      cols.push(c.r*mottling,c.g*mottling,c.b*mottling);
+      if (foliage) uv.push(inputUV.getX(i),inputUV.getY(i));
+    }
+    if (g !== input) g.dispose();
+    input.dispose();
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos,3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(nor,3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(cols,3));
+  if (foliage) g.setAttribute('uv', new THREE.Float32BufferAttribute(uv,2));
+  g.computeBoundingSphere();
+  return g;
+}
+// A small seamless, mipmapped spray pattern breaks up the smooth topiary at
+// driver height. Both rows share this generated texture and their existing draws.
+function evergreenTexture() {
+  const size = 128, pixels = new Uint8Array(size * size * 4), rand = random(20426);
+  for (let i = 0; i < pixels.length; i += 4) {
+    const shade = 171 + Math.floor(rand() * 42);
+    pixels.set([shade, shade, shade, 255], i);
+  }
+  for (let clump = 0; clump < 380; clump++) {
+    const x = size * rand(), y = size * rand(), angle = rand() * Math.PI * 2;
+    const shade = 76 + Math.floor(179 * rand());
+    for (let spray = -1; spray <= 1; spray++) {
+      const dx = Math.cos(angle + spray * .5), dy = Math.sin(angle + spray * .5);
+      for (let step = 0; step < 4; step++) {
+        const u = (Math.floor(x + dx * step) + size) % size, v = (Math.floor(y + dy * step) + size) % size;
+        const i = (v * size + u) * 4;
+        pixels[i] = shade; pixels[i + 1] = Math.min(255, shade + 5); pixels[i + 2] = Math.floor(shade * .93);
+      }
+    }
+  }
+  const tex = new THREE.DataTexture(pixels, size, size);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(3, 2);
+  tex.generateMipmaps = true; tex.minFilter = THREE.LinearMipmapLinearFilter; tex.magFilter = THREE.LinearFilter;
+  tex.needsUpdate = true;
+  return tex;
+}
+function crownLobe(seed) {
+  const geometry = new THREE.IcosahedronGeometry(1, 2), p = geometry.attributes.position;
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+    // The same position gets the same scale on both sides of each UV seam.
+    const offset = .065 * Math.sin(13*x + 7*z + seed) * Math.cos(11*y - 4*z)
+      + .032 * Math.cos(21*z - 9*x + seed);
+    p.setXYZ(i, x*(1+offset), y*(1+offset), z*(1+offset));
+  }
+  return geometry;
 }
 function foliageTemplate(kind){
   const lobes=kind==='sculpted'?[[0,.2,0,.38,.19,.31],[.03,.43,.02,.34,.18,.29],[-.04,.65,-.015,.31,.18,.28],[.015,.85,0,.28,.17,.25],[-.2,.35,.01,.19,.15,.23],[.17,.59,.02,.2,.16,.22]]:
     [[0,.87,0,.29,.13,.27],[-.18,.68,.04,.27,.12,.24],[.19,.73,-.04,.27,.12,.25],[-.03,.99,-.04,.23,.1,.23],[.03,.58,.16,.24,.12,.22],[-.13,.82,-.18,.23,.11,.2],[.16,.89,.13,.22,.11,.2]];
-  return merge(lobes.map(([x,y,z,a,b,c],i)=>[new THREE.IcosahedronGeometry(1,2),transform(x,y,z,a,b,c),i%2?0xe9edde:0xffffff]),true);
+  return merge(lobes.map(([x,y,z,a,b,c],i)=>[crownLobe(i+.4),transform(x,y,z,a,b,c),i%2?0xe9edde:0xffffff]),true);
 }
 function trunkTemplate(kind){
   const a=kind==='sculpted'?.85:.97;
@@ -66,9 +123,9 @@ function permitted(x,z,r,C,surfAt){
   }
   return true;
 }
-function addPlants(scene,list,kind,crown,trunk){
+function addPlants(scene,list,kind,crown,trunk,leafMap){
   if(!list.length){crown.dispose();trunk.dispose();return[];}
-  const leaf=new THREE.InstancedMesh(crown,new THREE.MeshStandardMaterial({vertexColors:true,roughness:.96,envMapIntensity:.4}),list.length);
+  const leaf=new THREE.InstancedMesh(crown,new THREE.MeshStandardMaterial({map:leafMap,vertexColors:true,roughness:.96,envMapIntensity:.4}),list.length);
   const wood=new THREE.InstancedMesh(trunk,new THREE.MeshStandardMaterial({vertexColors:true,color:kind==='sculpted'?0x62513e:0x705d49,roughness:1}),list.length);
   const matrix=new THREE.Matrix4(),rotation=new THREE.Quaternion(),colour=new THREE.Color();
   list.forEach((a,i)=>{rotation.setFromAxisAngle(new THREE.Vector3(0,1,0),a.rotation);matrix.compose(new THREE.Vector3(a.x,a.y,a.z),rotation,new THREE.Vector3(a.width,a.height,a.width));leaf.setMatrixAt(i,matrix);wood.setMatrixAt(i,matrix);leaf.setColorAt(i,colour.setHSL(kind==='sculpted'?.255:.31,kind==='sculpted'?.29:.22,a.light,THREE.SRGBColorSpace));a.matrix=matrix.toArray();});
@@ -94,14 +151,14 @@ function apartmentDetails(scene,D,hAt){
 
 export function buildStreetscape(scene,D,C,hAt,surfAt){
   const list=samples(C),rand=random(20260426),plants={sculpted:[],pine:[]},models=[];
-  const templates={sculpted:foliageTemplate('sculpted'),pine:foliageTemplate('pine')};
+  const templates={sculpted:foliageTemplate('sculpted'),pine:foliageTemplate('pine')}, leafMap=evergreenTexture();
   for(const[kind,stride]of[['sculpted',2],['pine',4]]){
     const template=templates[kind],unitRadius=radiusOf(template);
     for(let k=kind==='pine'?1:0;k<list.length;k+=stride){const a=list[k],height=kind==='sculpted'?4.7+rand()*1.25:11.5+rand()*3.7,width=height*(kind==='sculpted'?.96:.69),radius=unitRadius*width;
       const off=a.half+radius+(kind==='sculpted'?1.25:7.3),along=(rand()-.5)*.9,x=a.x+a.tz*off+a.tx*along,z=a.z-a.tx*off+a.tz*along;
       if(!permitted(x,z,radius,C,surfAt))continue;const y=hAt(x,z);if(!Number.isFinite(y))continue;
       plants[kind].push({x,y,z,height,width,radius,rotation:rand()*Math.PI*2,light:kind==='sculpted'?.255+rand()*.045:.27+rand()*.05,courseClearanceM:courseMargin(x,z,C)-radius,estimated:true});
-    }models.push(...addPlants(scene,plants[kind],kind,template,trunkTemplate(kind)));
+    }models.push(...addPlants(scene,plants[kind],kind,template,trunkTemplate(kind),leafMap));
   }
   const apartments=apartmentDetails(scene,D,hAt);models.push(...apartments.models);
   const metadata={area:'W4-1/W4-2 western approach',source:'User streetview frame and OSM building footprints/levels',nearbyReferenceLink:'https://naver.me/xIF5lerm',referenceDates:'Attached frame appears to show clipped 2026-04; separate linked panoramas were reported by root as 2025-04. They are not treated as the same capture.',treePositions:'Estimated roadside rows; not individual surveyed trees',sculptedEvergreens:plants.sculpted.length,pines:plants.pine.length,drawCalls:models.length,minimumCourseClearanceM:Math.min(...Object.values(plants).flat().map(a=>a.courseClearanceM)),collisionAdded:false};

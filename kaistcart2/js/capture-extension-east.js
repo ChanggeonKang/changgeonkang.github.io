@@ -37,7 +37,7 @@ const CONFIG={
 const ID_CONFIG={
  1524527051:{style:'parkingFins',height:15.2,floors:4,color:0xcdd6d5,photos:[67],confidence:'medium footprint-relative match; not a legible source reference'},
  543304604:{style:'ribbon',height:19.1,floors:5,color:0xe0e2dc,photos:[71,72],confidence:'medium; candidate E3-1 slab, source has no reference so no new ref assigned'},
- 1524577593:{style:'glassPiers',height:22.5,floors:6,color:0xd4dcd9,photos:[71,72],confidence:'medium; source footprint of Krafton SoC building behind entrance canopy'},
+ 1524577593:{style:'socTower',height:22.5,floors:6,color:0xd9dedc,photos:[71,72],confidence:'E3-5 footprint and KAIST exterior confirmed; bay widths and elevation are approximate'},
  1290618742:{style:'gasStore',height:4.2,floors:1,color:0xd4d6cf,photos:[69],confidence:'medium; OSM names this a cooling-gas store, tank dimensions are visual estimates'}
 };
 const mix=(a,b,t)=>a+(b-a)*t,clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
@@ -56,9 +56,47 @@ function faces(p,fn){const s=Math.sign(p.reduce((v,a,i)=>{const b=p[(i+1)%p.leng
 function panel(B,a,b,t0,t1,y0,y1,c,n){t0=clamp(t0,0,1);t1=clamp(t1,0,1);if(t1<=t0||y1<=y0)return;const pt=(t,y)=>[mix(a[0],b[0],t),y,mix(a[1],b[1],t)];B.quad(pt(t0,y0),pt(t1,y0),pt(t1,y1),pt(t0,y1),c,n);}
 function roof(B,p,y,c){for(const t of THREE.ShapeUtils.triangulateShape(p.map(q=>new THREE.Vector2(...q)),[]))B.tri(...t.map(i=>[p[i][0],y,p[i][1]]),c,[0,1,0]);}
 function interior(p,r){const xs=p.map(a=>a[0]),zs=p.map(a=>a[1]);let best=null,clear=r;for(let x=Math.min(...xs)+r;x<Math.max(...xs)-r;x+=2)for(let z=Math.min(...zs)+r;z<Math.max(...zs)-r;z+=2){if(inPoly(x,z,p)){const d=boundary(x,z,p);if(d>clear){best=[x,z];clear=d;}}}return best;}
+// KAIST's E3-5 exterior (news.kaist.ac.kr/news/html/news/?mode=V&mng_no=46670)
+// and captures 71–72 show four rows of punched upper windows above two glazed
+// levels. Its blue end glazing wraps the corner. The detached parking shade
+// in those views is a separate structure with an unresolved ground position.
+function socFacade(B, p, base, height) {
+ const axis = ([x,z]) => x * .53 + z * .85;
+ const endBay = Math.max(...p.map(axis)) - 9;
+ const step = height / 6;
+ faces(p, (a,b,length,normal) => {
+  const strip = (batch,left,right,low,high,color) => panel(batch,a,b,left,right,base+low,base+high,color,normal);
+  const bays = Math.max(1, Math.round(length / 3.55));
+  strip(B.glass,0,1,.3,2*step,0x48869a);
+  for(let j=0; j<bays; j++){
+   const left = j/bays, right = (j+1)/bays;
+   const glazedEnd = mix(axis(a),axis(b),(left+right)/2) >= endBay;
+   if(glazedEnd){
+    strip(B.glass,left,right,2*step,height-1,j%2 ? 0x397d90 : 0x458798);
+   }else{
+    for(let f=2; f<6; f++){
+     const low = f*step+.48, high = Math.min((f+1)*step-.72,height-1.12);
+     strip(B.glass,left+.15/bays,right-.11/bays,low,high,0x426c80);
+     strip(B.detail,left+.15/bays,right-.11/bays,low,low+.22,0x749aa4);
+    }
+   }
+   const mullionTop = glazedEnd ? height-.18 : 2*step;
+   strip(B.detail,left,left+.07/length,.3,mullionTop,0xaab8b9);
+   strip(B.glass,left,right,height-1,height-.18,0x448d9f);
+   for(let f=1; f<6; f++){
+    if(f<2 || glazedEnd) strip(B.detail,left,right,f*step-.04,f*step+.04,0xb0bdbc);
+    else for(const drop of [.06,.29,.52]) strip(B.detail,left,right,f*step-drop-.10,f*step-drop,0xadb5b6);
+   }
+  }
+ });
+}
 function building(B,b,cfg,hAt){
  const p=b.p,ref=b.ref,base=Math.min(...p.map(a=>hAt(...a)))-.4,H=cfg.height,top=base+H,style=cfg.style;
  faces(p,(a,b,L,n)=>panel(B.wall,a,b,0,1,base,top,cfg.color,n));roof(B.wall,p,top,0x78817e);
+ if(style==='socTower'){
+  socFacade(B,p,base,H);
+  return {base,height:H,top,footprintPreserved:true,sourcePhotos:cfg.photos,style,dimensionStatus:'Six above-ground floors confirmed by KAIST; metric height estimated.',confidence:cfg.confidence};
+ }
  faces(p,(a,b,L,n)=>{
   if(L<1.2)return;const slots=Math.max(1,Math.round(L/(style==='ibsFins'?1.35:style==='ribs'?.85:3.1)));
   if(['ribs','ibsFins','parkingFins'].includes(style)){
@@ -174,6 +212,6 @@ export function buildCaptureEast(scene,D,C,hAt,surfAt){
  // Bias depth, not x/z, so grazing-angle precision cannot produce stippling.
  const models=[];for(const[k,v]of Object.entries(B)){const layer=k==='glass'?-2:k==='detail'?-3:0;const m=v.mesh(`east-buildings-${k}`,new THREE.MeshStandardMaterial({vertexColors:true,roughness:k==='glass'?.3:.84,metalness:k==='glass'?.18:0,polygonOffset:layer!==0,polygonOffsetFactor:layer,polygonOffsetUnits:layer}));if(m){m.renderOrder=k==='glass'?1:k==='detail'?2:0;scene.add(m);models.push(m);}}
  const nature=vegetation(scene,D,C,hAt,surfAt),road=roadside(scene,D,C,hAt,surfAt);models.push(...nature.models,...road.models);
- const metadata={source:'Direct review of 25 user April 2025 captures, audit/capture-review-56-78.json',sourceImages:[...Array.from({length:23},(_,i)=>`${i+56}.png`),'77_left.png','77_right.png'],buildingCount:buildings.length,buildings,buildingVertexRanges:ranges,plantCounts:Object.fromEntries(['cherry','bare','pine','sculpted','conifer','shrub'].map(k=>[k,nature.plants.filter(p=>p.kind===k).length])),zoneCounts:nature.zoneCounts,drawCalls:models.length,triangles:models.reduce((s,m)=>s+(m.geometry.index?.count||m.geometry.attributes.position.count)/3*(m.isInstancedMesh?m.count:1),0),assumptions:'All facade heights, decorative equipment and individual vegetation positions are estimated. Source footprints retained. No photograph pixels distributed.',retainedModels:['E16-1 existing capture architecture','E9 official landmark model','existing gate pylons/guardhouse','W16 west-extension ownership'],notReconstructed:['E6-6 external bridge: exact connector footprint unresolved','E3 tilted external entrance canopy: projection extent unresolved','Bicycle shelters: candidate locations rejected by mapped pavement/road clearance; images retained as evidence','Some parking-edge tree rows: conservative crown tests reject mapped parking overlap; see zero-count zones','77_right central avenue median: off race alignment; preserve source road geometry'],physicalSurfaceChanged:false,courseGeometryChanged:false};
+ const metadata={source:'Direct review of 25 user April 2025 captures, audit/capture-review-56-78.json',sourceImages:[...Array.from({length:23},(_,i)=>`${i+56}.png`),'77_left.png','77_right.png'],buildingCount:buildings.length,buildings,buildingVertexRanges:ranges,plantCounts:Object.fromEntries(['cherry','bare','pine','sculpted','conifer','shrub'].map(k=>[k,nature.plants.filter(p=>p.kind===k).length])),zoneCounts:nature.zoneCounts,drawCalls:models.length,triangles:models.reduce((s,m)=>s+(m.geometry.index?.count||m.geometry.attributes.position.count)/3*(m.isInstancedMesh?m.count:1),0),assumptions:'All facade heights, decorative equipment and individual vegetation positions are estimated. Source footprints retained. No photograph pixels distributed.',retainedModels:['E16-1 existing capture architecture','E9 official landmark model','existing gate pylons/guardhouse','W16 west-extension ownership'],notReconstructed:['E6-6 external bridge: exact connector footprint unresolved','Detached E3 parking shade in 71–72: supporting posts and parking bay not mapped','Bicycle shelters: candidate locations rejected by mapped pavement/road clearance; images retained as evidence','Some parking-edge tree rows: conservative crown tests reject mapped parking overlap; see zero-count zones','77_right central avenue median: off race alignment; preserve source road geometry'],physicalSurfaceChanged:false,courseGeometryChanged:false};
  return{handledIds,labels,metadata,models,plants:nature.plants,roadsideItems:road.items,zones:ZONES};
 }

@@ -371,15 +371,101 @@ function e13(b, p, base, { stone, metal, glass }) {
   return { top: focus[1] + .65, approximateBuildingHeightM: 11.6, antennaDiameterM: 13, antennaCenter: [x,z], antennaPlacement: 'eastern rooftop in official illustrated campus map; center and vertical orientation approximate', features: ['13m parabolic dish', 'radial backing truss', 'tripod feed', 'tapered rooftop pedestal'] };
 }
 
-function westDorm(b, p, base, { stone, metal, glass }) {
+// Photos 99–102 and 102_right show the street-facing slab carried on columns.
+// Set the windows behind the fins and the lobby behind the columns so both
+// recesses have real depth when seen obliquely from the kart.
+function westStreetFront(a, b, n, base, top, floors, accent, blueEnd, { stone, metal, glass }) {
+  const length = Math.hypot(b[0] - a[0], b[1] - a[1]);
+  const along = [(b[0] - a[0]) / length, 0, (b[1] - a[1]) / length];
+  const opposite = [-along[0], 0, -along[2]];
+  const point = (t, depth) => [mix(a[0], b[0], t) - n[0] * depth, mix(a[1], b[1], t) - n[2] * depth];
+  const xyz = (pt, y) => [pt[0], y, pt[1]];
+  const white = tint(0xe1e3de), soffit = tint(0xabb2af), darkGlass = tint(0x3c606c);
+  const lintel = base + 3.3, cap = top - .35;
+  const bays = Math.round(length / 2.35);
+  for (let j = 0; j < bays; j++) {
+    const t = fraction => (j + fraction) / bays;
+    if (blueEnd && (b[1] > a[1] ? j >= bays - 2 : j < 2)) {
+      facade(metal, a, b, t(0), t(1), lintel, cap, accent, n);
+      continue;
+    }
+    const left = point(t(.31), 0), right = point(t(.73), 0);
+    const rearLeft = point(t(.37), .32), rearRight = point(t(.68), .32);
+    facade(stone, a, b, t(0), t(.31), lintel, cap, white, n);
+    facade(stone, a, b, t(.73), t(1), lintel, cap, white, n);
+    facade(metal, a, b, t(.73), t(.81), lintel, cap, accent, n);
+    facade(metal, left, rearLeft, 0, 1, lintel, cap, accent, along);
+    facade(metal, right, rearRight, 0, 1, lintel, cap, accent, opposite);
+    facade(glass, rearLeft, rearRight, 0, 1, lintel, cap, darkGlass, n);
+    for (let floor = 1; floor < floors; floor++) {
+      const y = base + floor * 3.2;
+      facade(metal, rearLeft, rearRight, 0, 1, y + .45, y + .83, soffit, n);
+    }
+  }
+  facade(metal, a, b, 0, 1, cap, top, white, n);
+  const setback = 3.0, end = 1.2 / length;
+  const frontLeft = point(end, 0), frontRight = point(1 - end, 0);
+  const backLeft = point(end, setback), backRight = point(1 - end, setback);
+  facade(stone, a, b, 0, end, base, lintel, white, n);
+  facade(stone, a, b, 1 - end, 1, base, lintel, white, n);
+  facade(stone, frontLeft, backLeft, 0, 1, base, lintel, soffit, along);
+  facade(stone, frontRight, backRight, 0, 1, base, lintel, soffit, opposite);
+  facade(glass, backLeft, backRight, 0, 1, base, lintel, darkGlass, n);
+  stone.quad(...[frontLeft, frontRight, backRight, backLeft].map(pt => xyz(pt, lintel)), soffit, [0, -1, 0]);
+  const posts = Math.ceil(length / 6.5);
+  for (let j = 0; j < posts; j++) {
+    const t = (j + .5) / posts, [x,z] = point(t, .9);
+    const h = lintel - base;
+    stone.geometry(new THREE.CylinderGeometry(.39, .44, h, 10), x, base + h / 2, z, white);
+    facade(metal, backLeft, backRight, t - .005, t + .005, base, lintel, soffit, n);
+  }
+}
+
+// Green W4 codes sit just below the roof at the corner visible from photo 99.
+// Build the four glyphs in the existing metal batch, like E16's clock hands.
+function westDormCode(metal, p, sign, top, ref) {
+  const faces = p.map((a, i) => {
+    const b = p[(i + 1) % p.length], n = faceNormal(a, b, sign);
+    return {a, b, n, length:Math.hypot(b[0] - a[0], b[1] - a[1])};
+  }).filter(face => face.n[2] > .9 && face.length > 5.5);
+  const face = faces.sort((u,v) => Math.min(u.a[0],u.b[0]) - Math.min(v.a[0],v.b[0]))[0];
+  if (!face) return;
+  const {a,b,n,length} = face, left = a[0] < b[0] ? a : b, right = left === a ? b : a;
+  const at = (x, y) => [mix(left[0],right[0],(.35+x)/length), top-1.35+y, mix(left[1],right[1],(.35+x)/length)];
+  const glyphs = {
+    W: [[0,1],[.22,0],[.5,.62],[.77,0],[1,1]],
+    '4': [[.63,0],[.63,1],[0,.35],[.85,.35]], '-': [[.05,.42],[.53,.42]],
+    '1': [[.12,.76],[.4,1],[.4,0]], '2': [[.02,.78],[.18,1],[.62,1],[.76,.8],[.73,.63],[.04,0],[.79,0]]
+  };
+  const advance = {W:1.25,'4':1.05,'-':.76,'1':.6,'2':.96};
+  const ink = tint(0x518349);
+  let offset = 0;
+  for (const ch of ref) {
+    const segments = glyphs[ch];
+    for (let i=1; i<segments.length; i++) {
+      const [x,y] = segments[i-1], [xx,yy] = segments[i], len = Math.hypot(xx-x,yy-y);
+      const u = (yy-y)*.085/len, v = (x-xx)*.085/len;
+      metal.quad(at(offset+x+u,y+v),at(offset+xx+u,yy+v),at(offset+xx-u,yy-v),at(offset+x-u,y-v),ink,n);
+    }
+    offset += advance[ch];
+  }
+}
+
+function westDorm(b, p, base, batches) {
   // The user's April-2026 streetview frame identifies W4-2 in blue, with the
   // yellow-finned W4-1 in front. Footprints/levels are OSM; all facade dimensions
   // and the inferred 3.2m storey height are approximate, not a measured elevation.
   const floors=b.lv|| (b.ref==='W4-1'?6:8), top=base+floors*3.2+1.1, white=tint(0xe0e3dc), dark=tint(0x34565c), accent=tint(b.ref==='W4-1'?0xbba544:0x4c91bc), sign=areaSign(p);
-  volume(stone,p,base,top,white,tint(0xb9c1bf));
+  const { stone, metal, glass } = batches;
+  roof(stone, p, top, tint(0xb9c1bf));
   p.forEach((a,i)=>{
     const q=p[(i+1)%p.length], L=Math.hypot(q[0]-a[0],q[1]-a[1]);if(L<1)return;
     const n=faceNormal(a,q,sign), count=Math.max(1,Math.round(L/2.25));
+    if (L > 25 && n[0] < -.75 && n[2] > .25) {
+      westStreetFront(a, q, n, base, top, floors, accent, b.ref === 'W4-2', batches);
+      return;
+    }
+    facade(stone, a, q, 0, 1, base, top, white, n);
     const roadFace=n[0]<-.25, shortEnd=L>8&&L<20;
     if(b.ref==='W4-2'&&shortEnd&&n[1]===0&&n[2]<-.1)facade(metal,a,q,0,1,base+3.3,top-.35,accent,n);
     for(let j=0;j<count;j++){
@@ -401,8 +487,9 @@ function westDorm(b, p, base, { stone, metal, glass }) {
     facade(metal,a,q,0,1,base+2.75,base+3.3,white,n);
     facade(metal,a,q,0,1,top-.35,top,white,n);
   });
+  westDormCode(metal, p, sign, top, b.ref);
   const plant=fitRectangle(p,[[7,4],[5,3]],'north');if(plant)volume(stone,plant,top,top+2.3,tint(0xbcc4c0));
-  return {top:top+(plant?2.3:0),approximateHeightM:floors*3.2+1.1,sourceLevels:floors,features:['white vertical panel facade',b.ref==='W4-1'?'yellow upright fins':'white upright fins and blue end panel','glazed ground floor'],photoReference:'User-attached streetview image (exact panorama ID not matched); separately supplied nearby Naver link https://naver.me/xIF5lerm. Dimensions and individual fin placement estimated'};
+  return {top:top+(plant?2.3:0),approximateHeightM:floors*3.2+1.1,sourceLevels:floors,features:['white vertical panel facade',b.ref==='W4-1'?'yellow upright fins':'blue fin reveals and white cladding','recessed windows','open column arcade with set-back lobby'],photoReference:'map_resource/99.png, 100.png, 101.png and 102_right.png; arcade depth and column spacing estimated from street views'};
 }
 
 /** Build source-footprint landmarks, return refs safe to omit from generic buildings. */

@@ -96,6 +96,55 @@ function roadClear(x,z,r,D,allowFootwayCrown=false){for(const road of D.roads||[
 function safe(x,z,r,D,C,surfAt,parkingOverride=false){if(clearance(x,z,C)<r+.7)return false;if((D.buildings||[]).some(b=>inside(x,z,b.p)||edgeDistance(x,z,b.p)<r+.15))return false;const allowParking=parkingOverride&&isCaptureWestParkingOverride(x,z)&&(D.parking||[]).some(p=>inside(x,z,p.p))&&roadClear(x,z,r,D,true);for(let k=0;k<12;k++){const a=k/12*Math.PI*2,xx=x+Math.cos(a)*r,zz=z+Math.sin(a)*r,s=surfAt(xx,zz);if([3,8,9].includes(s)||(s===2&&(!allowParking||!isCaptureWestParkingOverride(xx,zz))))return false;}return ![3,8,9].includes(surfAt(x,z))&&(surfAt(x,z)!==2||allowParking);}
 function ellipsoid(B,x,y,z,sx,sy,sz,c){B.geometry(new THREE.IcosahedronGeometry(1,1).scale(sx,sy,sz).translate(x,y,z),c);}
 function plant(B,x,z,h,kind,hAt){const y=hAt(x,z);B.detail.geometry(new THREE.CylinderGeometry(.12,.2,h*.8,7).translate(x,y+h*.4,z),colour(0x695d4b));if(kind==='sculpted'){for(let k=0;k<4;k++)ellipsoid(B.foliage,x+Math.sin(k*2)*.16,y+1.05+k*.9,z,2.3-k*.27,.88,1.7-k*.18,colour(k%2?0x536348:0x4c5e43));}else if(kind==='pine'){for(let k=0;k<4;k++)ellipsoid(B.foliage,x+Math.sin(k*2)*.55,y+h*(.6+k*.105),z+Math.cos(k)*.45,3-k*.35,1.25,2.7-k*.22,colour(k%2?0x3f5c4a:0x496550));}else{for(let k=0;k<4;k++)ellipsoid(B.foliage,x+Math.sin(k*2.1)*1.2,y+h*.7+k*.45,z+Math.cos(k*2.1),2.1,1.9,2.1,colour(k%2?0x68774e:0x718058));}}
+// Photos 86–88 show rectangular concrete cells across a grassy sloping bank.
+// The rail follows its crest. The embankment is scenery outside the race walk.
+function kistiBank(B, C, hAt, surfAt, objects) {
+  const grass = [0x869660,0x8c9763,0x919963].map(colour);
+  const concrete = colour(0xb3af98), toe = 2.75, crest = 5.3, rise = 1.1;
+  const start = 790, end = 828;
+  function cross(i) {
+    const point = (offset,lift) => {
+      const p = pose(C,i,1,offset);
+      return [p.x,hAt(p.x,p.z)+lift,p.z];
+    };
+    // Taper both ends into the surrounding terrain, avoiding abrupt end walls.
+    const height = rise * Math.min(1,(i-start)/3,(end-i)/3);
+    return [point(toe,.20),point(crest,.28+height),point(crest+.75,.26+height),point(crest+2.5,.04)];
+  }
+  const between = (a,b,t) => a.map((value,k) => lerp(value,b[k],t));
+  function rail(a,b,r) {
+    const first = new THREE.Vector3(...a), last = new THREE.Vector3(...b);
+    const d = last.clone().sub(first);
+    const g = new THREE.CylinderGeometry(r,r,d.length(),6);
+    g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),d.normalize()));
+    g.translate((a[0]+b[0])/2,(a[1]+b[1])/2,(a[2]+b[2])/2);
+    B.detail.geometry(g,P.silver);
+  }
+  let needsPost = true;
+  for(let i=start;i<end;i+=2){
+    const a = cross(i), b = cross(i+2);
+    if([...a,...b].some(([x,,z]) => [2,3,8,9].includes(surfAt(x,z)))) { needsPost=true; continue; }
+    for(let j=0;j<3;j++) B.foliage.quad(a[j],b[j],b[j+1],a[j+1],grass[(i/2+j)%grass.length]);
+    function rib(u0,u1,v0,v1) {
+      const surface = (u,v) => {
+        const p = between(between(a[0],b[0],u),between(a[1],b[1],u),v);
+        p[1]+=.025;
+        return p;
+      };
+      B.detail.quad(surface(u0,v0),surface(u1,v0),surface(u1,v1),surface(u0,v1),concrete);
+    }
+    for(const v of [.08,.42,.76]) rib(0,1,v,v+.034);
+    for(const u of [0,.33,.66]) rib(u,u+.025,.05,.79);
+    const post = p => rail(p,[p[0],p[1]+1.04,p[2]],.05);
+    if(needsPost) post(a[2]);
+    post(b[2]);
+    needsPost=false;
+    for(const h of [.33,.65,1.0]) rail([a[2][0],a[2][1]+h,a[2][2]],[b[2][0],b[2][1]+h,b[2][2]],.033);
+    const [x,,z] = a[2];
+    objects.push({x,z,radius:.08,kind:'low silver pedestrian rail',progress:i,photos:[86,87,88],clearanceM:clearance(x,z,C)-.08});
+    objects.push({x:a[0][0],z:a[0][2],radius:0,kind:'grass-block retaining bank',progress:i,photos:[86,87,88],clearanceM:Math.min(clearance(a[0][0],a[0][2],C),clearance(b[0][0],b[0][2],C)),estimated:true});
+  }
+}
 function roadside(B,D,C,hAt,surfAt,result){
   const objects=result.metadata.props;
   // Large freestanding lawn lettering is made from small solid glyph strokes,
@@ -113,8 +162,7 @@ function roadside(B,D,C,hAt,surfAt,result){
   for(let z=475;z<613;z++)for(let x=-384;x<-300;x++){if(!isCaptureWestParkingOverride(x+.5,z+.5)||surfAt(x+.5,z+.5)!==2||!(D.parking||[]).some(p=>inside(x+.5,z+.5,p.p))||!roadClear(x+.5,z+.5,.71,D))continue;const q=[[x,z],[x+1,z],[x+1,z+1],[x,z+1]];if(q.some(p=>!isCaptureWestParkingOverride(...p)||[3,8,9].includes(surfAt(...p))))continue;B.foliage.quad(...q.map(p=>[p[0],hAt(...p)+.225,p[1]]),colour(0x687954),[0,1,0]);}
   for(let i=898;i<=974;i+=7){const a=pose(C,i,1,10);if(a.z<470||!safe(a.x,a.z,3.8,D,C,surfAt))continue;plant(B,a.x,a.z,12.5,'pine',hAt);objects.push({...a,radius:3.8,kind:'pine',progress:i,photos:[94,95,96,97],clearanceM:clearance(a.x,a.z,C)-3.8});}
   for(let i=935;i<=971;i+=7){const a=pose(C,i,-1,5.3);if(!safe(a.x,a.z,3.4,D,C,surfAt))continue;plant(B,a.x,a.z,8.4,'deciduous',hAt);objects.push({...a,radius:3.4,kind:'parking-edge tree',progress:i,photos:[95,96,97],clearanceM:clearance(a.x,a.z,C)-3.4});}
-  // The photographed low rail beside the southern exit. Follow hAt per post.
-  for(let i=788;i<828;i+=2){const a=pose(C,i,1,1.3),b=pose(C,i+2,1,1.3);if(clearance(a.x,a.z,C)<.65||clearance(b.x,b.z,C)<.65)continue;const ya=hAt(a.x,a.z),yb=hAt(b.x,b.z),r=.045;B.detail.geometry(new THREE.CylinderGeometry(r,r,1.12,6).translate(a.x,ya+.56,a.z),P.silver);for(let j=0;j<3;j++){const y0=ya+.3+j*.31,y1=yb+.3+j*.31,pa=new THREE.Vector3(a.x,y0,a.z),pb=new THREE.Vector3(b.x,y1,b.z),d=pb.clone().sub(pa),g=new THREE.CylinderGeometry(.03,.03,d.length(),5);g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),d.normalize()));g.translate((a.x+b.x)/2,(y0+y1)/2,(a.z+b.z)/2);B.detail.geometry(g,P.silver);}objects.push({...a,radius:.08,kind:'low silver pedestrian rail',progress:i,photos:[86,87,88],clearanceM:clearance(a.x,a.z,C)-.08});}
+  kistiBank(B,C,hAt,surfAt,objects);
   // Round planters read clearly in the W16 walking strip; centre lane posts in
   // the photos are omitted because the race uses the full road width.
   for(let i=653;i<=687;i+=7){const a=pose(C,i,-1,1.7);if(clearance(a.x,a.z,C)<1.1||surfAt(a.x,a.z)===8)continue;const y=hAt(a.x,a.z);B.detail.geometry(new THREE.CylinderGeometry(.61,.4,.55,10).translate(a.x,y+.275,a.z),colour(0x746453));ellipsoid(B.foliage,a.x,y+.65,a.z,.53,.24,.53,colour(0x65734a));objects.push({...a,radius:.62,kind:'round planter',progress:i,photos:[79,80],clearanceM:clearance(a.x,a.z,C)-.62});}
