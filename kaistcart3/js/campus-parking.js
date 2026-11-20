@@ -151,13 +151,13 @@ export function buildParking(scene, D, hAt, surfAt, TEX = {}) {
     if (!Array.isArray(lot.p) || lot.p.length < 3 || lot.p.some(a=>!Array.isArray(a)||a.length<2||!a.every(Number.isFinite))) continue;
     const p = lot.p.filter((a,i)=>Array.isArray(a)&&a.length>=2&&a.every(Number.isFinite)&&(i===0||Math.hypot(a[0]-lot.p[i-1][0],a[1]-lot.p[i-1][1])>.01)).map(a=>a.slice(0,2));
     if(p.length>3&&Math.hypot(p[0][0]-p.at(-1)[0],p[0][1]-p.at(-1)[1])<.01)p.pop();
-    if(p.length<3||area(p)<12)continue;
+    if(p.length<3 || area(p)<.01)continue;
     const groundStart=asphalt.positions.length/3, paintStart=paint.positions.length/3;
     const holes=lot.holes || [], points=[...p,...holes.flat()];
     for (const triangle of THREE.ShapeUtils.triangulateShape(p.map(a=>new THREE.Vector2(...a)),holes.map(r=>r.map(a=>new THREE.Vector2(...a))))) {
       paveTriangle(asphalt,triangle.map(i=>points[i]),hAt);
     }
-    if(lot.apronOnly)continue;
+    if(lot.apronOnly || area(p)<12)continue;
     const A = axes(p), rand = random(hash(lot.id)), point = (u,v) => [A.u[0]*u+A.v[0]*v,A.u[1]*u+A.v[1]*v], lineKeys = new Set();
     const line = (a,b) => {const key=[a,b].map(p=>p.map(v=>v.toFixed(3)).join(',')).sort().join('|');if(!lineKeys.has(key)){lineKeys.add(key);stripe(paint,a,b,hAt);}};
     const record = {id:lot.id,name:lot.name||'',source:lot.source||'OpenStreetMap parking polygon',polygon:p,stalls:0,illustrativeCars:0,groundVertexStart:groundStart,groundVertexCount:asphalt.positions.length/3-groundStart,paintVertexStart:paintStart}; lots.push(record);
