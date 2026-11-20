@@ -6,18 +6,26 @@ import { Vehicle, RIDE } from './vehicle-physics.js';
 import { FixedStepper, syncRacer, updateProgress, resolveWalls } from './race-sim.js';
 import { resolveCourseBarrier } from './course-barriers.js';
 import { LapTracker, normalizeName } from './time-attack.js';
-import { createRecordsClient } from './leaderboard.js';
+import { createRecordsClient, recordDevice } from './leaderboard.js';
+import { stabilizeVehicle } from './stabilize.js';
+import { inputMask, ReplayUpload } from './replay-upload.js';
+import { replayPrediction, matchesReplay, restoreReplayState } from './replay-sync.js';
 import { snapshotLeader, compareSplit, timingProgress } from './split-times.js';
+import { attachCheckpointTower } from './checkpoint-standings.js';
 import { ROLLOVER_RECOVERY_SECONDS, advanceRolloverTimer, recoverOverturned } from './rollover-recovery.js';
 import { Particles, Skids, Post } from './fx.js';
 import { Sfx } from './audio.js';
-import { createMobileWheel } from './mobile-wheel.js';
 
 const $ = id => document.getElementById(id);
 const Q = new URLSearchParams(location.search);
+document.documentElement.classList.toggle('mobile-device', recordDevice() === 'mobile');
 const rnd = rng(99);
 const angDiff = (a, b) => { let d = a - b; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return d; };
 const fmt = t => { const m = Math.floor(t / 60), s = t - m * 60; return m + ':' + (s < 10 ? '0' : '') + s.toFixed(2); };
+function officialTime(ms) {
+  const seconds = Math.floor(ms / 1000) % 60;
+  return Math.floor(ms / 60000) + ':' + String(seconds).padStart(2, '0') + '.' + String(ms % 1000).padStart(3, '0');
+}
 
 // ───────────────────────── renderer ─────────────────────────
 const renderer = new THREE.WebGLRenderer({ canvas: $('gl'), antialias: true, powerPreference: 'high-performance' });
@@ -35,8 +43,7 @@ scene.add(sun, sun.target);
 const post = new Post(renderer);
 
 const QUAL = [{ pr: 1.5, shadow: 2048, msaa: 4 }, { pr: 1, shadow: 1024, msaa: 2 }, { pr: .8, shadow: 0, msaa: 0 }];
-let qual = clamp(parseInt(Q.get('q') || '1', 10), 0, 2), slowT = 0, ema = 16;
-if (!Number.isFinite(qual)) qual = 1;
+let qual = clamp(parseInt(Q.get('q') || '0', 10) || 0, 0, 2), slowT = 0, ema = 16;
 function applyQuality() {
   const q = QUAL[qual];
   renderer.setPixelRatio(Math.min(devicePixelRatio || 1, q.pr));
@@ -54,23 +61,12 @@ function resize() {
 addEventListener('resize', resize);
 
 // ───────────────────────── state ─────────────────────────
-const wheel = createMobileWheel();
-const landscape = matchMedia('(orientation: landscape)');
-let wheelSteer = 0;
-let sensorEpoch = 0;
-const keys = {up:false, down:false, drift:false};
-const heldPointers = new Map();
-const touchButtons = {up:$('tA'), down:$('tB'), drift:$('tD')};
-function updateKey(key) {
-  keys[key] = [...heldPointers.values()].includes(key);
-  touchButtons[key].classList.toggle('pressed', keys[key]);
-  touchButtons[key].setAttribute('aria-pressed', String(keys[key]));
-}
-function clearInputs() {
-  heldPointers.clear();
-  for (const key of Object.keys(keys)) updateKey(key);
-  wheelSteer = 0;
-}
+const keys = { up: false, down: false, left: false, right: false, drift: false };
+const KEYMAP = { ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down', ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right', ShiftLeft: 'drift', ShiftRight: 'drift' };
+const heldCodes = new Set(), heldPointers = new Map();
+function updateKey(key) { keys[key] = [...heldCodes].some(code => KEYMAP[code] === key) || [...heldPointers.values()].includes(key); }
+function clearInputs() { heldCodes.clear(); heldPointers.clear(); for (const key in keys) keys[key] = false; }
+let touchMode = matchMedia('(pointer:coarse)').matches;
 let state = 'load'; // load → title → count → race → finish (+ pause)
 let T = 0, raceT = 0, countT = 0, finT = 0, helpT = 0;
 const sfx = new Sfx();
@@ -80,7 +76,7 @@ const tmp = { x: 0, z: 0, th: 0 }, v3 = new THREE.Vector3(), v2 = new THREE.Vect
 let dust, glow, skids;
 const stepper = new FixedStepper();
 let reverseHold = 0, telemetry = false, frameMs = 16.7;
-let lap, runSession = null, practice = false, starting = false, saving = false, recordSaved = false;
+let lap, replay = null, practice = false, starting = false, waitingAtBoundary = false, localFinishAt = 0;
 const records = createRecordsClient();
 let leaderboardEntries = [], leaderboardLeader = null, leaderSnapshot = null;
 
@@ -88,7 +84,8 @@ function placeGrid() {
   coursePos(0, 0, tmp);
   Object.assign(P, { x: tmp.x, z: tmp.z, th: tmp.th, vx: 0, vz: 0, vf: 0, vl: 0, wy: 0, steer: 0, drift: false, grip: 1,
     prog: 0, lost: false, off: false, wrong: 0, shake: 0, flipT: 0, recoveryT: 0, recoveryRetry: 0, done: 0, time: 0 });
-  P.body.reset(P.x, P.z, P.th); syncRacer(P); reverseHold = 0; stepper.reset();
+  P.body.reset(P.x, P.z, P.th); stabilizeVehicle(P.body); syncRacer(P); reverseHold = 0; stepper.reset();
+  waitingAtBoundary = false; localFinishAt = 0;
   lap = new LapTracker(W.C.n); raceT = 0; cam.snap = true; leaderSnapshot = null;
   clearInputs();
   if (skids) skids.clear();
@@ -96,16 +93,17 @@ function placeGrid() {
 
 // ───────────────────────── driving physics ─────────────────────────
 const ev = { J: 0, hit: 0 };
-function stepPlayer(dt, input) {
-  const st = input ? wheelSteer : 0;
+function stepPlayer(dt, input, buttons = keys) {
+  const st = input ? (buttons.right ? 1 : 0) - (buttons.left ? 1 : 0) : 0;
   P.steer += (st - P.steer) * (1 - Math.exp(-dt * 7));
-  reverseHold = input && keys.down && Math.abs(P.body.vf) < .7 ? reverseHold + dt : 0;
-  const reversing = reverseHold > .35 || (input && keys.down && P.body.vf < -.3);
+  reverseHold = input && buttons.down && Math.abs(P.body.vf) < .7 ? reverseHold + dt : 0;
+  const reversing = reverseHold > .35 || (input && buttons.down && P.body.vf < -.3);
   const controls = {
-    throttle: input && keys.up ? 1 : reversing ? -.45 : 0,
-    brake: input ? (keys.down && !reversing ? 1 : 0) : 1,
+    throttle: input && buttons.up ? 1 : reversing ? -.45 : 0,
+    brake: input ? (buttons.down && !reversing ? 1 : 0) : 1,
+    flip: Boolean(input && buttons.down),
     steer: P.steer,
-    drift: Boolean(input && keys.drift),
+    drift: Boolean(input && buttons.drift),
     handbrake: false,
   };
   const previous = { x: P.body.x, z: P.body.z, q: [...P.body.q] };
@@ -113,6 +111,7 @@ function stepPlayer(dt, input) {
   ev.J += impulse / P.body.parameters.mass;
   ev.hit = Math.max(ev.hit, resolveWalls(P.body, previous, surfAt));
   ev.hit = Math.max(ev.hit, resolveCourseBarrier(P.body, previous, W.C, P.prog, dt));
+  stabilizeVehicle(P.body);
   syncRacer(P);
   P.recoveryT = Math.max(0, (P.recoveryT || 0) - dt);
   P.recoveryRetry = Math.max(0, (P.recoveryRetry || 0) - dt);
@@ -120,7 +119,7 @@ function stepPlayer(dt, input) {
   if (input && P.flipT >= ROLLOVER_RECOVERY_SECONDS && !P.recoveryRetry) {
     const recovered = recoverOverturned(P.body, W.C, P.prog, surfAt);
     if (recovered.recovered) {
-      syncRacer(P); P.flipT = 0; P.steer = 0; reverseHold = 0; P.recoveryT = 1.5; P.recoveryRetry = 0; cam.snap = true;
+      stabilizeVehicle(P.body); syncRacer(P); P.flipT = 0; P.steer = 0; reverseHold = 0; P.recoveryT = 1.5; P.recoveryRetry = 0; cam.snap = true;
       // Race time, checkpoint times and the active record session continue.
       // Recovery consumes the two overturned seconds; it is never a pause.
     } else P.recoveryRetry = .25;
@@ -136,6 +135,31 @@ function trackProgress(dt) {
 }
 
 // ───────────────────────── effects ─────────────────────────
+function predictReplay() {
+  return replayPrediction(P, lap, reverseHold, raceT);
+}
+
+function reconcileReplay(server, prediction, replayAfter) {
+  if (matchesReplay(server, prediction)) return;
+  restoreReplayState(server, P, lap);
+  syncRacer(P);
+  reverseHold = server.driver.reverseHold;
+  raceT = server.raceT;
+  const dt = stepper.step;
+  const buttons = {};
+  replayAfter(mask => {
+    buttons.up = Boolean(mask & 1); buttons.down = Boolean(mask & 2);
+    buttons.left = Boolean(mask & 4); buttons.right = Boolean(mask & 8); buttons.drift = Boolean(mask & 16);
+    raceT += dt;
+    stepPlayer(dt, true, buttons);
+    trackProgress(dt);
+  });
+  if (!lap.completed && lap.valid) {
+    waitingAtBoundary = false;
+    localFinishAt = 0;
+  }
+}
+
 function effects(dt) {
   const b = P.body, s = Math.sin(P.th), c = Math.cos(P.th), spd = Math.hypot(P.vx, P.vz), gy = gAt(P.x, P.z), grounded = b.contacts > 0;
   const rx = P.x - s * 1.1, rz = P.z - c * 1.1, surf = surfAt(P.x, P.z);
@@ -176,7 +200,10 @@ function updateCamera(dt) {
     return;
   }
   const spd = Math.hypot(P.vx, P.vz);
-  const ty = spd > 4 && P.vf > 0 ? P.th + angDiff(Math.atan2(P.vx, P.vz), P.th) * .55 : P.th; // lean toward the travel direction: drifts show their slip angle
+  const travelYaw = Math.atan2(P.vx, P.vz);
+  let ty = P.th;
+  if (!P.body.contacts) ty = spd > 1 ? travelYaw : cam.yaw;
+  else if (spd > 4 && P.vf > 0) ty += angDiff(travelYaw, P.th) * .55;
   if (cam.snap) { cam.yaw = P.th; cam.y = gy; }
   cam.yaw += angDiff(ty, cam.yaw) * (1 - Math.exp(-dt * 5.5));
   cam.y += (gy * .7 + (P.body.y - RIDE) * .3 - cam.y) * (1 - Math.exp(-dt * 5)); // follows the ground more than the kart, so a jump reads as a jump
@@ -197,6 +224,7 @@ function updateCamera(dt) {
 const hud = { last: {}, dots: [] };
 function setText(id, v) { if (hud.last[id] !== v) { hud.last[id] = v; $(id).textContent = v; } }
 function buildHud() {
+  if (recordDevice() !== 'mobile') hud.tower = attachCheckpointTower($('checkpointTower'), {time:officialTime, gap:formatGap});
   const C = W.C, cv = $('mini'), S = cv.width;
   let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9;
   for (let i = 0; i < C.n; i++) { x0 = Math.min(x0, C.x[i]); x1 = Math.max(x1, C.x[i]); z0 = Math.min(z0, C.z[i]); z1 = Math.max(z1, C.z[i]); }
@@ -218,40 +246,30 @@ function buildHud() {
   $('chipLen').textContent = (C.len / 1000).toFixed(2) + ' km lap';
   $('chipBump').textContent = W.courseBumps.length + ' speed bumps';
 }
-const formatGap = ms => (ms > 0 ? '+' : ms < 0 ? '−' : '') + (Math.abs(ms) / 1000).toFixed(3) + ' s';
+const formatGap = (ms, unit = ' s') => (ms > 0 ? '+' : ms < 0 ? '−' : '') + (Math.abs(ms) / 1000).toFixed(3) + unit;
 const gapTrend = ms => ms < 0 ? 'ahead' : ms > 0 ? 'behind' : 'level';
 function updateSplitHud() {
-  show('splitPanel', state === 'race' || state === 'finish' || state === 'pause');
-  const splits = lap.splitsMs, count = splits.length;
-  setText('splitHeading', leaderSnapshot ? 'VS #1 AT START · ' + leaderSnapshot.name : 'LEADER COMPARISON');
-  setText('splitCheckpoint', 'CHECKPOINT ' + String(count).padStart(2, '0') + ' / 32');
-  const comparison = lap.valid ? compareSplit(splits, leaderSnapshot) : null;
-  $('splitPanel').dataset.trend = comparison ? gapTrend(comparison.gapMs) : 'neutral';
-  $('splitSector').dataset.trend = comparison ? gapTrend(comparison.sectorGapMs) : 'neutral';
-  if (!lap.valid) {
-    setText('splitDelta', '—'); setText('splitStatus', 'Invalid route'); setText('splitSector', 'Pause to restart');
-  } else if (comparison) {
-    setText('splitDelta', formatGap(comparison.gapMs));
-    setText('splitStatus', comparison.gapMs < 0 ? 'Ahead at this checkpoint' : comparison.gapMs > 0 ? 'Behind at this checkpoint' : 'Level at this checkpoint');
-    setText('splitSector', 'Last sector ' + formatGap(comparison.sectorGapMs));
-  } else if (leaderSnapshot) {
-    setText('splitDelta', '—'); setText('splitStatus', 'First comparison at checkpoint 1');
-    setText('splitSector', 'Leader lap ' + fmt(leaderSnapshot.timeMs / 1000));
-  } else {
-    setText('splitDelta', count ? fmt(splits[count - 1] / 1000) : '—');
-    setText('splitStatus', count ? 'Your time · no leader splits yet' : 'No leader splits yet');
-    setText('splitSector', count ? 'Last sector ' + fmt((splits[count - 1] - (splits[count - 2] || 0)) / 1000) : 'First ranked finish sets the reference');
+  const visible = state === 'race' || state === 'finish' || state === 'pause';
+  const official = replay?.result?.run?.splitsMs, splits = official || lap.splitsMs;
+  const valid = visible && (Boolean(official) || lap.valid) && !(replay?.terminal && replay.result?.status !== 'finished');
+  if (hud.tower) {
+    hud.tower(valid ? hud.standings?.[splits.length - 1] : null, splits.length, P.name, splits.at(-1));
+    return;
   }
+  const comparison = valid ? compareSplit(splits, leaderSnapshot) : null;
+  $('compactSplit').dataset.trend = comparison ? gapTrend(comparison.gapMs) : 'neutral';
+  setText('compactSplit', comparison ? formatGap(comparison.gapMs, '') : '');
 }
 function updateHud(dt) {
   const C = W.C, spd = Math.hypot(P.vx, P.vz) * 3.6;
   setText('spd', Math.round(spd));
   $('arc').setAttribute('stroke-dasharray', (311 * clamp(spd / (P.body.parameters.maxSpeed * 3.6), 0, 1)).toFixed(1) + ' 415');
   $('arc').setAttribute('stroke', P.body.contacts ? '#7fd0ff' : '#ffd23f');
+  if (touchMode) setText('tB', P.body.contacts ? 'BRAKE' : 'FLIP');
   setText('time', fmt(P.done ? P.time : raceT));
   setText('driverName', P.name);
-  setText('runMode', practice ? 'PRACTICE' : 'TIME ATTACK');
-  setText('checkpointStatus', 'CHECKPOINT ' + lap.checkpoints.length + ' / 32');
+  setText('runMode', practice ? 'PRACTICE' : replay?.terminal && replay.result?.status !== 'finished' ? 'UNRANKED LAP' : 'TIME ATTACK');
+  setText('checkpointStatus', 'CHECKPOINT ' + (replay?.result?.run?.splitsMs?.length ?? lap.checkpoints.length) + ' / 32');
   updateSplitHud();
   const leftM = Math.max(0, (C.n - P.prog) * (W.C.ds || DS));
   setText('left', leftM >= 1000 ? (leftM / 1000).toFixed(2) + ' km to go' : Math.round(leftM / 10) * 10 + ' m to go');
@@ -263,12 +281,14 @@ function updateHud(dt) {
   setText('contactLabel', P.body.contacts ? (P.body.driftActive ? 'DRIFT · ' : '') + 'Contact ' + P.body.load.toFixed(1) + ' × static load' : 'Airborne · no contact');
   if (telemetry) setText('telemetryText', 'Pitch ' + (P.body.p * 180 / Math.PI).toFixed(1) + '° · Roll ' + (P.body.r * 180 / Math.PI).toFixed(1) + '° · Vertical ' + P.body.vy.toFixed(2) + ' m/s · ' + Math.round(1000 / frameMs) + ' FPS');
   $('telemetry').dataset.state = JSON.stringify({ x:P.x, z:P.z, heading:P.th, speed:spd, progress:P.prog, up:P.body.up, fps:1000/frameMs, checkpoints:lap.checkpoints.length, valid:lap.valid, mode:practice?'practice':'ranked' });
-  setText('msg', state !== 'race' ? '' : !lap.valid ? 'Invalid route · pause to restart' : P.flipT >= ROLLOVER_RECOVERY_SECONDS ? 'Recovering · clock keeps running' : P.flipT > .2 ? 'Auto recovery in ' + (ROLLOVER_RECOVERY_SECONDS - P.flipT).toFixed(1) + ' s · clock keeps running' : P.recoveryT > 0 ? 'Recovered · keep driving' : P.wrong > .8 ? 'Wrong way' : '');
+  const verifying = waitingAtBoundary ? (replay?.error ? 'Connection interrupted · retrying verification…' : 'Checking your run with the server…') : '';
+  setText('msg', state !== 'race' ? '' : verifying || (P.done ? 'Finish line' : !lap.valid ? 'Invalid route · pause to restart' : P.flipT >= ROLLOVER_RECOVERY_SECONDS ? 'Recovering · clock keeps running' : P.flipT > .2 ? 'Auto recovery in ' + (ROLLOVER_RECOVERY_SECONDS - P.flipT).toFixed(1) + ' s · clock keeps running' : P.recoveryT > 0 ? 'Recovered · keep driving' : P.wrong > .8 ? 'Wrong way' : ''));
   if (helpT > 0) { helpT -= dt; if (helpT <= 0) $('help').style.opacity = 0; }
   // minimap
   const c = $('mini').getContext('2d'), S = $('mini').width, m = hud.m;
   c.clearRect(0, 0, S, S); c.drawImage(hud.base, 0, 0);
-  c.save(); c.translate(P.x * m.sc + m.ox, P.z * m.sc + m.oz); c.rotate(-P.th + Math.PI);
+  const mapHeading = !P.body.contacts && spd > 4 ? Math.atan2(P.vx, P.vz) : P.th;
+  c.save(); c.translate(P.x * m.sc + m.ox, P.z * m.sc + m.oz); c.rotate(-mapHeading + Math.PI);
   c.fillStyle = '#2f95e8'; c.strokeStyle = '#fff'; c.lineWidth = 3.5;
   c.beginPath(); c.moveTo(0, -15); c.lineTo(10, 10); c.lineTo(0, 5); c.lineTo(-10, 10); c.closePath(); c.fill(); c.stroke(); c.restore();
 }
@@ -282,14 +302,22 @@ function renderRecords() {
   for (const id of ['leaderboardTable', 'resTable']) {
     const table = $(id); table.replaceChildren();
     const head = table.createTHead().insertRow();
-    for (const label of ['Rank', 'Nickname', 'Lap time']) { const cell = document.createElement('th'); cell.textContent = label; head.appendChild(cell); }
+    for (const label of ['Rank', 'Nickname', 'Timing', 'Lap time']) { const cell = document.createElement('th'); cell.textContent = label; head.appendChild(cell); }
     const body = table.createTBody();
     for (const entry of leaderboardEntries.slice(0, 10)) {
       const row = body.insertRow();
       if (entry.name === P.name) row.className = 'me';
-      for (const value of [entry.rank, entry.name, fmt(entry.timeMs / 1000)]) row.insertCell().textContent = String(value);
+      for (const value of [entry.rank, entry.name, 'Server replay']) row.insertCell().textContent = String(value);
+      const time = row.insertCell();
+      if (entry.device === 'mobile') {
+        const badge = document.createElement('span');
+        badge.className = 'record-device';
+        badge.textContent = 'Mobile';
+        time.appendChild(badge);
+      }
+      time.append(officialTime(entry.timeMs));
     }
-    if (!leaderboardEntries.length) { const cell = body.insertRow().insertCell(); cell.colSpan = 3; cell.textContent = 'Be the first to set a lap time.'; }
+    if (!leaderboardEntries.length) { const cell = body.insertRow().insertCell(); cell.colSpan = 4; cell.textContent = 'Be the first to set a lap time.'; }
   }
 }
 async function refreshRecords() {
@@ -299,191 +327,137 @@ async function refreshRecords() {
     leaderboardEntries = data.entries;
     leaderboardLeader = snapshotLeader(data.leader);
     renderRecords();
-    $('leaderboardStatus').textContent = 'Best time per nickname · visible to everyone';
+    $('leaderboardStatus').textContent = 'Best verified lap per nickname on the 130 km/h course.';
   } catch (error) { $('leaderboardStatus').textContent = error.message; }
 }
-async function saveFinishedRun() {
-  if (saving || recordSaved || !P.done || practice || !runSession) return;
-  const session = runSession, completedTime = Math.round(P.time * 1000), checkpoints = lap.checkpoints, splits = lap.splitsMs, name = P.name;
-  saving = true; show('retrySaveBtn', false);
-  $('againBtn').disabled = true; $('titleBtn').disabled = true;
-  $('resBest').textContent = 'Saving your lap time online…';
-  try {
-    await records.finish(session, completedTime, checkpoints, splits);
-    if (runSession !== session) return;
-    recordSaved = true;
-    $('resBest').textContent = 'Saved online · ' + name;
-    await refreshRecords();
-  } catch (error) { if (runSession === session) { $('resBest').textContent = 'Your time was not saved. ' + error.message; show('retrySaveBtn', true); } }
-  finally { if (runSession === session) { saving = false; $('againBtn').disabled = false; $('titleBtn').disabled = false; } }
+function finishRace() {
+  if (state === 'finish') return;
+  P.done = 1;
+  raceT = P.time;
+  state = 'finish';
+  finT = localFinishAt ? Math.min(2.4, (performance.now() - localFinishAt) / 1000) : 0;
+  show('pause', false); show('touch', false);
+  if (practice || replay?.result?.status === 'finished') sfx.fanfare();
 }
+
+function updateResultTime() {
+  const verified = replay?.result?.status === 'finished';
+  const ms = verified ? replay.result.run.timeMs : Math.round(P.time * 1000);
+  $('resTimeLabel').textContent = verified ? 'Official time' : 'Local time';
+  $('resTime').textContent = officialTime(ms);
+  show('resDevice', verified && replay.result.run.device === 'mobile');
+  $('resSplit').textContent = leaderSnapshot ? formatGap(ms - leaderSnapshot.timeMs) + ' vs #1 ' + leaderSnapshot.name + ' at start' : 'No leader reference at the start of this run.';
+  show('retrySaveBtn', Boolean(replay?.error && !replay.terminal));
+  if (practice) {
+    $('resBest').textContent = 'Practice complete.';
+  } else if (verified) {
+    $('resBest').textContent = 'Server replay verified · saved online';
+  } else if (replay.terminal) {
+    $('resBest').textContent = 'Unranked lap · ' + (replay.error?.message || 'The server replay did not complete the course.');
+  } else if (replay.error) {
+    $('resBest').textContent = 'Verification interrupted. ' + replay.error.message;
+  } else {
+    const percent = Math.floor(100 * replay.confirmed / Math.max(1, replay.total));
+    $('resBest').textContent = 'Verifying your driving inputs… ' + percent + '%';
+  }
+}
+
+function replayChanged(upload) {
+  if (upload !== replay) {
+    if (state === 'title' && upload.result?.status === 'finished') void refreshRecords();
+    return;
+  }
+  if (upload.result?.status === 'finished') {
+    P.time = upload.result.run.timeMs / 1000;
+    finishRace();
+    void refreshRecords();
+  } else if (upload.terminal && state !== 'finish') {
+    P.time = raceT;
+    finishRace();
+  }
+  if (!$('results').classList.contains('hidden')) updateResultTime();
+}
+
 function showResults() {
-  $('resTitle').textContent = 'FINISH';
+  $('resTitle').textContent = !practice && replay?.terminal && replay.result?.status !== 'finished' ? 'UNRANKED' : 'FINISH';
   $('resSub').textContent = P.name + ' · ' + (W.C.len / 1000).toFixed(2) + ' KM';
-  $('resTime').textContent = fmt(P.time);
-  $('resSplit').textContent = leaderSnapshot ? formatGap(Math.round(P.time * 1000) - leaderSnapshot.timeMs) + ' vs #1 ' + leaderSnapshot.name + ' at start' : 'No leader reference at the start of this run.';
-  $('resBest').textContent = practice ? 'Practice complete · this time is not posted online.' : 'Saving your lap time online…';
-  renderRecords(); show('retrySaveBtn', false);
-  $('results').classList.remove('hidden');
-  void saveFinishedRun();
+  updateResultTime(); renderRecords(); show('results', true);
 }
 
 // ───────────────────────── flow ─────────────────────────
 function show(id, on) { $(id).classList.toggle('hidden', !on); }
-const wheelMessages = {
-  idle: 'Hold your phone like a steering wheel, facing you.',
-  requesting: 'Allow motion access to steer.',
-  waiting: 'Hold the phone steady while the motion sensor connects.',
-  denied: 'Motion access was denied. Allow motion in your browser settings and try again.',
-  unavailable: 'Motion steering is unavailable. Open this page in Safari or Chrome on a phone with motion sensors.',
-  flat: 'Raise the screen toward you, then tap to center the wheel.',
-  uncentered: 'Hold your phone level in both hands, then center the wheel.',
-  ready: 'Steering centered. Turn your phone like a wheel.',
-  stale: 'No fresh motion signal. Hold the screen facing you and try again.'
-};
-const sensorButtons = ['sensorBtn', 'startBtn', 'practiceBtn', 'againBtn', 'restartBtn', 'titleBtn', 'quitBtn', 'resumeBtn'];
-function lockSetup(locked) {
-  starting = locked;
-  for (const id of sensorButtons) $(id).disabled = locked;
-}
-function drivingView() { return !document.hidden && landscape.matches; }
-async function prepareWheel(statusElement, recenter) {
-  if (!drivingView()) throw Error('Rotate your phone to landscape to center the wheel.');
-  const epoch = sensorEpoch;
-  let status = wheel.read().status;
-  if (status === 'ready' && !recenter) return;
-  if (['idle','denied','unavailable','stale'].includes(status)) {
-    statusElement.textContent = wheelMessages.requesting;
-    // Both permission methods, when required, are called inside this tap.
-    await wheel.enable();
-  }
-  const deadline = performance.now() + 4200;
-  while (true) {
-    if (epoch !== sensorEpoch || !drivingView()) throw Error('Return to landscape, then center the wheel again.');
-    status = wheel.read().status;
-    if ((status === 'ready' || status === 'uncentered') && wheel.center()) {
-      statusElement.textContent = wheelMessages.ready;
-      $('sensorBtn').textContent = 'Center steering';
-      return;
-    }
-    statusElement.textContent = wheelMessages[status];
-    if (status === 'flat' || status === 'denied' || status === 'unavailable') throw Error(wheelMessages[status]);
-    if (performance.now() >= deadline) throw Error(wheelMessages.stale);
-    await new Promise(resolve => setTimeout(resolve, 40));
-  }
-}
-async function centerFromLobby() {
-  if (starting || saving || state !== 'title') return;
-  lockSetup(true);
-  try { await prepareWheel($('sensorStatus'), true); }
-  catch (error) { $('sensorStatus').textContent = error.message; }
-  finally { lockSetup(false); }
-}
 async function startRace(isPractice = false) {
-  if (starting || saving || state === 'load') return;
+  if (starting) return;
   const name = normalizeName($('playerName').value);
   if (!name.valid) { $('nameError').textContent = name.error; toTitle(false); $('playerName').focus(); return; }
-  $('playerName').blur();
-  $('nameError').textContent = ''; lockSetup(true);
+  $('nameError').textContent = ''; starting = true;
+  for (const id of ['startBtn', 'practiceBtn', 'againBtn', 'titleBtn', 'restartBtn', 'quitBtn']) $(id).disabled = true;
+  $('startBtn').textContent = 'Connecting…';
+  sfx.init();
   try {
-    // From results/restart, show the setup feedback in the lobby as well.
-    if (state !== 'title') toTitle(false);
-    const steering = prepareWheel($('sensorStatus'), false);
-    sfx.init();
-    await steering;
-    if (!drivingView() || wheel.read().status !== 'ready') throw Error(wheelMessages.stale);
-    $('startBtn').textContent = 'Connecting…';
     const session = isPractice ? null : await records.start(name.name);
+    const upload = session ? new ReplayUpload(session, records, replayChanged, (server, prediction, replayAfter) => {
+      if (replay === upload) reconcileReplay(server, prediction, replayAfter);
+    }) : null;
+    if (replay && !replay.closed && !waitingAtBoundary) replay.dispose();
+    replay = upload;
     P.name = name.name; $('playerName').value = P.name;
-    try { localStorage.setItem('kaistcart2-nickname', P.name); } catch {}
-    runSession = session; practice = isPractice; recordSaved = false; saving = false;
+    try { localStorage.setItem('kaistcart2-replay-nickname', P.name); } catch {}
+    practice = isPractice;
     placeGrid();
     leaderSnapshot = snapshotLeader(isPractice ? leaderboardLeader : session.leader);
-    show('title', false); show('results', false); show('pause', false); show('hud', true); show('touch', true);
+    if (hud.tower) {
+      hud.standings = session?.checkpointStandings ?? null;
+      if (isPractice) {
+        const startedLap = lap;
+        void records.list(P.name).then(data => {
+          if (lap === startedLap) hud.standings = data.checkpointStandings;
+        }).catch(() => {}); // Offline practice still starts immediately.
+      }
+    }
+    $('touch').style.display = touchMode ? 'block' : 'none';
+    show('title', false); show('results', false); show('pause', false); show('hud', true); show('touch', touchMode);
     $('help').style.opacity = 1; helpT = 9;
     state = 'count'; countT = 4.2; hud.beep = 4; last = 0;
     showCount('');
-    if (!drivingView() || wheel.read().status !== 'ready') setPause(true, 'Center the wheel to begin the countdown.');
   } catch (error) { toTitle(false); $('nameError').textContent = error.message; }
-  finally { lockSetup(false); $('startBtn').textContent = 'Start time attack'; }
+  finally { starting = false; for (const id of ['startBtn', 'practiceBtn', 'againBtn', 'titleBtn', 'restartBtn', 'quitBtn']) $(id).disabled = false; $('startBtn').textContent = 'Start time attack'; }
 }
 function toTitle(refresh = true) {
-  placeGrid(); state = 'title'; show('title', true); show('results', false); show('pause', false); show('hud', false); show('touch', false);
-  sfx.quiet();
-  if (refresh) void refreshRecords();
+  if (replay && !replay.closed && !waitingAtBoundary) replay.dispose();
+  replay = null; placeGrid(); state = 'title'; show('title', true); show('results', false); show('pause', false); show('hud', false); show('touch', false); sfx.quiet(); if (refresh) void refreshRecords();
 }
 let pausedState = 'race';
-function stopWheel() {
-  sensorEpoch++;
-  wheel.stop();
-  clearInputs();
-  P.steer = 0;
-  reverseHold = 0;
-}
-function setPause(on, reason = 'Hold the phone straight to center and resume.') {
-  if (!on || (state !== 'race' && state !== 'count')) return;
-  pausedState = state; state = 'pause';
-  stopWheel();
-  $('pauseSensorStatus').textContent = reason;
-  show('pause', true); show('touch', false); sfx.quiet();
-}
-async function resumeRace() {
-  if (state !== 'pause' || starting) return;
-  lockSetup(true);
-  try {
-    await prepareWheel($('pauseSensorStatus'), true);
-    if (!drivingView() || wheel.read().status !== 'ready') throw Error(wheelMessages.stale);
-    state = pausedState; last = 0; clearInputs();
-    show('pause', false); show('touch', true);
-  } catch (error) { $('pauseSensorStatus').textContent = error.message; }
-  finally { lockSetup(false); }
-}
-$('sensorBtn').onclick = centerFromLobby;
+function setPause(on) { if (on && (state === 'race' || state === 'count')) { clearInputs(); pausedState = state; state = 'pause'; show('pause', true); show('touch', false); sfx.quiet(); } else if (!on && state === 'pause') { state = pausedState; last = 0; show('pause', false); show('touch', touchMode); } }
 $('startBtn').onclick = () => startRace(); $('againBtn').onclick = () => startRace(practice);
-$('restartBtn').onclick = () => startRace(practice);
+$('restartBtn').onclick = () => { toTitle(false); void startRace(practice); };
 $('practiceBtn').onclick = () => startRace(true);
-$('retrySaveBtn').onclick = saveFinishedRun;
+$('retrySaveBtn').onclick = () => { replay?.retry(); updateResultTime(); };
 $('refreshRecordsBtn').onclick = refreshRecords;
 $('pauseBtn').onclick = () => setPause(true);
-$('centerBtn').onclick = () => setPause(true, 'Hold the phone in your new straight-ahead position, then tap Center & resume.');
-$('titleBtn').onclick = () => toTitle(); $('quitBtn').onclick = () => toTitle(); $('resumeBtn').onclick = resumeRace;
-$('muteBtn').onclick = () => {
-  sfx.setMuted(!sfx.muted);
-  $('muteBtn').textContent = sfx.muted ? 'Unmute sound' : 'Mute sound';
-};
-function interruptDriving() {
-  if (state === 'race' || state === 'count') setPause(true);
-  else {
-    stopWheel();
-    $('sensorStatus').textContent = wheelMessages.idle;
+$('titleBtn').onclick = () => toTitle(); $('quitBtn').onclick = () => toTitle(); $('resumeBtn').onclick = () => setPause(false);
+addEventListener('keydown', e => {
+  if (e.target instanceof HTMLElement && e.target.matches('input, textarea, select')) {
+    if (e.code === 'Enter' && state === 'title' && !$('startBtn').disabled && !e.isComposing) { e.preventDefault(); void startRace(); }
+    return;
   }
+  if (state !== 'race' && state !== 'count' && state !== 'pause') return;
+  if (KEYMAP[e.code]) { heldCodes.add(e.code); updateKey(KEYMAP[e.code]); e.preventDefault(); }
+  if (e.repeat) return;
+  if (e.code === 'KeyM') sfx.setMuted(!sfx.muted);
+  if (e.code === 'KeyT') { telemetry = !telemetry; $('telemetry').classList.toggle('hidden', !telemetry); }
+  if (e.code === 'Escape' || e.code === 'KeyP') setPause(state !== 'pause');
+});
+addEventListener('keyup', e => { if (KEYMAP[e.code]) { heldCodes.delete(e.code); updateKey(KEYMAP[e.code]); e.preventDefault(); } });
+addEventListener('blur', () => { clearInputs(); setPause(true); });
+document.addEventListener('visibilitychange', () => { if (document.hidden) setPause(true); });
+for (const [id, k] of [['tL', 'left'], ['tR', 'right'], ['tB', 'down'], ['tA', 'up'], ['tD', 'drift']]) {
+  const el = $(id);
+  el.addEventListener('pointerdown', e => { heldPointers.set(e.pointerId, k); updateKey(k); el.setPointerCapture(e.pointerId); e.preventDefault(); });
+  for (const evn of ['pointerup', 'pointercancel', 'lostpointercapture']) el.addEventListener(evn, e => { heldPointers.delete(e.pointerId); updateKey(k); });
 }
-// Permission sheets can blur the page in the middle of the user's setup tap.
-addEventListener('blur', () => { clearInputs(); setPause(true, 'The game lost focus. Center the wheel to resume.'); });
-document.addEventListener('visibilitychange', () => { if (document.hidden) interruptDriving(); });
-addEventListener('pagehide', interruptDriving);
-if (screen.orientation?.addEventListener) screen.orientation.addEventListener('change', interruptDriving);
-else addEventListener('orientationchange', interruptDriving);
-if (landscape.addEventListener) landscape.addEventListener('change', interruptDriving);
-else landscape.addListener(interruptDriving);
-for (const [key, el] of Object.entries(touchButtons)) {
-  el.addEventListener('pointerdown', event => {
-    if (state !== 'race' && state !== 'count') return;
-    heldPointers.set(event.pointerId, key);
-    updateKey(key);
-    el.setPointerCapture(event.pointerId);
-    event.preventDefault();
-  });
-  for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) {
-    el.addEventListener(type, event => {
-      if (heldPointers.get(event.pointerId) !== key) return;
-      heldPointers.delete(event.pointerId);
-      updateKey(key);
-    });
-  }
-  el.addEventListener('contextmenu', event => event.preventDefault());
-}
-$('qualitySelect').onchange = e => { qual = e.target.value === 'auto' ? 1 : Number(e.target.value); applyQuality(); };
+$('qualitySelect').onchange = e => { qual = e.target.value === 'auto' ? 0 : Number(e.target.value); applyQuality(); };
+addEventListener('touchstart', () => { touchMode = true; if (state === 'race' || state === 'count') { $('touch').style.display = 'block'; show('touch', true); } }, { passive: true });
 
 // ───────────────────────── main loop ─────────────────────────
 function simulate(dt) {
@@ -496,14 +470,25 @@ function simulate(dt) {
     if (countT <= 1) state = 'race';
   }
   const racing = state === 'race';
+  if (racing && waitingAtBoundary) return;
   if (racing) {
     if (countT > 0) { countT -= dt; if (countT <= 0) showCount(''); }
     raceT += dt;
   }
+  const mask = racing && replay ? inputMask(keys) : 0;
   stepPlayer(dt, racing);
   if (racing) {
     trackProgress(dt);
-    if (lap.completed) { P.done = 1; P.time = lap.splitsMs.at(-1) / 1000; raceT = P.time; state = 'finish'; finT = 0; stopWheel(); show('touch', false); sfx.fanfare(); }
+    if (lap.completed && !localFinishAt) localFinishAt = performance.now();
+    if (replay) {
+      replay.capture(mask, false, predictReplay);
+      // At a provisional finish the next packet confirms the result or lets
+      // the driver continue from the server's position.
+      if ((lap.completed || !lap.valid) && replay.used === 0) waitingAtBoundary = true;
+    } else if (lap.completed) {
+      P.time = lap.splitsMs.at(-1) / 1000;
+      finishRace();
+    }
   } else if (state === 'finish') {
     finT += dt;
     if (finT > 2.4 && $('results').classList.contains('hidden')) showResults();
@@ -530,22 +515,11 @@ let last = 0;
 function frame(now) {
   requestAnimationFrame(frame);
   const raw = last ? (now - last) / 1000 : 0; last = now;
-  if (state === 'race' || state === 'count') {
-    const sample = wheel.read();
-    if (sample.status === 'ready' && drivingView()) {
-      wheelSteer = sample.steer;
-      $('wheelNeedle').style.setProperty('--wheel-input', String(wheelSteer));
-    } else {
-      setPause(true, wheelMessages[sample.status] + ' Center the wheel to resume.');
-    }
-  }
   if (raw > 0 && raw < .5) frameMs += (raw * 1000 - frameMs) * .05;
-  if (raw > .5 && state === 'race') setPause(true, 'Rendering stalled. Center the wheel to resume.');
-  // Adapt while the campus is on screen, before the first timed physics step.
-  if (['title', 'count', 'race'].includes(state) && raw > 0 && $('qualitySelect').value === 'auto') {
-    const elapsed = Math.min(raw, .5);
-    ema += (elapsed * 1000 - ema) * .05;
-    slowT = ema > 25 ? slowT + elapsed : 0;
+  if (raw > .5 && (state === 'race' || state === 'count')) setPause(true);
+  if (state === 'race' && raw < .5 && $('qualitySelect').value === 'auto') {
+    ema += (raw * 1000 - ema) * .05;
+    slowT = ema > 25 ? slowT + raw : 0;
     if (slowT > 3 && qual < 2) { qual++; slowT = 0; ema = 16; applyQuality(); }
   }
   // Racing elapsed time is accumulated at 240 Hz, independent of rendering cadence.
@@ -563,7 +537,7 @@ async function init() {
   buildHud();
   $('loadI').style.width = '100%'; $('loadMsg').textContent = ''; show('loadBar', false);
   $('startBtn').disabled = false; $('practiceBtn').disabled = false; $('startBtn').textContent = 'Start time attack';
-  try { $('playerName').value = localStorage.getItem('kaistcart2-nickname') || ''; } catch {}
+  try { $('playerName').value = localStorage.getItem('kaistcart2-replay-nickname') || localStorage.getItem('kaistcart3-nickname') || ''; } catch {}
   toTitle();
 }
 requestAnimationFrame(frame);

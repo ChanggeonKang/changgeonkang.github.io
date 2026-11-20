@@ -1,11 +1,21 @@
 // Public nickname/time records; no account credentials are bundled in the game.
+import { REPLAY_VERSION } from './replay-upload.js';
 export const COURSE_ID = 'kaist-splits-v8';
-export const RECORDS_ORIGIN = 'https://kaistcart2-records.almondcrown19.chatgpt.site';
+export const RECORDS_ORIGIN = 'https://kaistcart3-records.almondcrown19.chatgpt.site';
+
+export function recordDevice(nav = globalThis.navigator) {
+  const ua = nav?.userAgent || '';
+  if (nav?.userAgentData?.mobile || nav?.userAgentData?.platform === 'Android'
+    || /\b(?:Android|iPhone|iPad|iPod|Mobile)\b/i.test(ua)) return 'mobile';
+  // iPadOS can request desktop Safari pages with a Mac user agent.
+  const mac = nav?.platform === 'MacIntel' || ua.includes('Macintosh');
+  return mac && nav.maxTouchPoints > 1 ? 'mobile' : 'desktop';
+}
 
 export function createRecordsClient(origin = RECORDS_ORIGIN, fetcher = fetch) {
   async function request(path, body) {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 12000);
+    const timeout = setTimeout(() => controller.abort(), 15000);
     try {
       const response = await fetcher(origin + path, {
         method: body ? 'POST' : 'GET', credentials: 'omit', signal: controller.signal,
@@ -14,7 +24,11 @@ export function createRecordsClient(origin = RECORDS_ORIGIN, fetcher = fetch) {
       });
       let data;
       try { data = await response.json(); } catch { throw new Error('The records server returned an invalid response. Please try again shortly.'); }
-      if (!response.ok) throw new Error(data.error?.message || 'Could not connect to the records server.');
+      if (!response.ok) {
+        const error = new Error(data.error?.message || 'Could not connect to the records server.');
+        error.retryable = response.status >= 500 || [408, 425, 429].includes(response.status);
+        throw error;
+      }
       return data;
     } catch (error) {
       if (error.name === 'AbortError' || error instanceof TypeError) throw new Error('Could not connect to the records server. Check your connection and try again.');
@@ -22,10 +36,20 @@ export function createRecordsClient(origin = RECORDS_ORIGIN, fetcher = fetch) {
     } finally { clearTimeout(timeout); }
   }
   return {
-    list: () => request('/api/leaderboard?course=' + encodeURIComponent(COURSE_ID)),
-    start: name => request('/api/runs/start', { name, course: COURSE_ID }),
-    finish: (session, timeMs, checkpoints, splitsMs) => request('/api/runs/finish', {
-      runId: session.runId, token: session.token, timeMs, checkpoints, splitsMs,
+    list: against => {
+      const query = new URLSearchParams({course: COURSE_ID});
+      if (against) query.set('against', against);
+      return request('/api/leaderboard?' + query);
+    },
+    start: name => {
+      const device = recordDevice();
+      return request('/api/runs/start', {name, course: COURSE_ID, replayVersion: REPLAY_VERSION, device,
+        ...(device === 'desktop' ? {checkpointStandings: true} : {})});
+    },
+    inputs: (session, fromTick, inputs, final, sync = false) => request('/api/runs/inputs', {
+      runId: session.runId, token: session.token, replayVersion: session.replayVersion, fromTick, inputs,
+      ...(final ? {final: true} : {}),
+      ...(sync ? {sync: true} : {}),
     }),
   };
 }

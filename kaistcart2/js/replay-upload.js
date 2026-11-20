@@ -1,5 +1,5 @@
 export const FINISH_GRACE_TICKS = 240;
-export const REPLAY_VERSION = 3;
+export const REPLAY_VERSION = 4;
 
 export function inputMask(keys) {
   return (keys.up ? 1 : 0) | (keys.down ? 2 : 0) | (keys.left ? 4 : 0)

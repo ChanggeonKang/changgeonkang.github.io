@@ -1,6 +1,6 @@
 // Race controls and collision response shared by the browser and offline checks.
 // AI requests pedals/steering; it never writes a vehicle onto the course spline.
-import { resolveWallContact } from './vehicle-physics.js';
+import { resolveWallContact, roundedKartOutline } from './vehicle-physics.js';
 export const PHYSICS_STEP = 1 / 240;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const mod = (v, n) => ((v % n) + n) % n;
@@ -73,14 +73,14 @@ export function aiControls(r, W, coursePos) {
   return { throttle: clamp(error * .3, 0, 1), brake: clamp(-error * .25, 0, 1), steer, handbrake: false };
 }
 
-// Static walls use the existing collision grid, sampled over the vehicle footprint.
-// This is a conservative footprint approximation, not detailed bodywork collision.
+const gridWallPoints = [...roundedKartOutline(.72, 1.05, 1.05, .64), [0, 0]];
+
+// Static walls use the collision grid, sampled around the chassis and its nose.
 export function resolveWalls(b, previous, surfaceAt) {
   const attemptedX = b.x, attemptedZ = b.z;
   const s = Math.sin(b.th), c = Math.cos(b.th);
-  const points = [[-.72, -1.05], [.72, -1.05], [-.72, 1.05], [.72, 1.05], [0, 0]];
   const footprintHit = (px, pz) => {
-    for (const [lx, lz] of points) {
+    for (const [lx, lz] of gridWallPoints) {
       const x = px + lx * c + lz * s, z = pz - lx * s + lz * c;
       if (surfaceAt(x, z) === 9) return { x, z };
     }
@@ -124,7 +124,7 @@ export function resolveWalls(b, previous, surfaceAt) {
       b.x = previous.x; b.z = previous.z;
     }
   }
-  const manifold = points.map(([lx, lz]) => [b.x + lx * c + lz * s, b.z - lx * s + lz * c]);
+  const manifold = gridWallPoints.map(([lx, lz]) => [b.x + lx * c + lz * s, b.z - lx * s + lz * c]);
   const projection = p => p[0] * nx + p[1] * nz, minimum = Math.min(...manifold.map(projection));
   const tangentBefore = -b.vx * nz + b.vz * nx;
   const approach = resolveWallContact(b, nx, nz, manifold.filter(p => projection(p) < minimum + .015));

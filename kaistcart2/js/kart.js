@@ -84,7 +84,7 @@ export function makeNubzuki(scene, { body = 0x2f95e8, accent = 0xffffff, helmet 
     const cg = new THREE.CylinderGeometry(r1, r0, len, 12); cg.rotateX(Math.PI / 2); cg.translate(0, 0, len / 2);
     add(cg, skinM, 0, 0, 0, 1, 1, 1, grp);
     add(sph, skinM, 0, 0, len, end[0], end[1], end[2], grp);
-    grp.userData.a0 = ang; limbs.push(grp);
+    grp.userData.a0 = ang; grp.userData.restY = py; grp.userData.restZ = pz; limbs.push(grp);
   };
   limb(.36, .17, .28, .78, 1.0, .115, .08, [.16, .13, .17]);
   limb(-.36, .17, .28, -.78, 1.0, .115, .08, [.16, .13, .17]);
@@ -138,6 +138,10 @@ export function poseKart(g, s, dt, t) {
   u.tilt.scale.set(1 + (1 - u.sq) * .45, u.sq, 1 + (1 - u.sq) * .45);
   u.air += ((b.contacts ? 0 : 1) - u.air) * Math.min(1, dt * 9);
   u.limbs.forEach((m, i) => {
+    if (i >= 2) {
+      m.position.y = m.userData.restY + .15 * b.trickTuck;
+      m.position.z = m.userData.restZ + .50 * b.trickTuck;
+    }
     const spread = (i < 2 ? .55 : -.45) * Math.sign(m.userData.a0) * u.air;
     m.rotation.y = m.userData.a0 + spread + Math.sin(t * 12 + i * 1.9) * .05 * sp * (1 - u.air);
     m.rotation.x = -u.air * .25 + (i < 2 ? -s.steer * .0 : 0);

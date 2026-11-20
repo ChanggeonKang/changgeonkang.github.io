@@ -1,11 +1,15 @@
 // Temporary race barriers. The renderer and collision solver share these exact
 // closed inner faces; horizontal containment applies even while airborne.
 // This module is renderer-free so the full circuit can be tested in Node.
-import { resolveWallContact } from './vehicle-physics.js';
+import { resolveWallContact, roundedKartOutline } from './vehicle-physics.js';
 export const COURSE_BARRIER = Object.freeze({ height: .92, thickness: .28, skin: .025,
   halfWidth: 1.12, front: 1.10, rear: 1.50, bottom: -.35, top: 1.15,
   maxSweepDistance: .15, maxSweepAngle: .035, cellSize: 16 });
 const cache = new WeakMap();
+const { halfWidth, front, rear, top, bottom } = COURSE_BARRIER;
+const outline = roundedKartOutline(halfWidth, front, rear, .9);
+// Bounds the projected outline at any pitch or roll, including a full flip.
+const hullRadius = Math.hypot(halfWidth, Math.max(front, rear), Math.max(top, -bottom)) + COURSE_BARRIER.skin;
 const clamp = (x, a, b) => Math.max(a, Math.min(b, x));
 const key = (x, z) => `${x},${z}`;
 
@@ -72,7 +76,7 @@ function rotate(q, x, y, z) {
 }
 function bodyCorners(body) {
   const B = COURSE_BARRIER, q = body.q || [0, Math.sin((body.th || 0) / 2), 0, Math.cos((body.th || 0) / 2)], points = [];
-  for (const x of [-B.halfWidth, B.halfWidth]) for (const y of [B.bottom, B.top]) for (const z of [-B.rear, B.front]) {
+  for (const [x, z] of outline) for (const y of [B.bottom, B.top]) {
     const p = rotate(q, x, y, z); points.push([body.x + p[0], (body.y || 0) + p[1], body.z + p[2]]);
   }
   return points;
@@ -93,9 +97,15 @@ function segmentHitsHull(segment, polygon) {
   return high >= 0 && low <= 1;
 }
 function contacts(body, geometry) {
-  const polygon = courseBarrierFootprint(body), box = bounds(polygon), result = [];
-  for (const id of nearby(geometry.segmentGrid, box.x0, box.z0, box.x1, box.z1)) {
+  const r = hullRadius, result = [];
+  let polygon;
+  for (const id of nearby(geometry.segmentGrid, body.x - r, body.z - r, body.x + r, body.z + r)) {
     const segment = geometry.segments[id];
+    const dx = segment.b[0] - segment.a[0], dz = segment.b[1] - segment.a[1];
+    const px = body.x - segment.a[0], pz = body.z - segment.a[1];
+    const along = clamp((px * dx + pz * dz) / (segment.length ** 2), 0, 1);
+    if ((px - along * dx) ** 2 + (pz - along * dz) ** 2 > r * r) continue;
+    polygon ??= courseBarrierFootprint(body);
     if (!segmentHitsHull(segment, polygon)) continue;
     let minimum = Infinity;
     for (const p of polygon) minimum = Math.min(minimum, (p[0] - segment.a[0]) * segment.nx + (p[1] - segment.a[1]) * segment.nz);
@@ -169,7 +179,7 @@ export function resolveCourseBarrier(body, previous, C, progress, dt = body.para
   let sx = dx / steps, sz = dz / steps;
   body.x = previous.x; body.z = previous.z;
   if (startQ) body.q = startQ;
-  let approach = 0, constrained = false, correctionX = 0, correctionZ = 0;
+  let approach = 0, contactFace = null, correctionX = 0, correctionZ = 0;
   for (let step = 1; step <= steps; step++) {
     const from = { x: body.x, z: body.z, q: body.q ? [...body.q] : null };
     body.x += sx; body.z += sz;
@@ -177,9 +187,9 @@ export function resolveCourseBarrier(body, previous, C, progress, dt = body.para
     for (let iteration = 0; iteration < 10; iteration++) {
       const hits = contacts(body, geometry);
       if (!hits.length) break;
-      constrained = true;
       const target = { x: body.x, z: body.z, q: body.q ? [...body.q] : null };
       const hit = hits.reduce((a, b) => sx * a.nx + sz * a.nz < sx * b.nx + sz * b.nz ? a : b);
+      contactFace = hit;
       body.x = from.x; body.z = from.z; if (from.q) body.q = from.q;
       if (!contacts(body, geometry).length) {
         // Find first contact along this actual motion/rotation. Retreat is bounded
@@ -233,6 +243,7 @@ export function resolveCourseBarrier(body, previous, C, progress, dt = body.para
         // another velocity constraint as well as a positional constraint;
         // discarding only its movement would again leave a fictitious speed.
         for (const second of blocking) {
+          contactFace = second;
           approach = Math.max(approach, resolveWallContact(body, second.nx, second.nz, contactPoints(body, second)));
           const inward = sx * second.nx + sz * second.nz;
           if (inward < 0) { sx -= inward * second.nx; sz -= inward * second.nz; }
@@ -240,17 +251,17 @@ export function resolveCourseBarrier(body, previous, C, progress, dt = body.para
       }
     }
   }
-  if (constrained && body.parameters?.noSlide && dt > 0) {
-    // Grip assistance and the swept rigid boundary are both position
-    // constraints. Reconstruct their shared admissible horizontal velocity
-    // after projection, rather than carrying a blocked tyre velocity forward.
-    // This collision rule also applies while Shift temporarily permits slip:
-    // a projected-away movement cannot remain as speed on the HUD.
-    // Never restore energy already dissipated by the physical impact impulse.
+  if (contactFace && body.parameters?.noSlide && dt > 0) {
+    // Limit sliding to the translation the swept hull actually achieved. The
+    // tick's average translation includes the approach to the wall, whereas
+    // its exit velocity already includes the bumper impulse away from it.
+    const {nx, nz} = contactFace;
     const actualX = (body.x - previous.x - correctionX) / dt, actualZ = (body.z - previous.z - correctionZ) / dt;
-    const admissible = Math.hypot(actualX, actualZ), remaining = Math.hypot(body.vx, body.vz);
-    const ratio = admissible > 1e-10 ? Math.min(1, remaining / admissible) : 0;
-    body.vx = actualX * ratio; body.vz = actualZ * ratio;
+    const exitNormal = Math.max(0, body.vx * nx + body.vz * nz);
+    const exitTangent = -body.vx * nz + body.vz * nx, sign = Math.sign(exitTangent);
+    const slide = sign * clamp(sign * (-actualX * nz + actualZ * nx), 0, Math.abs(exitTangent));
+    body.vx = nx * exitNormal - nz * slide;
+    body.vz = nz * exitNormal + nx * slide;
   }
   return approach;
 }

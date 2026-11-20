@@ -13,8 +13,10 @@ export const VEHICLE_DEFAULTS = Object.freeze({
   longitudinalStiffness: 9, corneringStiffness: 7, rearCorneringStiffness: 12, // multiples of normal force
   tractionSlip: .10, tractionResponseTime: .06, maxEngineWheelSpeed: 400,
   maxSteeringAngle: 0.48, engineTorque: 190, enginePower: 48000,
-  accelerationMultiplier: 2, noSlide: true, maxSpeed: 100 / 3.6,
+  accelerationMultiplier: 2, noSlide: true, maxSpeed: 130 / 3.6,
   accelerationReductionSpeed: 50 / 3.6, highSpeedAccelerationScale: .7,
+  // Measured mean full-throttle acceleration on level asphalt from 50 to 100 km/h.
+  referenceAcceleration: 3.49,
   gripYawResponse: 20, gripLateralAcceleration: 9,
   driftRearCorneringScale: .60,
   groundTiltDeadZone: .12, groundTiltDamping: 10000, // supported game assist, rad and N m s/rad
@@ -32,6 +34,16 @@ const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a
 const scale = (a, s) => [a[0] * s, a[1] * s, a[2] * s];
 const add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
 const norm = a => scale(a, 1 / (Math.hypot(...a) || 1));
+const AIR_BANK = .46, AIR_BANK_RESPONSE = 10.5;
+function airRotation(heading, pitch, bank) {
+  const cy = Math.cos(heading / 2), sy = Math.sin(heading / 2);
+  const cp = Math.cos(pitch / 2), sp = Math.sin(pitch / 2);
+  const cr = Math.cos(bank / 2), sr = Math.sin(bank / 2);
+  return [cy*sp*cr + sy*cp*sr, sy*cp*cr - cy*sp*sr,
+    cy*cp*sr - sy*sp*cr, cy*cp*cr + sy*sp*sr];
+}
+const spinAngle = t => 2 * Math.PI * t * t * (3 - 2 * t);
+const tuckAt = (elapsed, duration) => Math.max(0, Math.min(1, elapsed / .055, (duration - elapsed) / .055));
 const rotate = (q, v) => {
   const t = scale(cross(q, v), 2), c = cross(q, t);
   return [v[0] + q[3] * t[0] + c[0], v[1] + q[3] * t[1] + c[1], v[2] + q[3] * t[2] + c[2]];
@@ -48,13 +60,24 @@ function quaternionFromBasis(r, u, f) {
   return [x, y, z, w];
 }
 
-/** Horizontal wall contact manifold, inelastic normal impulses and Coulomb
+// The shoulder is tangent to the straight side of the kart. Six chords across
+// the half-ellipse keep contact points close to the curved front bumper.
+export function roundedKartOutline(halfWidth, front, rear, noseDepth) {
+  const points = [[-halfWidth, -rear], [halfWidth, -rear]];
+  for (let i = 0; i <= 6; i++) {
+    const angle = i * Math.PI / 6;
+    points.push([halfWidth * Math.cos(angle), front - noseDepth + noseDepth * Math.sin(angle)]);
+  }
+  return points;
+}
+
+/** Horizontal wall contact manifold, normal restitution and Coulomb
  * friction. Contact points are [worldX, worldY, worldZ], or [worldX, worldZ]
  * for an explicitly two-dimensional footprint. Vertical velocity is preserved,
  * while all three angular components respond at the actual contact height.
  * No wheel speed or chassis speed is assigned by this solver.
  */
-export function resolveWallContact(body, nx, nz, points, { friction = .10, restitution = 0 } = {}) {
+export function resolveWallContact(body, nx, nz, points, { friction = .055, restitution = .22 } = {}) {
   const mass = body.parameters?.mass || VEHICLE_DEFAULTS.mass;
   const inertia = body.parameters?.inertia || VEHICLE_DEFAULTS.inertia;
   const q = body.q || [0, Math.sin((body.th || 0) / 2), 0, Math.cos((body.th || 0) / 2)];
@@ -77,7 +100,9 @@ export function resolveWallContact(body, nx, nz, points, { friction = .10, resti
       point[point.length - 1] - body.z], vn = dot(velocity(arm), normal);
     approach = Math.max(approach, -vn);
     return { arm, normalMass: denominator(arm, normal), tangentMass: denominator(arm, tangent),
-      target: -restitution * Math.min(0, vn), normalImpulse: 0, tangentImpulse: 0 };
+      // A soft bumper returns part of the incoming normal speed. Small resting
+      // contacts stay quiet and even a full-speed frontal impact has a bounded rebound.
+      target: Math.min(5, restitution * Math.max(0, -vn - .9)), normalImpulse: 0, tangentImpulse: 0 };
   });
   for (let iteration = 0; iteration < 10; iteration++) for (const contact of contacts) {
     const { arm } = contact;
@@ -90,7 +115,10 @@ export function resolveWallContact(body, nx, nz, points, { friction = .10, resti
   // Let contact impulses settle before the optional driving constraint resumes.
   // Forcing the nose-aligned velocity during contact would push a resolved wall
   // tangent straight back into the wall and recreate stationary residual speed.
-  if (contacts.some(c => c.normalImpulse > 1e-7)) body.wallGripDelay = .15;
+  if (contacts.some(c => c.normalImpulse > 1e-7)) {
+    body.wallGripDelay = .15;
+    if (body.flight) body.flight.active = false;
+  }
   return approach;
 }
 
@@ -98,7 +126,7 @@ export function resolveWallContact(body, nx, nz, points, { friction = .10, resti
  * Constructor does not query the world. Call reset only after map initialization.
  * step(dt, {throttle:-1..1, brake:0..1, steer:-1..1, drift:boolean}) returns
  * accumulated chassis/bump-stop normal impulse in N s. Wheels and chassis are
- * unilateral contacts; steering/drive cannot rotate the chassis in free flight.
+ * unilateral contacts. Air controls adjust attitude only.
  */
 export class Vehicle {
   constructor({ groundAt = () => 0, surfaceAt = () => 2, parameters = {} } = {}) {
@@ -121,6 +149,7 @@ export class Vehicle {
       [0, 1.55 - this.rideHeight, -0.30, true], [0, 0.30 - this.rideHeight, -1.40, false],
     ];
     this.load = 0; this.contacts = 0; this.airT = 0; this.landed = 0; this.roof = false;
+    this.flight = {active:false, button:false};
     this.normalImpulse = 0; this.hardImpulse = 0; this.steer = 0; this.driftActive = false;
   }
 
@@ -136,6 +165,11 @@ export class Vehicle {
   get wr() { return dot(this.angularVelocity, this.forward); }
   get vf() { return dot([this.vx, this.vy, this.vz], this.forward); }
   get vl() { return dot([this.vx, this.vy, this.vz], this.right); }
+  get trickTuck() {
+    const a = this.flight;
+    if (!a.active || !(a.spin >= 0 && a.spin < a.duration)) return 0;
+    return tuckAt(a.spin, a.duration);
+  }
 
   _ground(x, z) {
     const e = 0.06, height = this.groundAt(x, z);
@@ -154,6 +188,7 @@ export class Vehicle {
     this.x = x; this.z = z; this.y = (groundOverride ?? ground.height) + this.rideHeight / Math.max(0.2, u[1]);
     this.vx = 0; this.vy = 0; this.vz = 0; this.angularVelocity = [0, 0, 0];
     this.load = 1; this.contacts = 4; this.airT = 0; this.landed = 0; this.roof = false; this.steer = 0; this.wallGripDelay = 0; this.driftActive = false;
+    this.flight = {active:false, button:false};
     this.normalImpulse = 0; this.hardImpulse = 0;
     for (const w of this.wheels) { w.omega = 0; w.angle = 0; w.compression = 0; w.normalLoad = 0; w.grounded = false; w.slipRatio = 0; w.slipAngle = 0; }
     return this;
@@ -192,11 +227,93 @@ export class Vehicle {
     const input = {
       throttle: clamp(controls.throttle || 0, -1, 1), brake: clamp(controls.brake || 0, 0, 1),
       steer: clamp(controls.steer || 0, -1, 1), handbrake: Boolean(controls.handbrake), drift: Boolean(controls.drift),
+      flip: Boolean(controls.flip),
     };
     let hardImpulse = 0, normalImpulse = 0;
     for (let i = 0; i < count; i++) { this._integrate(h, input); hardImpulse += this.hardImpulse; normalImpulse += this.normalImpulse; }
     this.hardImpulse = hardImpulse; this.normalImpulse = normalImpulse;
     return hardImpulse;
+  }
+
+  _flipClearsGround(duration, steer) {
+    const p = this.parameters, a = this.flight;
+    const k = .5 * p.airDensity * p.dragArea * Math.hypot(this.vx, this.vy, this.vz) / p.mass;
+    // Check the rotating body against the actual track ahead, including the
+    // next crest on back-to-back ramps. A late or low jump cannot kick the
+    // kart upward by spinning a limb into the road. Ordinary impacts still
+    // use the wheel and chassis solvers without a vertical speed limit.
+    for (let i = 1; i <= 28; i++) {
+      const progress = i / 28, t = duration * progress;
+      const travel = k > 1e-7 ? Math.log1p(k * t) / k : t;
+      const x = this.x + this.vx * travel, z = this.z + this.vz * travel;
+      const y = this.y + this.vy * travel - .5 * p.gravity * t * t;
+      const bank = steer * AIR_BANK + (a.bank - steer * AIR_BANK) * Math.exp(-AIR_BANK_RESPONSE * t);
+      const pitch = a.pitch * Math.exp(-5 * t) + spinAngle(progress);
+      const q = airRotation(a.heading, pitch, bank);
+      const clears = (shape, radius) => {
+        const offset = rotate(q, shape);
+        return y + offset[1] - radius > this.groundAt(x + offset[0], z + offset[2]) + .025;
+      };
+      const tuck = tuckAt(t, duration);
+      for (const hp of this.hardPoints) {
+        const shape = hp[2] < -1 ? [hp[0], hp[1] + .15 * tuck, hp[2] + .50 * tuck] : hp;
+        if (!clears(shape, 0)) return false;
+      }
+      if (rotate(q, [0,1,0])[1] > .15) {
+        for (const wheel of this.wheels) {
+          if (!clears([wheel.x, p.suspensionMountY - p.suspensionRestLength, wheel.z], p.wheelRadius)) return false;
+        }
+      }
+    }
+    return true;
+  }
+
+  _airAttitude(dt, input, contacts) {
+    const a = this.flight, pressed = input.flip && !a.button;
+    a.button = input.flip;
+    if (contacts) { a.active = false; return; }
+    if (this.contacts && this.up > .6 && !this.wallGripDelay) {
+      Object.assign(a, {active:true, heading:this.th, pitch:-this.p, bank:this.r, spin:-1, queued:false, retryAt:.063, duration:.46});
+    }
+    if (!a.active) return;
+
+    // Roll around the nose and pitch about the take-off heading. Neither
+    // action supplies linear force, so a bank cannot curve the trajectory.
+    if (pressed && a.spin < 0) a.queued = true;
+    // An early tap is remembered until the nose clears the crest. Tuck
+    // faster when there is less time left in the rising half of the flight.
+    if (a.queued && this.airT >= a.retryAt) {
+      a.duration = clamp(2 * this.vy / this.parameters.gravity, .31, .46);
+      if (this._flipClearsGround(a.duration, 0)
+          && this._flipClearsGround(a.duration, -.25) && this._flipClearsGround(a.duration, .25)) {
+        a.spin = 0;
+        a.queued = false;
+      } else {
+        a.queued = this.vy > .5;
+        a.retryAt = this.airT + .035;
+      }
+    }
+    const bankInput = a.spin >= 0 && a.spin < a.duration ? input.steer * .25 : input.steer;
+    a.bank += (bankInput * AIR_BANK - a.bank) * (1 - Math.exp(-AIR_BANK_RESPONSE * dt));
+    a.pitch *= Math.exp(-5 * dt);
+    let pitch = a.pitch;
+    if (a.spin >= 0) {
+      a.spin = Math.min(a.duration, a.spin + dt);
+      const t = a.spin / a.duration;
+      pitch += spinAngle(t);
+    }
+    // Desired orientation = yaw * pitch * bank, resolved as the angular
+    // velocity for this same quaternion integrator. Contacts retain authority
+    // over both orientation and impact impulses as soon as the body touches.
+    const [x,y,z,w] = airRotation(a.heading, pitch, a.bank);
+    const [qx,qy,qz,qw] = this.q;
+    const scalar = w*qw + x*qx + y*qy + z*qz;
+    const k = 2 / (dt * (Math.abs(scalar) < .01 ? .01 * (Math.sign(scalar) || 1) : scalar));
+    this.angularVelocity = [
+      (x*qw - w*qx - y*qz + z*qy) * k,
+      (y*qw - w*qy - z*qx + x*qz) * k,
+      (z*qw - w*qz - x*qy + y*qx) * k,
+    ];
   }
 
   _integrate(dt, input) {
@@ -231,13 +348,25 @@ export class Vehicle {
     const engineTorque = input.throttle * (input.throttle < 0 ? 0.45 : 1)
       * Math.min(p.engineTorque * p.accelerationMultiplier, p.enginePower / Math.max(20, rearAngularSpeed));
     const forwardVelocity = dot([this.vx, this.vy, this.vz], f);
+    const driveSpeed = Math.hypot(this.vx, this.vz);
     const reducedAcceleration = input.throttle > 0 && forwardVelocity > 0
-      && Math.hypot(this.vx, this.vz) > p.accelerationReductionSpeed;
+      && driveSpeed > p.accelerationReductionSpeed;
     // Reduce the torque available for acceleration, preserving the portion
     // that overcomes ordinary rolling/air resistance. This retains the old
     // launch below 50 km/h and targets 70% of its flat-road acceleration above.
     const roadLossTorque = p.wheelRadius * (p.rollingResistance * p.mass * p.gravity
       + .5 * p.airDensity * p.dragArea * Math.hypot(this.vx, this.vy, this.vz) * Math.max(0, forwardVelocity));
+    let gearTorque = Infinity;
+    if (reducedAcceleration && driveSpeed >= 100 / 3.6) {
+      // Budget wheel torque for both rolling/aero losses and the net
+      // acceleration of the body and its four spinning wheels. The earlier
+      // rear-drive (drift) band has half the straight-line acceleration.
+      const gearScale = driveSpeed >= 120 / 3.6 ? .25 : .5;
+      const limiter = .2 + .8 * clamp((p.maxSpeed - driveSpeed) / (.4 / 3.6), 0, 1);
+      const targetAcceleration = p.referenceAcceleration * gearScale * (gripRequested ? 1 : .5) * limiter;
+      const rollingMass = p.mass + 4 * p.wheelInertia / (p.wheelRadius * p.wheelRadius);
+      gearTorque = input.throttle * (roadLossTorque + p.wheelRadius * rollingMass * targetAcceleration);
+    }
 
     for (const wheel of this.wheels) {
       const rear = wheel.z < 0, steering = rear ? 0 : this.steer * p.maxSteeringAngle;
@@ -292,7 +421,9 @@ export class Vehicle {
       let driveTorque = gripRequested ? engineTorque / 4 : rear ? engineTorque / 2 : 0;
       if (driveTorque) {
         const lossShare = roadLossTorque / (gripRequested ? 4 : 2);
-        if (reducedAcceleration && driveTorque > 0) {
+        if (Number.isFinite(gearTorque)) {
+          driveTorque = Math.min(driveTorque, gearTorque / (gripRequested ? 4 : 2));
+        } else if (reducedAcceleration && driveTorque > 0) {
           driveTorque -= (1 - p.highSpeedAccelerationScale) * Math.max(0, driveTorque - lossShare);
         }
         // Engine torque control, not a velocity/yaw clamp: a spinning driven
@@ -328,7 +459,11 @@ export class Vehicle {
     }
 
     for (const hp of this.hardPoints) {
-      const point = add([this.x, this.y, this.z], rotate(this.q, hp));
+      // The rear support is the mascot's flexible feet. Draw them underneath
+      // during a trick; the rigid chassis, head, rider and wheel envelopes stay.
+      const tuck = hp[2] < -1 ? this.trickTuck : 0;
+      const shape = tuck ? [hp[0], hp[1] + .15 * tuck, hp[2] + .50 * tuck] : hp;
+      const point = add([this.x, this.y, this.z], rotate(this.q, shape));
       const sample = this._ground(point[0], point[2]), n = sample.normal;
       const penetration = (sample.height - point[1]) * n[1];
       if (penetration <= 0) continue;
@@ -374,6 +509,7 @@ export class Vehicle {
     const bodyTorque = unrotate(this.q, torque), gyroscopic = cross(bodyOmega, bodyMomentum);
     const angularAcceleration = rotate(this.q, [(bodyTorque[0] - gyroscopic[0]) / inertia[0], (bodyTorque[1] - gyroscopic[1]) / inertia[1], (bodyTorque[2] - gyroscopic[2]) / inertia[2]]);
     this.angularVelocity = add(this.angularVelocity, scale(angularAcceleration, dt));
+    this._airAttitude(dt, input, contacts);
     const supported = wheelContacts >= 2 && u[1] > .6 && !roof;
     const gripping = gripRequested && !this.wallGripDelay && supported;
     this.driftActive = input.drift && supported;
