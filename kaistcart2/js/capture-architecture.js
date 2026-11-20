@@ -61,15 +61,28 @@ function arch(B,a,b,base,top,n){const L=Math.hypot(b[0]-a[0],b[1]-a[1]),w=Math.m
 function buildOne(B,b,p,base,cfg){
   const profile=buildingProfile(b), style=cfg.style, H=cfg.height||((cfg.floors||b.lv||0)>0?(cfg.floors||b.lv)*(style.includes('Dorm')||style==='tower'||style==='faculty'?3.05:3.6)+.8:profile.height);
   const floors=cfg.floors||b.lv||Math.max(1,Math.round(H/3.3)), color=C(cfg.color), top=base+H;
-  const deep=['deepEave','brickHall','facultyClub','ventHall','auditorium'].includes(style), wall=deep?inset(p,.62):p;
+  const deep=['deepEave','brickHall','facultyClub','ventHall','auditorium'].includes(style);
+  // N9's road-facing wall is set back behind its exposed silver service ducts.
+  const wall=style==='workshop'?p.map(([x,z])=>[x,z< -486?z+1.35:z]):deep?inset(p,.62):p;
   volume(B.wall,p,base,base+.25,PALETTE.cream);volume(B.wall,wall,base+.25,top,color);
   const feature=[];
   if(style==='service'){
     windows(B,wall,base+H*.62,H*.32,{floors:1,width:6,ratio:.24,windowHeight:.7});windows(B,wall,base,H,{floors:1,width:12,ratio:.2,windowHeight:2.8});feature.push('low white laboratory','sparse clerestory windows');
   }else if(style==='workshop'){
-    windows(B,wall,base,H,{floors:1,width:5,ratio:.7,windowHeight:2.7});faces(p,(a,b,L,n)=>panel(B.detail,a,b,0,1,top-1.5,top,PALETTE.white,n));
-    for(let x=-61;x<0;x+=9.2){const z=-485.5,points=[new THREE.Vector3(x,base+2.8,z),new THREE.Vector3(x,top-1,z),new THREE.Vector3(x,top+.7,z+.3),new THREE.Vector3(x,top+.9,z+2.6)];B.detail.geometry(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(points),14,.36,8,false),PALETTE.silver,p);}
-    feature.push('white flat parapet','seven curved silver extraction ducts');
+    windows(B,wall,base,H,{floors:1,width:5,ratio:.7,windowHeight:2.7});faces(wall,(a,b,L,n)=>panel(B.detail,a,b,0,1,top-1.5,top,PALETTE.white,n));
+    // Photos 35–36 show two banks of elbowed ducts running in front of
+    // the pale parapet. Both ends turn back toward the building.
+    for (const x of [-48,-46,-44,-42,-15,-13,-11]) {
+      const z=-486.40+(x+71.7)*.004;
+      const controls=[[base+3.2,z+1.05],[base+3.2,z+.35],[base+3.55,z],[top-.2,z],[top+.28,z+.18],[top+.36,z+1.65]];
+      const bend=new THREE.CatmullRomCurve3(controls.map(([y,d])=>new THREE.Vector3(x,y,d)),false,'centripetal');
+      B.detail.geometry(new THREE.TubeGeometry(bend,20,.255,10,false),PALETTE.silver,p);
+      for (const y of [base+3.7,top-1.37,top-.72]) {
+        const collar=new THREE.CylinderGeometry(.28,.28,.075,10).translate(x,y,z);
+        B.detail.geometry(collar,PALETTE.frame,p);
+      }
+    }
+    feature.push('white flat parapet','two groups of exposed elbowed silver ducts');
   }else if(style==='deepEave'){
     windows(B,wall,base,H,{floors:3,width:5.2,ratio:.63,windowHeight:1.3});faces(wall,(a,b,L,n)=>{for(let s=0;s<L;s+=7.2)panel(B.detail,a,b,s/L,Math.min(1,(s+.36)/L),base+.2,top,PALETTE.brickDark,n);});feature.push('deep roof eave','brick piers','three narrow window levels');
   }else if(style==='facultyClub'){
@@ -113,7 +126,7 @@ function buildDome(B,b,p,base){
 
 /** Three shared draw calls regardless of building count. No DOM or textures. */
 export function buildCapturedArchitecture(scene,D={},hAt=()=>0){
-  const result={handledIds:new Set(),labels:[],models:[],metadata:{reference:'map_resource/*.png, April 2025 screenshot UI',scope:'code-native, photo-informed approximations',drawCalls:0,models:[],excludedUncertain:['distant water tower in 55','unverified N5/N6 overhead connection','KBSI external building identity']}};
+  const result={handledIds:new Set(),labels:[],models:[],metadata:{reference:'map_resource/*.png, April 2025 screenshot UI',scope:'code-native, photo-informed approximations',drawCalls:0,models:[],excludedUncertain:['distant water tower in 55','far endpoint of the N5 covered walkway','KBSI external building identity']}};
   const B={wall:new Batch(),glass:new Batch(),detail:new Batch()};
   for(const b of D.buildings||[]){const cfg=CONFIG[b.ref],dome=b.id===1534507881;if((!cfg&&!dome)||!b.p||b.p.length<3)continue;
     const p=b.p.filter((a,i)=>i===0||Math.hypot(a[0]-b.p[i-1][0],a[1]-b.p[i-1][1])>.01).map(a=>[...a]);if(p.length>3&&Math.hypot(p[0][0]-p.at(-1)[0],p[0][1]-p.at(-1)[1])<.01)p.pop();if(p.some(a=>!a.every(Number.isFinite)))continue;

@@ -21,11 +21,11 @@ export const eastBumps=Object.freeze([
 ].map(v=>Object.freeze({...v,heightM:.1,lengthM:3.6,confidence:'approximate',dimensionStatus:'Conventional game assumption, not measured from screenshots. Location uncertainty approximately ±20m.'})));
 
 const CONFIG={
- E11:{style:'glassPiers',height:19.4,floors:4,color:0xd8d5c9,photos:[56,57]},
+ E11:{style:'glassPiers',height:19.4,floors:4,color:0xc3bdc0,photos:[56,57],panoramas:['SQ8t-HRG5_9Frj7gCadegQ','gzRHmQU-JJvVRlUtg2zDFw']},
  'E6-5':{style:'labTower',height:26,floors:7,color:0xd3d0c2,photos:[58]},
  'E6-4':{style:'chemistryBrick',height:20.2,floors:5,color:0xa56850,photos:[58,59,63]},
  'E6-6':{style:'ribs',height:23.6,floors:6,color:0xc3c9cd,photos:[59,60,62]},
- E12:{style:'energy',height:7.4,floors:1,color:0xd8d9d0,photos:[59,60]},
+ E12:{style:'energy',height:7.4,floors:1,color:0xe3e4df,photos:[59,60],panoramas:['ldSUrvpB1oPzh1g5zi2vcw','hMLCrbvpbzQJMGEB8s9CTA']},
  E10:{style:'framedBrick',height:8.4,floors:2,color:0x865b52,photos:[61]},
  E8:{style:'dorm',height:13.3,floors:4,color:0xc3b9a1,photos:[62]},
  E22:{style:'ibsFins',height:23.6,floors:5,color:0xc7cecc,photos:[64,65,66]},
@@ -90,12 +90,58 @@ function socFacade(B, p, base, height) {
   }
  });
 }
+// The E12 service plant faces the science road. In the November panorama
+// hMLCrbvpbzQJMGEB8s9CTA and captures 59/60, its ductwork rises above a
+// white parapet and a faceted flue flares into a hood below a red rim.
+function energyPlant(B,p,base,height) {
+ const top=base+height;
+ faces(p,(a,b,length,normal)=>{
+  if(length<8)return;
+  const bays=Math.max(1,Math.round(length/15));
+  for(let bay=0;bay<bays;bay++){
+   const left=(bay+.08)/bays,right=(bay+.92)/bays;
+   panel(B.detail,a,b,left,right,base+.16,base+3.52,0x735850,normal);
+   panel(B.glass,a,b,left,right,base+3.62,base+4.68,0x39454a,normal);
+   const lights=Math.max(2,Math.round(length*(right-left)/1.9));
+   for(let j=1;j<lights;j++){
+    const t=mix(left,right,j/lights);
+    panel(B.detail,a,b,t-.04/length,t+.04/length,base+3.62,base+4.68,0x8a918e,normal);
+   }
+  }
+  panel(B.detail,a,b,0,1,top-.14,top,0xbac2bf,normal);
+ });
+ const x=219,z=-132;
+ // Lower shaft, flared collar, tapered octagonal hood, and coloured rim.
+ for(const [bottom,upper,lowerRadius,upperRadius,color] of [
+  [height,14.6,1.50,1.47,0xd3d7d4],[14.6,15.65,1.47,2.57,0xb0b9bb],
+  [15.65,16.32,2.57,2.57,0xa6afb1],[16.32,18.55,2.48,1.83,0xc1c9c8],
+  [18.55,20.30,1.83,1.65,0xd3d8d5],[20.30,21.12,1.65,1.55,0xa54f50]
+ ]){
+  const shell=new THREE.CylinderGeometry(upperRadius,lowerRadius,upper-bottom,8,1,false,Math.PI/8);
+  B.detail.add(shell,new THREE.Matrix4().makeTranslation(x,base+(bottom+upper)/2,z),color,p);
+ }
+ const rotation=.56, along=[Math.cos(rotation),-Math.sin(rotation)], front=[-along[1],along[0]];
+ // Louvered housings visible on either side of the flue above the low roof.
+ for(const [cx,cz,width,depth,rise] of [[194.4,-134.4,9.2,5,2.85],[233.5,-145,11.6,4.8,2.55]]){
+  const piece=(u,v,y,w,h,d,col)=>B.detail.box(cx+along[0]*u+front[0]*v,top+y,cz+along[1]*u+front[1]*v,w,h,d,col,p,rotation);
+  piece(0,0,rise/2,width,rise,depth,0x9aa4a4);
+  piece(0,0,rise+.05,width+.12,.12,depth+.12,0xc7ceca);
+  piece(0,depth/2+.015,rise*.5,width-.5,rise-.45,.045,0x56666b);
+  for(let y=.44;y<rise-.15;y+=.37)piece(0,depth/2+.06,y,width-.45,.095,.09,0xaab3b1);
+ }
+}
+
 function building(B,b,cfg,hAt){
  const p=b.p,ref=b.ref,base=Math.min(...p.map(a=>hAt(...a)))-.4,H=cfg.height,top=base+H,style=cfg.style;
  faces(p,(a,b,L,n)=>panel(B.wall,a,b,0,1,base,top,cfg.color,n));roof(B.wall,p,top,0x78817e);
  if(style==='socTower'){
   socFacade(B,p,base,H);
   return {base,height:H,top,footprintPreserved:true,sourcePhotos:cfg.photos,style,dimensionStatus:'Six above-ground floors confirmed by KAIST; metric height estimated.',confidence:cfg.confidence};
+ }
+ if(style==='energy'){
+  energyPlant(B,p,base,H);
+  return{base,height:H,top,footprintPreserved:true,sourcePhotos:cfg.photos,panoramas:cfg.panoramas,style,
+   confidence:'Facade, equipment and flue silhouette matched to photos 59–60 and the November street view; heights and positions estimated.'};
  }
  faces(p,(a,b,L,n)=>{
   if(L<1.2)return;const slots=Math.max(1,Math.round(L/(style==='ibsFins'?1.35:style==='ribs'?.85:3.1)));
@@ -127,26 +173,54 @@ function building(B,b,cfg,hAt){
     }
     for(const lift of [0,.25])panel(B.detail,a,b,0,1,sill+2.03+lift,sill+2.07+lift,0xc18a70,n);
    }
+  }else if(style==='glassPiers' && -.54*n[0]-.84*n[2]>.8){
+   // At E11 the pale stone is the broad face of each bay. The teal glazing
+   // and near-black stair slots occupy one side. November stations 29 and 65.
+   const bays=Math.max(1,Math.round(L/14.5));
+   for(let bay=0;bay<bays;bay++){
+    const left=(bay+.585)/bays,right=(bay+.955)/bays;
+    panel(B.glass,a,b,right,(bay+1)/bays,base+.28,top-.6,0x354a51,n);
+    for(let f=0;f<cfg.floors;f++){
+     const low=base+.28+(H-5.23)*f/cfg.floors,high=base+.28+(H-5.23)*(f+1)/cfg.floors;
+     panel(B.glass,a,b,left,right,low,high,[0x567e88,0x6a969d,0x719da3,0x65999e][f],n);
+     if(f)panel(B.detail,a,b,left,right,low-.1,low+.1,0x485c61,n);
+    }
+    for(let j=1;j<=2;j++){
+     const t=mix(left,right,j/3);
+     panel(B.detail,a,b,t-.035/L,t+.035/L,base+.28,top-4.95,0x54666b,n);
+    }
+    panel(B.glass,a,b,(bay+.006)/bays,right,top-3.21,top-1.55,0x648fab,n);
+    for(let y=base+1.15;y<top-3.3;y+=1.26)panel(B.detail,a,b,(bay+.004)/bays,left,y,y+.037,0xb4afb1,n);
+    for(let j=1;j<=3;j++){
+     const t=mix(bay/bays,left,j/4);
+     panel(B.detail,a,b,t-.023/L,t+.023/L,base+.12,top-3.3,0xb5afb0,n);
+    }
+   }
   }else if(style==='glassPiers'){
-   panel(B.glass,a,b,.025,.975,base+.8,top-1,0x4c7889,n);
-   const bays=Math.max(1,Math.round(L/9));for(let j=0;j<=bays;j++){const t=j/bays;panel(B.detail,a,b,Math.max(0,t-.8/L),Math.min(1,t+.8/L),base,top-3,cfg.color,n);}
-   panel(B.detail,a,b,0,1,top-4.2,top-3.5,cfg.color,n);for(let f=1;f<cfg.floors;f++)panel(B.detail,a,b,0,1,base+f*H/cfg.floors,base+f*H/cfg.floors+.13,0x9ba9a8,n);
+   panel(B.glass,a,b,.025,.975,base+.8,top-1,0x527e88,n);
+   const bays=Math.max(1,Math.round(L/9));
+   for(let j=0;j<=bays;j++)panel(B.detail,a,b,j/bays-.75/L,j/bays+.75/L,base,top-3,cfg.color,n);
+   for(let f=1;f<cfg.floors;f++)panel(B.detail,a,b,0,1,base+f*H/cfg.floors,base+f*H/cfg.floors+.13,0x9ba9a8,n);
   }else if(style==='labTower'&&L<18){
    panel(B.glass,a,b,.47,.54,base+.6,top-2.4,0x47747b,n);
   }else{
-   const band=['ribbon','labTower','nanoGlass','energy','service'].includes(style),F=cfg.floors;
+   const band=['ribbon','labTower','nanoGlass','service'].includes(style),F=cfg.floors;
    for(let f=0;f<F;f++){
-    const y=base+.75+f*(H-.5)/F,wh=style==='nanoGlass'?H/F*.7:style==='energy'?1.1:1.6;
+    const y=base+.75+f*(H-.5)/F,wh=style==='nanoGlass'?H/F*.7:1.6;
     if(band){panel(B.glass,a,b,.025,.975,y,Math.min(top-.45,y+wh),style==='nanoGlass'?0x3c6077:0x45656b,n);for(let j=1;j<Math.max(2,Math.round(L/2.5));j++){const t=j/Math.round(L/2.5);panel(B.detail,a,b,t-.025/L,t+.025/L,y,y+wh,0xa4b5b4,n);}}
     else for(let j=0;j<slots;j++){const t=(j+.5)/slots,w=.61/slots;panel(B.glass,a,b,t-w/2,t+w/2,y,y+wh,0x4b686d,n);panel(B.detail,a,b,t-w/2,t+w/2,y-.08,y,0xbabeb4,n);}
     if(style==='framedBrick'){panel(B.detail,a,b,0,1,y-.7,y-.4,0xd5d8d0,n);for(let j=0;j<=slots;j++)panel(B.detail,a,b,Math.max(0,j/slots-.14/L),Math.min(1,j/slots+.14/L),base,top,0xc9d0c8,n);}
    }
-   if(style==='energy')panel(B.detail,a,b,0,1,base,base+2.3,0x755c50,n);
   }
   // Fine facade joints add scale without external texture assets.
   if(style==='brick')for(let y=base+.2;y<top;y+=.28)panel(B.detail,a,b,0,1,y,y+.018,0x6e514a,n);
   if(ref==='E2-1'&&L>6&&L<14){panel(B.detail,a,b,.05,.95,base,top,0x707a7b,n);panel(B.glass,a,b,.45,.55,base+1,top-1,0x3f646b,n);}
  });
+ if(style==='glassPiers'){
+  // Low dark roof monitor behind the stone parapet, visible on approach.
+  B.detail.box(48,top+.52,-52,14,.98,2.9,0x899298,p,.57);
+  B.detail.box(48,top+1.07,-52,17.6,.18,3.6,0x566169,p,.57);
+ }
  if(style==='dorm'){
   // Triangulated low hipped facets preserve concave source wings too.
   for(const indices of THREE.ShapeUtils.triangulateShape(p.map(q=>new THREE.Vector2(...q)),[])){
@@ -154,13 +228,10 @@ function building(B,b,cfg,hAt){
    for(let i=0;i<3;i++)B.detail.tri([t[i][0],top,t[i][1]],[t[(i+1)%3][0],top,t[(i+1)%3][1]],[q[0],top+Math.min(2.1,boundary(...q,p)*.55),q[1]],0x575d55,[0,1,0]);
   }
  }
- if(style==='energy'){
-  const q=interior(p,3.5);if(q){const[x,z]=q;B.detail.box(x,base+13,z,3.1,26,3.1,0xe4e0d4,p);B.detail.box(x,base+22.4,z,6.3,7,5,0xd4d6cc,p);B.detail.box(x,base+26.3,z,6.5,.65,5.1,0x995d58,p);}
- }
  if(style==='gasStore'){
   const q=interior(p,3.2);if(q)for(const dx of[-2,2]){const x=q[0]+dx,z=q[1];B.detail.add(new THREE.CylinderGeometry(1.65,1.65,12.5,16),new THREE.Matrix4().makeTranslation(x,base+6.25,z),0xe2e4db,p);B.detail.add(new THREE.SphereGeometry(1.65,12,6,0,Math.PI*2,0,Math.PI/2),new THREE.Matrix4().makeTranslation(x,base+12.5,z),0xe2e4db,p);}
  }
- return{base,height:H,top,footprintPreserved:true,sourcePhotos:cfg.photos,style,dimensionStatus:'Visual estimates; not surveyed; original OSM footprint retained',confidence:cfg.confidence||'high building match; approximate dimensions'};
+ return{base,height:H,top,footprintPreserved:true,sourcePhotos:cfg.photos,...(cfg.panoramas && {panoramas:cfg.panoramas}),style,dimensionStatus:'Visual estimates; not surveyed; original OSM footprint retained',confidence:cfg.confidence||'high building match; approximate dimensions'};
 }
 
 const ZONES=[

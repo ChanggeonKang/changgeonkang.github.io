@@ -5,6 +5,7 @@
 // apartment towers. No source photo is used as a runtime texture.
 import * as THREE from '../lib/three.module.min.js';
 import { buildingProfile } from './campus-identity.js';
+import { isCaptureWestParkingOverride } from './capture-extension-west.js';
 
 const cache = new WeakMap();
 const APARTMENTS = new Set([595786755,595786482,595787016,495824296]);
@@ -84,8 +85,8 @@ function evergreenTexture() {
   tex.needsUpdate = true;
   return tex;
 }
-function crownLobe(seed) {
-  const geometry = new THREE.IcosahedronGeometry(1, 2), p = geometry.attributes.position;
+function crownLobe(seed, detail) {
+  const geometry = new THREE.IcosahedronGeometry(1, detail), p = geometry.attributes.position;
   for (let i = 0; i < p.count; i++) {
     const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
     // The same position gets the same scale on both sides of each UV seam.
@@ -95,10 +96,32 @@ function crownLobe(seed) {
   }
   return geometry;
 }
-function foliageTemplate(kind){
-  const lobes=kind==='sculpted'?[[0,.2,0,.38,.19,.31],[.03,.43,.02,.34,.18,.29],[-.04,.65,-.015,.31,.18,.28],[.015,.85,0,.28,.17,.25],[-.2,.35,.01,.19,.15,.23],[.17,.59,.02,.2,.16,.22]]:
-    [[0,.84,0,.29,.17,.27],[-.18,.64,.04,.28,.13,.24],[.19,.69,-.04,.29,.14,.25],[-.03,.96,-.04,.21,.13,.21],[.03,.53,.16,.26,.13,.24],[-.13,.78,-.18,.24,.15,.22],[.16,.85,.13,.22,.14,.21],[.05,.72,.13,.22,.14,.23],[0,1.03,0,.13,.12,.13]];
-  return merge(lobes.map(([x,y,z,a,b,c],i)=>[crownLobe(i+.4),transform(x,y,z,a,b,c),i%2?0xe9edde:0xffffff]),true);
+function clippedCrown(understory=false){
+  const lobes=understory
+    ? [[-.11,.33,.04,.37,.32,.35],[.14,.48,-.06,.35,.30,.32],[-.07,.68,.03,.37,.25,.30],[.12,.79,.06,.26,.19,.25]]
+    : [[0,.2,0,.38,.19,.31],[.03,.43,.02,.34,.18,.29],[-.04,.65,-.015,.31,.18,.28],[.015,.85,0,.28,.17,.25],[-.2,.35,.01,.19,.15,.23],[.17,.59,.02,.2,.16,.22]];
+  return merge(lobes.map(([x,y,z,a,b,c],i)=>[crownLobe(i+.4,understory?1:2),transform(x,y,z,a,b,c),i%2?0xe9edde:0xffffff]),true);
+}
+
+// Dense central foliage and staggered boughs make an uneven pine silhouette.
+function pineCrown(){
+  const rand=random(30471), parts=[];
+  const spray=(x,y,z,sx,sy,sz,az,tilt,shade)=>{
+    const rotation=new THREE.Quaternion().setFromEuler(new THREE.Euler(0,-az,tilt,'YXZ'));
+    const matrix=new THREE.Matrix4().compose(new THREE.Vector3(x,y,z),rotation,new THREE.Vector3(sx,sy,sz));
+    parts.push([crownLobe(rand()*13,1),matrix,shade]);
+  };
+  for(let k=0;k<7;k++){
+    const t=k/6,az=k*2.4,r=.23*(1-.48*t);
+    spray(.035*Math.cos(az),.37+.56*t,.035*Math.sin(az),r,.135,r*.9,az,.04,0xd8e4d9);
+  }
+  for(let k=0;k<19;k++){
+    const t=k/18,az=k*2.39996+rand()*.32;
+    const span=.30+.11*Math.sin(t*Math.PI)-.18*t,reach=span*(.5+rand()*.22);
+    spray(Math.cos(az)*reach,.32+t*.61+(rand()-.5)*.06,Math.sin(az)*reach,
+      span*(.63+rand()*.22),.048+rand()*.046,span*(.35+rand()*.2),az,-.10+rand()*.31,k%2?0xd9e6d9:0xb9d0bf);
+  }
+  return merge(parts,true);
 }
 function trunkTemplate(kind){
   const a=kind==='sculpted'?.85:.97;
@@ -113,8 +136,11 @@ function courseMargin(x,z,C){
     const d=Math.hypot(x-C.x[i]-t*dx,z-C.z[i]-t*dz),w=(C.halfWidth?.[i]??5)*(1-t)+(C.halfWidth?.[j]??5)*t;margin=Math.min(margin,d-w);}
   return margin;
 }
-function permitted(x,z,r,C,surfAt){
-  if(surfAt(x,z)!==0||courseMargin(x,z,C)<r+.75)return false;
+function permitted(x,z,r,C,surfAt,plantedVerge=false){
+  const surface=surfAt(x,z);
+  // Captures 94–97 show shrubs in the roadside strip included in a large
+  // parking polygon. Its mapped access lanes and buildings still take priority.
+  if((surface!==0&&!(plantedVerge&&surface===2))||courseMargin(x,z,C)<r+.75)return false;
   // Check the complete crown disc against the one-metre surface raster, so a
   // building corner cannot slip between perimeter samples of a rounded crown.
   for(let iz=Math.floor(z-r);iz<=Math.floor(z+r);iz++)for(let ix=Math.floor(x-r);ix<=Math.floor(x+r);ix++){
@@ -124,12 +150,12 @@ function permitted(x,z,r,C,surfAt){
   return true;
 }
 function addPlants(scene,list,kind,crown,trunk,leafMap){
-  if(!list.length){crown.dispose();trunk.dispose();return[];}
+  if(!list.length){crown.dispose();trunk?.dispose();return[];}
   const leaf=new THREE.InstancedMesh(crown,new THREE.MeshStandardMaterial({map:leafMap,vertexColors:true,roughness:.96,envMapIntensity:.4}),list.length);
-  const wood=new THREE.InstancedMesh(trunk,new THREE.MeshStandardMaterial({vertexColors:true,color:kind==='sculpted'?0x62513e:0x705d49,roughness:1}),list.length);
+  const wood=trunk&&new THREE.InstancedMesh(trunk,new THREE.MeshStandardMaterial({vertexColors:true,color:kind==='sculpted'?0x62513e:0x705d49,roughness:1}),list.length);
   const matrix=new THREE.Matrix4(),rotation=new THREE.Quaternion(),colour=new THREE.Color();
-  list.forEach((a,i)=>{rotation.setFromAxisAngle(new THREE.Vector3(0,1,0),a.rotation);matrix.compose(new THREE.Vector3(a.x,a.y,a.z),rotation,new THREE.Vector3(a.width,a.height,a.width));leaf.setMatrixAt(i,matrix);wood.setMatrixAt(i,matrix);leaf.setColorAt(i,colour.setHSL(kind==='sculpted'?.255:.31,kind==='sculpted'?.29:.22,a.light,THREE.SRGBColorSpace));a.matrix=matrix.toArray();});
-  for(const[m,suffix]of[[leaf,'crowns'],[wood,'trunks']]){m.name=`w4-${kind}-${suffix}`;m.instanceMatrix.needsUpdate=true;if(m.instanceColor)m.instanceColor.needsUpdate=true;m.computeBoundingSphere();m.castShadow=true;m.receiveShadow=true;scene.add(m);}return[leaf,wood];
+  list.forEach((a,i)=>{rotation.setFromAxisAngle(new THREE.Vector3(0,1,0),a.rotation);matrix.compose(new THREE.Vector3(a.x,a.y,a.z),rotation,new THREE.Vector3(a.width,a.height,a.width));leaf.setMatrixAt(i,matrix);wood?.setMatrixAt(i,matrix);leaf.setColorAt(i,colour.setHSL(kind==='pine'?.31:.255,kind==='pine'?.24:.29,a.light,THREE.SRGBColorSpace));a.matrix=matrix.toArray();});
+  for(const[m,suffix]of[[leaf,'crowns'],[wood,'trunks']]){if(!m)continue;m.name=`w4-${kind}-${suffix}`;m.instanceMatrix.needsUpdate=true;if(m.instanceColor)m.instanceColor.needsUpdate=true;m.computeBoundingSphere();m.castShadow=true;m.receiveShadow=true;scene.add(m);}return[leaf,wood].filter(Boolean);
 }
 class Facades{
   constructor(){this.p=[];this.n=[];this.c=[];}
@@ -202,20 +228,68 @@ function buildParkingWall(scene, D, C, hAt) {
   return wall;
 }
 
+// In the western straight's front views, the clipped crowns overlap at eye
+// level. The tall pine belt ends before the low nursery roofs appear at W5.
+function plantWesternVerge(D,C,hAt,surfAt,templates){
+  const plants={sculpted:[],understory:[],pine:[]},rand=random(20261120);
+  const radii=Object.fromEntries(Object.entries(templates).map(([k,g])=>[k,radiusOf(g)]));
+  const entrances=(D.roads||[]).filter(r=>!['path','footway','steps'].includes(r.t)).flatMap(r=>
+    r.p.slice(1).map((b,k)=>({a:r.p[k],b,id:r.id,half:(r.width||3)/2})))
+    .filter(({a,b})=>Math.min(a[0],b[0])< -281 && Math.max(a[0],b[0])> -388 && Math.min(a[1],b[1])<627 && Math.max(a[1],b[1])>455);
+  const outsideEntrance=(x,z,i)=>entrances.every(({a,b,id,half})=>{
+    const dx=b[0]-a[0],dz=b[1]-a[1],u=Math.max(0,Math.min(1,((x-a[0])*dx+(z-a[1])*dz)/(dx*dx+dz*dz||1)));
+    // The south road footprint runs parallel inside the photographed tree
+    // strip. Its turns across the strip still represent driveway openings.
+    if(id===92189927&&Math.abs(dx*C.tx[i]+dz*C.tz[i])>.93*Math.hypot(dx,dz))return true;
+    return Math.hypot(x-a[0]-u*dx,z-a[1]-u*dz)>half+.22;
+  });
+  const buildings=(D.buildings||[]).map(({p})=>({p,minX:Math.min(...p.map(v=>v[0])),maxX:Math.max(...p.map(v=>v[0])),
+    minZ:Math.min(...p.map(v=>v[1])),maxZ:Math.max(...p.map(v=>v[1]))})).filter(b=>b.minX< -275&&b.maxX> -630&&b.minZ<635&&b.maxZ>100);
+  const clearsCorners=(x,z,r)=>buildings.every(({p,minX,maxX,minZ,maxZ})=>{
+    if(x+r<minX||x-r>maxX||z+r<minZ||z-r>maxZ)return true;
+    return p.every((a,k)=>{
+      const b=p[(k+1)%p.length],dx=b[0]-a[0],dz=b[1]-a[1],u=Math.max(0,Math.min(1,((x-a[0])*dx+(z-a[1])*dz)/(dx*dx+dz*dz||1)));
+      return Math.hypot(x-a[0]-dx*u,z-a[1]-dz*u)>r+.12;
+    });
+  });
+  function plant(i,kind,height,width,depths,light){
+    if(i>=C.n)return;
+    const radius=radii[kind]*width, along=(rand()-.5)*.82, rotation=rand()*2*Math.PI;
+    for(const depth of depths){
+      const off=C.halfWidth[i]+depth,x=C.x[i]+C.tz[i]*off+C.tx[i]*along,z=C.z[i]-C.tx[i]*off+C.tz[i]*along;
+      const verge=i>=898 && i<=976 && isCaptureWestParkingOverride(x,z) && outsideEntrance(x,z,i);
+      if(!permitted(x,z,radius,C,surfAt,verge)||!clearsCorners(x,z,radius))continue;
+      const y=hAt(x,z);if(!Number.isFinite(y))continue;
+      plants[kind].push({x,y,z,height,width,radius,rotation,light,courseClearanceM:courseMargin(x,z,C)-radius,estimated:true});
+      return;
+    }
+  }
+  for(let i=898;i<=1110;i+=2){
+    const h=4.25+rand()*1.4,w=h*(1.04+rand()*.13);
+    plant(i,'sculpted',h,w,[radii.sculpted*w+1.05,4.9,5.7],.32+rand()*.07);
+  }
+  for(let sample=898;sample<=1108;sample+=1.5){
+    const i=Math.round(sample),low=Math.min(1,Math.max(0,(i-1060)/37));
+    const h=4.9-2.0*low+rand()*.78,w=6.1+rand()*1.05;
+    plant(i,'understory',h,w,[5.65+rand()*.6,4.85,6.8,7.7],.265+rand()*.045);
+  }
+  for(let i=898;i<=1074;i+=3){
+    const taper=Math.min(1,Math.max(0,(1074-i)/13));
+    const h=(12.5+rand()*3.9)*(.64+.36*taper),w=9.1+rand()*2.1;
+    plant(i,'pine',h,w,[7.55+rand()*1.85,6.65,6.05,10.3,12.5],.3+rand()*.055);
+  }
+  return plants;
+}
+
 export function buildStreetscape(scene,D,C,hAt,surfAt){
-  const list=samples(C),rand=random(20260426),plants={sculpted:[],pine:[]},models=[];
-  const templates={sculpted:foliageTemplate('sculpted'),pine:foliageTemplate('pine')}, leafMap=evergreenTexture();
-  for(const[kind,stride]of[['sculpted',2],['pine',4]]){
-    const template=templates[kind],unitRadius=radiusOf(template);
-    for(let k=kind==='pine'?1:0;k<list.length;k+=stride){const a=list[k],height=kind==='sculpted'?4.45+rand()*1.5:11.5+rand()*3.7,width=height*(kind==='sculpted'?1.09:.69),radius=unitRadius*width;
-      const off=a.half+radius+(kind==='sculpted'?.94:7.3),along=(rand()-.5)*.9,x=a.x+a.tz*off+a.tx*along,z=a.z-a.tx*off+a.tz*along;
-      if(!permitted(x,z,radius,C,surfAt))continue;const y=hAt(x,z);if(!Number.isFinite(y))continue;
-      plants[kind].push({x,y,z,height,width,radius,rotation:rand()*Math.PI*2,light:kind==='sculpted'?.315+rand()*.06:.28+rand()*.045,courseClearanceM:courseMargin(x,z,C)-radius,estimated:true});
-    }models.push(...addPlants(scene,plants[kind],kind,template,trunkTemplate(kind),leafMap));
+  const templates={sculpted:clippedCrown(),understory:clippedCrown(true),pine:pineCrown()}, leafMap=evergreenTexture();
+  const plants=plantWesternVerge(D,C,hAt,surfAt,templates),models=[];
+  for(const [kind,crown] of Object.entries(templates)){
+    models.push(...addPlants(scene,plants[kind],kind,crown,kind==='understory'?null:trunkTemplate(kind),leafMap));
   }
   const apartments=apartmentDetails(scene,D,hAt);models.push(...apartments.models);
   const wall = buildParkingWall(scene,D,C,hAt);
   if(wall)models.push(wall);
-  const metadata={area:'W4-1/W4-2 western approach',source:'User spring captures, November 2026 W4-1 side and forward panoramas, OSM building and parking footprints',nearbyReferenceLink:'https://map.naver.com/p?c=17.00,0,0,0,adh&p=eHoxrH85VcgXrs-quPz5Wg,-26,10,80,Float',treePositions:'Estimated roadside rows; not individual surveyed trees',sculptedEvergreens:plants.sculpted.length,pines:plants.pine.length,drawCalls:models.length,minimumCourseClearanceM:Math.min(...Object.values(plants).flat().map(a=>a.courseClearanceM)),collisionAdded:false};
+  const metadata={area:'Western straight from KISTI to the W5 greenhouses',source:'Spring captures 94–102 and 1–7, W4 side panorama, April and November 2026 lap survey',nearbyReferenceLink:'https://map.naver.com/p?c=17.00,0,0,0,adh&p=eHoxrH85VcgXrs-quPz5Wg,-26,10,80,Float',treePositions:'Estimated roadside rows; not individual surveyed trees',sculptedEvergreens:plants.sculpted.length,understory:plants.understory.length,pines:plants.pine.length,drawCalls:models.length,minimumCourseClearanceM:Math.min(...Object.values(plants).flat().map(a=>a.courseClearanceM)),collisionAdded:false};
   models.forEach(m=>{m.userData.streetscape=metadata;});return{models,plants,apartments:apartments.records,zones:getStreetscapeZones(C),metadata};
 }

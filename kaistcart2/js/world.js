@@ -554,12 +554,99 @@ function buildRoads(scene) {
     }
   }
   flat(scene, mbs[1], new THREE.MeshStandardMaterial({ map: TEX.paver, vertexColors: true, roughness: .95 }), 1);
-  flat(scene, mbs[2], new THREE.MeshStandardMaterial({ map: TEX.asphalt, vertexColors: true, roughness: .92 }), 2);
+  const asphalt = flat(scene, mbs[2], new THREE.MeshStandardMaterial({ map: TEX.asphalt, vertexColors: true, roughness: .92 }), 2);
+  return asphalt.geometry.attributes.position.array;
 }
 
-function buildCourseMesh(scene) {
+// A corner of a driveway can be narrower than its nominal straight road.
+// Use the actual rendered triangles both for the paint outline and its height.
+function crossingPavement(crossings, drive, race, sidewalk, curb) {
+  const cell = 16, grid = new Map(), key = (x,z) => x * 8192 + z;
+  for (const [x,z] of crossings) {
+    const ix=Math.floor(x/cell), iz=Math.floor(z/cell);
+    for (let i=ix-1;i<=ix+1;i++) for (let j=iz-1;j<=iz+1;j++) {
+      const k=key(i,j); if (!grid.has(k)) grid.set(k,[]);
+    }
+  }
+  for (const [kind, positions] of [['drive',drive],['race',race],['raised',sidewalk],['raised',curb]]) {
+    for (let i=0;i<positions.length;i+=9) {
+      const ax=positions[i], az=positions[i+2], bx=positions[i+3], bz=positions[i+5], cx=positions[i+6], cz=positions[i+8];
+      const dx=bx-ax,dz=bz-az, ex=cx-ax,ez=cz-az, det=dx*ez-dz*ex;
+      if (Math.abs(det)<1e-6) continue; // vertical curb faces
+      const minX=Math.floor(Math.min(ax,bx,cx)/cell),maxX=Math.floor(Math.max(ax,bx,cx)/cell);
+      const minZ=Math.floor(Math.min(az,bz,cz)/cell),maxZ=Math.floor(Math.max(az,bz,cz)/cell);
+      let face;
+      for(let x=minX;x<=maxX;x++)for(let z=minZ;z<=maxZ;z++){
+        const list=grid.get(key(x,z)); if(!list)continue;
+        if(!face){
+          const ay=positions[i+1],dy=positions[i+4]-ay,ey=positions[i+7]-ay;
+          face={kind,vertices:[[ax,az],[bx,bz],[cx,cz]],sign:Math.sign(det),ay,gx:(dy*ez-ey*dz)/det,gz:(dx*ey-ex*dy)/det};
+        }
+        list.push(face);
+      }
+    }
+  }
+  return polygon => {
+    const faces=new Set();
+    const xs=polygon.map(p=>Math.floor(p[0]/cell)), zs=polygon.map(p=>Math.floor(p[1]/cell));
+    for(let x=Math.min(...xs);x<=Math.max(...xs);x++)for(let z=Math.min(...zs);z<=Math.max(...zs);z++){
+      for(const face of grid.get(key(x,z))||[])faces.add(face);
+    }
+    return [...faces];
+  };
+}
+
+function clipCrossingPaint(polygon,face) {
+  for(let i=0;i<3 && polygon.length;i++){
+    const a=face.vertices[i],b=face.vertices[(i+1)%3],output=[];
+    const side=p=>face.sign*((b[0]-a[0])*(p[1]-a[1])-(b[1]-a[1])*(p[0]-a[0]));
+    let prev=polygon.at(-1),dp=side(prev);
+    for(const point of polygon){
+      const dc=side(point);
+      if((dc>=0)!==(dp>=0)){const t=dp/(dp-dc);output.push([lerp(prev[0],point[0],t),lerp(prev[1],point[1],t)]);}
+      if(dc>=0)output.push(point);
+      prev=point;dp=dc;
+    }
+    polygon=output;
+  }
+  return polygon;
+}
+
+function paintDrivewayCrossing(lines,color,C,bi,c,off,branch,nearbyFaces) {
+  const {tx,tz,width}=branch,half=C.halfWidth[bi],sign=Math.sign(off);
+  const normalX=C.tz[bi],normalZ=-C.tx[bi];
+  const delta=sign*Math.max(0,half+1.2-Math.abs(off))/(tx*normalX+tz*normalZ);
+  const x=c[0]+tx*delta,z=c[1]+tz*delta;
+  const mark=(u,v)=>[x+tz*u+tx*v,z-tx*u+tz*v];
+  const emit=(polygon,face)=>{
+    const [ax,az]=face.vertices[0];
+    const world=polygon.map(([x,z])=>[x,face.ay+face.gx*(x-ax)+face.gz*(z-az)+.014,z]);
+    for(let k=1;k+1<world.length;k++){
+      const a=world[0],b=world[k],c=world[k+1];
+      if(Math.abs((b[0]-a[0])*(c[2]-a[2])-(b[2]-a[2])*(c[0]-a[0]))>1e-7)lines.tri(a,b,c,UP,[0,0],[1,0],[0,1],color);
+    }
+  };
+  for(let u=-width/2+.45;u+.42<width/2-.23;u+=.85){
+    const stripe=[mark(u,-.78),mark(u+.42,-.78),mark(u+.42,.78),mark(u,.78)];
+    if(stripe.some(([px,pz])=>sign*((px-C.x[bi])*normalX+(pz-C.z[bi])*normalZ)<half+.06))continue;
+    const faces=nearbyFaces(stripe);
+    if(faces.some(face=>face.kind==='race'&&clipCrossingPaint(stripe,face).length>=3))continue;
+    const raised=faces.filter(face=>face.kind==='raised');
+    for(const drive of faces){
+      if(drive.kind!=='drive')continue;
+      const piece=clipCrossingPaint(stripe,drive);
+      if(piece.length<3)continue;
+      emit(piece,drive);
+      // Some driveway mouths carry the footway across them on a raised table.
+      for(const face of raised)emit(clipCrossingPaint(piece,face),face);
+    }
+  }
+}
+
+function buildCourseMesh(scene, drivePavement) {
   const C = W.C, road = new MB(), lines = new MB(), walk = new MB(), curb = new MB();
-  const asph = col(0x98958e), white = col(0xe5e2d8), yellow = col(0xd7b353), red = col(0xd8382e), grey = col(0xb9b7b0), dark = col(0x17191e), pave = col(0xad9188);
+  const asph = col(0x929396), eastAsphalt = col(0x727883), redPaving = col(0xa4746f), mixedPaving=asph.clone();
+  const white = col(0xe5e2d8), yellow = col(0xd7b353), grey = col(0xb9b7b0), dark = col(0x17191e), pave = col(0xad9188);
   const offset = (off, i) => typeof off === 'function' ? off(mod(i, C.n)) : off;
   const P = (i, off, lift) => { const a = mod(i, C.n), o = offset(off, i), x = C.x[a] + C.tz[a] * o, z = C.z[a] - C.tx[a] * o; return [x, hAt(x, z) + lift, z]; };
   const strip = (mb, i, o0, o1, lift, c, v0, v1) => mb.quad(P(i, o0, lift), P(i, o1, lift), P(i + 1, o1, lift), P(i + 1, o0, lift), UP,
@@ -568,16 +655,26 @@ function buildCourseMesh(scene) {
     const v0 = i * C.ds / 4, v1 = (i + 1) * C.ds / 4;
     // Worn red anti-skid surfacing visible in photos 50–54, independent of the
     // physical grade correction and with no additional raised collision plane.
-    const pavement = i >= 2105 && i <= 2181 ? col(0xa4746f) : asph;
+    const darkMix = i < 278 ? clamp((278-i)/18,0,1) : clamp((i-2181)/9,0,1);
+    const pavement = i >= 2103 && i <= 2181 ? redPaving : mixedPaving.copy(asph).lerp(eastAsphalt,darkMix);
     strip(road, i, a => C.halfWidth[a], a => -C.halfWidth[a], ROAD_LIFT, pavement, v0, v1);
     const style = referenceRoadStyles.find(a => i >= a.from && i <= a.to) || { center: 'double', edges: 'white' };
-    if (style.center === 'double') {
+    // Unpainted junction aprons run between the marked approaches at E16/E11.
+    const openJunction = i <= 3 || (i >= 62 && i <= 68) || (i >= 95 && i <= 101);
+    if (!openJunction && style.center === 'double') {
       strip(lines, i, .19, .07, ROAD_LIFT + .015, yellow, v0, v1);
       strip(lines, i, -.07, -.19, ROAD_LIFT + .015, yellow, v0, v1);
-    } else if (style.center === 'single' || style.center === 'dashed' && Math.floor(i / 2) % 2 === 0) {
+    } else if (!openJunction && (style.center === 'single' || style.center === 'dashed' && Math.floor(i / 2) % 2 === 0)) {
       strip(lines, i, .065, -.065, ROAD_LIFT + .015, yellow, v0, v1);
     }
     if (style.edges !== 'none') for (const s of [1, -1]) strip(lines, i, a => s * (C.halfWidth[a] - .3), a => s * (C.halfWidth[a] - .43), ROAD_LIFT + .015, style.edges === 'yellow' ? yellow : white, v0, v1);
+    if (i >= 22 && i < 53 && i % 3 === 0) {
+      for (const side of [-1,1]) strip(lines,i,side*3.16,side*3.28,ROAD_LIFT+.018,white,v0,v1);
+    }
+    if (i >= 2105 && i < 2178 && i % 4 < 2) {
+      for (const side of [-1,1]) strip(lines,i,
+        a=>side*(C.halfWidth[a]*.52-.06),a=>side*(C.halfWidth[a]*.52+.06),ROAD_LIFT+.018,white,v0,v1);
+    }
     for (let s = 0; s < 2; s++) {
       if (!C.side[s][i] || !C.side[s][mod(i + 1, C.n)]) continue;
       const sg = s ? -1 : 1, e0 = a => sg * C.halfWidth[a], e1 = a => sg * (C.halfWidth[a] + .32), e2 = a => sg * (C.halfWidth[a] + 2.3), top = ROAD_LIFT + CURB_H;
@@ -591,15 +688,41 @@ function buildCourseMesh(scene) {
   }
   // start / finish chequer
   const mid = (i, off) => { const A = P(Math.floor(i), off, ROAD_LIFT + .02), B = P(Math.floor(i) + 1, off, ROAD_LIFT + .02), f = i - Math.floor(i); return [lerp(A[0], B[0], f), lerp(A[1], B[1], f), lerp(A[2], B[2], f)]; };
+  // The eastbound lane beyond the E11 junction has a white through arrow.
+  lines.quad(mid(71.1,-2.15),mid(71.1,-2.37),mid(72.35,-2.37),mid(72.35,-2.15),UP,[0,0],[1,0],[1,1],[0,1],white);
+  lines.tri(mid(72.28,-1.67),mid(72.28,-2.85),mid(73.05,-2.26),UP,[0,0],[1,0],[.5,1],white);
   for (let r = 0; r < 3; r++) for (let q = 0; q < 10; q++) {
     const o0 = -HALF_W + q, o1 = o0 + 1, i0 = r * .5 - .75;
     lines.quad(mid(i0, o0), mid(i0, o1), mid(i0 + .5, o1), mid(i0 + .5, o0), UP, [0, 0], [1, 0], [1, 1], [0, 1], (q + r) & 1 ? white : dark);
   }
   // zebra crossings (real OSM positions near the course)
   const used = [];
+  let crossingFaces;
   for (const c of W.D.crossings || []) {
     let best = 49, bi = -1;
     for (let i = 0; i < C.n; i++) { const d = (C.x[i] - c[0]) ** 2 + (C.z[i] - c[1]) ** 2; if (d < best) { best = d; bi = i; } }
+    if (bi < 0) continue;
+    // A zebra on a side access road often falls within seven metres of the
+    // racing line. Its stripes belong across that driveway, along the sidewalk.
+    const off = (c[0]-C.x[bi])*C.tz[bi] - (c[1]-C.z[bi])*C.tx[bi];
+    if (Math.abs(off) > C.halfWidth[bi] * .65) {
+      let branch, distance = .65;
+      for (const r of W.D.roads) {
+        if (ROAD[r.t]?.[1] !== 2) continue;
+        for (let j=1; j<r.p.length; j++) {
+          const a=r.p[j-1], b=r.p[j], dx=b[0]-a[0], dz=b[1]-a[1], len=Math.hypot(dx,dz);
+          if (!len || Math.abs((dx*C.tx[bi]+dz*C.tz[bi])/len) > .75) continue;
+          const t=clamp(((c[0]-a[0])*dx+(c[1]-a[1])*dz)/(len*len),0,1);
+          const d=Math.hypot(c[0]-a[0]-t*dx,c[1]-a[1]-t*dz);
+          if(d<distance){distance=d;branch={tx:dx/len,tz:dz/len,width:ROAD[r.t][0]};}
+        }
+      }
+      if (branch) {
+        crossingFaces ||= crossingPavement(W.D.crossings,drivePavement,road.p,walk.p,curb.p);
+        paintDrivewayCrossing(lines,white,C,bi,c,off,branch,crossingFaces);
+        continue;
+      }
+    }
     if (bi < 8 || bi > C.n - 8 || used.some(u => Math.abs(u - bi) < 6) || W.courseBumps.some(u => Math.abs(u - bi) < 4)) continue;
     used.push(bi);
     const crossingHalfWidth = Math.min(C.halfWidth[bi], C.halfWidth[mod(bi - 1, C.n)], C.halfWidth[mod(bi + 1, C.n)]);
@@ -621,13 +744,25 @@ function buildCourseMesh(scene) {
       [0, 0], [1, 0], [1, 1], [0, 1], white);
   }
   flat(scene, speedMarkings, new THREE.MeshStandardMaterial({ map: marking, transparent: true, alphaTest: .2, depthWrite: false, roughness: .95, vertexColors: true }), 5);
+  // Yellow shuttle-stop lettering on the science road and at the E1 approach.
+  const shuttleText = canvasTex(128,256,(ctx,w,h)=>{
+    ctx.clearRect(0,0,w,h);
+    ctx.fillStyle='#e0b441'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.font='bold 66px Arial,sans-serif'; ctx.fillText('SHUTTLE',w/2,h*.28,w*.95);
+    ctx.font='bold 75px Arial,sans-serif'; ctx.fillText('BUS',w/2,h*.70,w*.86);
+  },false);
+  const stops = new MB();
+  for(const i of [263.8,584.4]) {
+    stops.quad(mid(i-1.4,-1.24),mid(i-1.4,-3.32),mid(i+1.4,-3.32),mid(i+1.4,-1.24),UP,[0,0],[1,0],[1,1],[0,1],col(0xffffff));
+  }
+  flat(scene,stops,new THREE.MeshStandardMaterial({map:shuttleText,transparent:true,alphaTest:.25,depthWrite:false,roughness:.95,vertexColors:true}),5);
 }
 
 function buildCourseBarriers(scene) {
   const geometry = getCourseBarriers(W.C), mb = new MB(), topColor = col(0xa6ada9), backColor = col(0x626d68);
   const frontColor = col(0x89928c), height = COURSE_BARRIER.height;
   const ordinaryBands = [[-.12,.12],[.36,.48],[.78,height]], curbBand = [[-.07,CURB_H]];
-  const rails = { picket: [], medallion: [] };
+  const rails = new Map();
   const styles = [Array(W.C.n), Array(W.C.n)];
   for (const {from,to,left,right} of campusBoundaryRanges) {
     if (left) styles[0].fill(left,from,to);
@@ -643,10 +778,13 @@ function buildCourseBarriers(scene) {
   for (const segment of geometry.segments) {
     const { a, b, outerA, outerB, nx, nz, index, side } = segment;
     const appearance = styles[side][index];
-    if (rails[appearance]) rails[appearance].push(segment);
+    if (appearance) {
+      if (!rails.has(appearance)) rails.set(appearance, []);
+      rails.get(appearance).push(segment);
+    }
     // buildCourseMesh already draws a stone curb on this exact inner face when
-    // both sidewalk samples exist. Where the walk opens, continue a low curb
-    // along the race boundary so its location remains legible at junctions.
+    // both sidewalk samples exist. Continue that base beneath the fence when
+    // a junction or driveway interrupts the sidewalk.
     if (appearance && W.C.side[side][index] && W.C.side[side][(index + 1) % W.C.n]) continue;
     const v0 = index * W.C.ds, v1 = (index + 1) * W.C.ds;
     for (const [low, high] of appearance ? curbBand : ordinaryBands) {
@@ -672,7 +810,7 @@ function buildCourseBarriers(scene) {
   const mesh = new THREE.Mesh(mb.geo(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .83, metalness: .08 }));
   mesh.name = 'Course boundaries'; mesh.castShadow = true; mesh.receiveShadow = true;
   mesh.userData = { continuous: true, collision: 'course-barriers.js shared inner faces', appearanceRanges: campusBoundaryRanges };
-  for (const [style, segments] of Object.entries(rails)) buildCampusBoundaryRail(mesh,style,segments,groundY);
+  for (const [style, segments] of rails) buildCampusBoundaryRail(mesh,style,segments,groundY);
   W.barriers = mesh; scene.add(mesh);
 }
 
@@ -974,6 +1112,25 @@ function buildNature(scene) {
 function buildProps(scene) {
   const C = W.C, m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), one = new THREE.Vector3(1, 1, 1);
   const poleM = new THREE.MeshStandardMaterial({ color: 0x8d949c, roughness: .5, metalness: .6 });
+  // Green and white delineators beside E11 and the E10 bend, seen at driver
+  // height. The short runs end before the entrances; bases clear the race lane.
+  const green = col(0x18824b), reflective = col(0xdfebe1);
+  const coneShape = merged([
+    [new THREE.BoxGeometry(.33,.045,.33),M4(0,.023,0),green],
+    [new THREE.CylinderGeometry(.075,.128,.23,8),M4(0,.16,0),green],
+    [new THREE.CylinderGeometry(.061,.075,.075,8),M4(0,.3125,0),reflective],
+    [new THREE.CylinderGeometry(.035,.061,.115,8),M4(0,.4075,0),green]
+  ]);
+  const coneStations = [66,69,73,97,128,131,135,181,184,187,190];
+  const cones = new THREE.InstancedMesh(coneShape,new THREE.MeshStandardMaterial({vertexColors:true,roughness:.82}),coneStations.length);
+  coneStations.forEach((i,j)=>{
+    const offset = C.halfWidth[i]+.37;
+    const x=C.x[i]-C.tz[i]*offset, z=C.z[i]+C.tx[i]*offset;
+    const curb=C.side[1][i] && C.side[1][(i+1)%C.n];
+    const y=hAt(x,z)+(curb ? ROAD_LIFT+CURB_H : liftAt(x,z));
+    cones.setMatrixAt(j,m4.compose(new THREE.Vector3(x,y,z),q.setFromEuler(e.set(0,Math.atan2(C.tx[i],C.tz[i]),0)),one));
+  });
+  cones.name='Science road curb delineators'; cones.castShadow=true; scene.add(cones);
   // speed-bump warning signs, 30 m ahead of each bump
   const signTex = canvasTex(128, 128, (x) => {
     x.translate(64, 64);
@@ -1097,7 +1254,7 @@ export async function loadWorld(scene, renderer, progress) {
   await step('Tracing the Fun Run course', () => { buildCourse(); buildGrid(); makeTextures(); });
   await step('Painting the sky', () => buildSky(scene, renderer));
   await step('Shaping the hills', () => buildTerrain(scene));
-  await step('Paving roads', () => { buildRoads(scene); buildBumps(scene); buildCourseMesh(scene); buildCourseBarriers(scene); });
+  await step('Paving roads', () => { const drivePavement=buildRoads(scene); buildBumps(scene); buildCourseMesh(scene,drivePavement); buildCourseBarriers(scene); });
   await step('Raising buildings', () => buildBuildings(scene));
   await step('Planting trees', () => { buildParking(scene, W.D, hAt, surfAt, TEX); buildGate(scene, W.D, hAt); buildNature(scene); buildStreetscape(scene, W.D, W.C, hAt, surfAt); W.capturedLandscape = buildCapturedLandscape(scene, W.D, W.C, hAt, surfAt).metadata; W.capturedRoadside = buildCapturedRoadside(scene, W.D, W.C, hAt, surfAt).metadata; buildProps(scene); });
 }
