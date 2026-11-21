@@ -1,31 +1,9 @@
-import {CatmullRomCurve3,Vector3} from '../lib/three.module.min.js';
 import {createGooseModels} from './goose-models.js';
+import {createPondWalk} from './goose-roaming.js';
 
-// A circuit on the Duck Pond headland, north of the bridge. It crosses the
-// avenue at the mapped crossing (8,206) and returns over the service lane.
-const shorelineWalk=[[41,215],[29,212],[17,209],[8,206.1],[.4,203.3],
-  [-3.6,207.5],[-2,214.3],[5.4,219.7],[14.6,222.4],[23.3,222],
-  [30.1,220.6],[38.7,218.3],[47.5,220.1],[50,217.4],[48,212.4]];
-// Stone plinth and the trunks of the prominent pines and maples in lakeGarden.
-const fixtures=[[55.2,216.1,3.75],[35.6,221.1,.42],[45.3,224.4,.35],
-  [27.1,195.6,.48],[23.4,199.8,.40],[28.7,202,.40],[31,217.4,.24],
-  [36,225,.24],[39.5,228.1,.28],[42.6,204,.35],[57.4,204.2,.25]];
 const count=17,gravity=9.81;
 const clamp=(v,a,b)=>Math.min(b,Math.max(a,v));
 const angleDelta=(from,to)=>Math.atan2(Math.sin(to-from),Math.cos(to-from));
-
-function walkingRoute(){
-  const curve=new CatmullRomCurve3(shorelineWalk.map(([x,z])=>new Vector3(x,0,z)),true);
-  const length=curve.getLength(),points=curve.getSpacedPoints(480);
-  return (distance,across,target)=>{
-    const u=((distance%length+length)%length)/length*480;
-    const a=points[Math.floor(u)],b=points[Math.floor(u)+1],t=u%1;
-    const dx=b.x-a.x,dz=b.z-a.z,span=Math.hypot(dx,dz);
-    target.x=a.x+dx*t+dz/span*across;
-    target.z=a.z+dz*t-dx/span*across;
-    target.heading=Math.atan2(dx,dz);
-  };
-}
 
 // The swept kart footprint is a rounded capsule around its longitudinal
 // axis. Interpolate its height at closest contact so a jump can clear a bird.
@@ -48,38 +26,24 @@ function touchesBird(bird,beforeX,beforeZ,previous,kart){
     (den>1e-8&&(contact((-ax*dx+(-.59-az)*dz)/den)||contact((-ax*dx+(.62-az)*dz)/den)));
 }
 
-export function createGooseFlock(scene,world,groundAt){
-  const route=walkingRoute(),models=createGooseModels(scene,count);
+export function createGooseFlock(scene,world,groundAt,random=Math.random){
+  const route=createPondWalk(world,random),dry=route.dry,models=createGooseModels(scene,count);
   const birds=Array.from({length:count},(_,i)=>{
     const row=Math.floor((i+1)/2),side=i===0?0:i%2?1:-1;
     return {x:0,y:0,z:0,heading:0,stride:i*2.39,flap:i*.91,flight:0,tilt:0,bank:0,
       mode:'walking',lag:row*1.44+(side<0?.42:0),side:side*(.89+.15*Math.sin(i*2.2))+.32*Math.sin(row),
-      phase:i*2.39,vx:0,vy:0,vz:0,rearm:0};
+      phase:i*2.39,vx:0,vy:0,vz:0,rearm:0,graze:0,look:0};
   });
-  const G=world.G,target={};
-  let time=0,station=0,lastKart=null,wasNear=false,seen=false;
-  function dry(x,z){
-    // The flock ranges over the lawns, paths and streets around this bank.
-    if(x< -10 || x>60 || z<195 || z>230)return false;
-    const k=(Math.floor(z)-G.z0)*G.w+Math.floor(x)-G.x0;
-    if(G.d[k]===8 || G.d[k]===9)return false;
-    for(const [tx,tz,r] of fixtures)
-      if((x-tx)**2+(z-tz)**2<(r+.22)**2)return false;
-    return true;
-  }
+  const target={};
+  let time=0,lastKart=null,wasNear=false;
   function slot(b){
-    const weave=.22*Math.sin(time*.69+b.phase)+.12*Math.sin(time*.27+b.phase*1.7);
-    route(station-b.lag+.19*Math.sin(time*.48+b.phase),b.side+weave,target);
-    // Move the formation around an occasional individual tree trunk.
-    for(const [x,z,r] of fixtures){
-      const dx=target.x-x,dz=target.z-z,d=Math.hypot(dx,dz),clear=r+.36;
-      if(d<clear){target.x=x+dx/(d||1)*clear;target.z=z+dz/(d||1)*clear;}
-    }
+    const weave=.24*Math.sin(time*.53+b.phase)+.15*Math.sin(time*.21+b.phase*1.7);
+    route.slot(b.lag-.19*Math.sin(time*.43+b.phase),b.side+weave,target);
   }
   function groundFormation(){
     for(const b of birds){
       slot(b);b.x=target.x;b.z=target.z;b.y=groundAt(b.x,b.z);b.heading=target.heading;
-      b.mode='walking';b.flight=0;b.tilt=0;b.bank=0;b.rearm=0;
+      b.mode='walking';b.flight=0;b.tilt=0;b.bank=0;b.rearm=0;b.graze=0;b.look=0;
     }
     separate(Infinity);
     models.update(birds);
@@ -131,7 +95,7 @@ export function createGooseFlock(scene,world,groundAt){
     }
     const v=Math.min(horizontal,room/travel);
     b.vx=dx*v;b.vz=dz*v;b.mode='airborne';b.airTime=0;b.launchHeading=heading;b.launchSide=side;
-    b.rearm=1.3;
+    b.rearm=1.3;b.graze=0;b.look=0;
   }
   function airborne(b,dt){
     const drag=Math.exp(-.6*dt),advance=(1-drag)/.6;
@@ -165,9 +129,15 @@ export function createGooseFlock(scene,world,groundAt){
         }
       }
       if(b.x!==oldX || b.z!==oldZ)heading=Math.atan2(b.x-oldX,b.z-oldZ);
-      b.heading+=angleDelta(b.heading,heading)*(1-Math.exp(-6.5*dt));
+      if(!route.resting||move>.4*dt||catchup)
+        b.heading+=angleDelta(b.heading,heading)*(1-Math.exp(-6.5*dt));
     }
     if(catchup&&d<.38)b.mode='walking';
+    const resting=route.resting&&!catchup;
+    const graze=resting&&route.onGrass(b.x,b.z)?(.5+.5*Math.sin(time*(.94+.19*Math.cos(b.phase))+b.phase))**1.5:0;
+    const blend=1-Math.exp(-4.4*dt);
+    b.graze+=(graze-b.graze)*blend;
+    b.look+=((resting?.40*Math.sin(time*.69+b.phase):0)-b.look)*blend;
     b.y=groundAt(b.x,b.z);b.stride+=Math.hypot(b.x-oldX,b.z-oldZ)*6.2;
     b.flight=Math.max(0,b.flight-2.5*dt);b.tilt*=Math.exp(-9*dt);b.flap+=dt*10*b.flight;
   }
@@ -176,18 +146,19 @@ export function createGooseFlock(scene,world,groundAt){
   function update(dt,player){
     if(!(dt>0)||!player?.body)return;
     dt=Math.min(dt,.12);
-    const near=(player.x-24)**2+(player.z-215)**2<190**2;
+    route.slot(5,0,target);
+    const near=(player.x-target.x)**2+(player.z-target.z)**2<190**2;
     if(!near){
-      if(seen){time+=dt;station+=dt*(1.18+.17*Math.sin(time*.28));}
+      time+=dt;route.advance(dt,time);
       models.group.visible=false;wasNear=false;resetKartContact();return;
     }
-    if(!wasNear){if(seen)groundFormation();wasNear=true;seen=true;}
+    if(!wasNear){groundFormation();wasNear=true;}
     const kart={x:player.x,z:player.z,th:player.th,base:player.body.y-player.body.rideHeight,
       vx:player.vx,vz:player.vz};
     const speed=Math.hypot(kart.vx,kart.vz);
     const travelled=lastKart?Math.hypot(kart.x-lastKart.x,kart.z-lastKart.z):0;
     const canHit=lastKart && speed>.55 && travelled>.001 && travelled<=Math.max(1.8,(speed+6)*dt*1.65);
-    time+=dt;station+=dt*(1.18+.17*Math.sin(time*.28));
+    time+=dt;route.advance(dt,time);
     for(const b of birds){
       const beforeX=b.x,beforeZ=b.z;
       b.rearm=Math.max(0,b.rearm-dt);

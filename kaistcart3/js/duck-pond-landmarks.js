@@ -191,11 +191,11 @@ function lakeGarden(W,hAt,B){
     [88.4,259.8],[94.2,259.8],[102.7,248.0],[103.2,245.3],[103.7,236.7]];
   const G=W.G;
   const blocked=(x,z)=>G.d[(Math.floor(z)-G.z0)*G.w+Math.floor(x)-G.x0]!==0 || W.access.isDrivable(x,z);
-  let count=0;
-  for(const [i,[x,z,r,height]] of pines.entries())if(!blocked(x,z)){redPine(B,x,hAt(x,z),z,r,height,i*1.74+.4);count++;}
-  for(const [i,[x,z,s,tone,lowBranches]] of maples.entries())if(!blocked(x,z)){maple(B,x,hAt(x,z),z,s,i*2.42+1,tone,lowBranches);count++;}
-  for(const [i,[x,z]] of shore.entries())if(!blocked(x,z)){clippedConifer(B,x,hAt(x,z),z,.53+.18*Math.sin(i*1.36),i*1.39);count++;}
-  return count;
+  const trunks=W.pondPlantings=[];
+  for(const [i,[x,z,r,height]] of pines.entries())if(!blocked(x,z)){redPine(B,x,hAt(x,z),z,r,height,i*1.74+.4);trunks.push([x,z,r*.085]);}
+  for(const [i,[x,z,s,tone,lowBranches]] of maples.entries())if(!blocked(x,z)){maple(B,x,hAt(x,z),z,s,i*2.42+1,tone,lowBranches);trunks.push([x,z,s*.13]);}
+  for(const [i,[x,z]] of shore.entries())if(!blocked(x,z)){clippedConifer(B,x,hAt(x,z),z,.53+.18*Math.sin(i*1.36),i*1.39);trunks.push([x,z,.5]);}
+  return trunks.length;
 }
 
 export function buildPondLandmarks(W,hAt,B,group){

@@ -23,6 +23,63 @@ export function withParkedCars(access,cars,groundAt){
   }};
 }
 
+// Keep overlapping building footprints separate so an annex never becomes
+// a hole. A courtyard or an island inside a single polygon stays open.
+function indexRoamObstacles(data){
+  const tile=32, {bounds}=data;
+  const columns=Math.ceil((bounds.x1-bounds.x0)/tile),rows=Math.ceil((bounds.z1-bounds.z0)/tile);
+  const bins=new Array(columns*rows);
+  function add(polygon,water){
+    if(polygon.p.length<3)return;
+    let x0=Infinity,z0=Infinity,x1=-Infinity,z1=-Infinity;
+    for(const [x,z] of polygon.p){x0=Math.min(x0,x);x1=Math.max(x1,x);z0=Math.min(z0,z);z1=Math.max(z1,z);}
+    const obstacle={water,contains:indexRoadBoundary([polygon.p,...(polygon.holes || [])],{x0,x1,z0,z1})};
+    const left=Math.max(0,Math.floor((x0-bounds.x0)/tile)),right=Math.min(columns-1,Math.floor((x1-bounds.x0)/tile));
+    const top=Math.max(0,Math.floor((z0-bounds.z0)/tile)),bottom=Math.min(rows-1,Math.floor((z1-bounds.z0)/tile));
+    for(let row=top;row<=bottom;row++)for(let col=left;col<=right;col++){
+      (bins[row*columns+col] ||= []).push(obstacle);
+    }
+  }
+  for(const building of data.buildings)if(building.t!=='roof' && !(building.minHeight>=2))add(building,false);
+  for(const area of data.areas)if(area.k==='water')add(area,true);
+  return (x,z)=>bins[Math.floor((z-bounds.z0)/tile)*columns+Math.floor((x-bounds.x0)/tile)];
+}
+
+/** Open campus ground to the kart while retaining the shoreline, occupied
+ * buildings, real posts and parked vehicles. Only this optional mode uses
+ * these boundaries; the road controller keeps its original access object. */
+export function createFreeRoamAccess(world){
+  const {D:data,G:grid,access:roads,roadIndex}=world;
+  const {bounds}=data,nearby=indexRoamObstacles(data);
+  const waterCrossing=r=>Boolean(r.bridge || r.ford);
+  function isDrivable(x,z,level=Infinity){
+    if(!(x>=bounds.x0 && x<bounds.x1 && z>=bounds.z0 && z<bounds.z1))return false;
+    const k=(Math.floor(z)-grid.z0)*grid.w+Math.floor(x)-grid.x0;
+    const obstacles=nearby(x,z);
+    if(obstacles)for(const obstacle of obstacles){
+      if(!obstacle.contains(x,z))continue;
+      if(!obstacle.water){
+        // Both the cutouts in the facades and the road model can designate a
+        // through passage. A mapped walk ending at a door creates neither.
+        if(!grid.portals[k] && !roads.isDrivable(x,z,level))return false;
+      }else{
+        const deck=grid.decks.get(k);
+        if(deck===undefined || (grid.lowerDecks.has(k) && level<deck-.45))return false;
+        if(!roads.isDrivable(x,z,level)){
+          const crossing=roadIndex.nearest(x,z,12,waterCrossing);
+          if(!crossing || crossing.distance>crossing.s.road.width/2)return false;
+        }
+      }
+    }
+    // The surface grid also contains freestanding fences and retaining walls.
+    return grid.d[k]<8 || roads.isDrivable(x,z,level);
+  }
+  const isFree=(x,z,level)=>isDrivable(x,z,level) && !roads.isOccupied?.(x,z,level) && !roads.isPost?.(x,z,level);
+  return {isDrivable,isFree,postHit:roads.postHit,canPlace(x,z,th,level){
+    return hasChassisClearance(isFree,x,z,th,level) && !roads.postHit?.(x,z,th,level);
+  }};
+}
+
 export function createDrivingAccess(data, network, index, surfaceGrid, outlines) {
   if(outlines){
     const {bounds}=data, grid=sampleRoadGrid(outlines.rings,bounds);

@@ -38,6 +38,19 @@ export function resetFreeDrive(player, pose, access = player.access, searchRadiu
   return true;
 }
 
+/** Keep a valid moving kart in place. When returning from a lawn, ask the
+ * map for a clear road pose and reset the kart on that road's actual layer. */
+export function switchDriveAccess(player,access,findRoadPose){
+  const {body}=player;
+  if(access.canPlace(body.x,body.z,body.th,body.y-body.rideHeight)){
+    player.access=access;
+    return 'kept';
+  }
+  const road=findRoadPose?.();
+  if(road && resetFreeDrive(player,road,access,0))return 'relocated';
+  return false;
+}
+
 /** Advance along the connected automobile surface, with swept vehicle contacts
  * at road edges, pedestrian entrances and real restricted gates. */
 export function stepFreeDrive(player, dt, buttons) {

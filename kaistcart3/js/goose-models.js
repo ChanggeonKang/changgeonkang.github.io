@@ -121,15 +121,15 @@ export function createGooseModels(scene,count) {
     const n=Math.min(birds.length,count);
     bounds.makeEmpty();
     for(let i=0;i<n;i++){
-      const {x,y,z,heading=0,stride=0,flight=0,flap=0,tilt=0,bank=0}=birds[i];
+      const {x,y,z,heading=0,stride=0,flight=0,flap=0,tilt=0,bank=0,graze=0,look=0}=birds[i];
       bounds.expandByPoint(point.set(x,y,z));
       const size=.93+(i*17%13)*.009,walking=1-flight,gait=Math.sin(stride),lift=.012*gait*gait*walking;
       root.position.set(x,y+lift*size,z);root.rotation.set(-tilt,heading,-bank+gait*.027*walking,'YXZ');
       root.scale.setScalar(size);root.updateMatrix();body.setMatrixAt(i,root.matrix);
-      const stretch=flight*1.08+.055*Math.sin(stride+.35)*walking;
-      place(neck,i,0,.422,.186,stretch);
+      const stretch=flight*1.08+.055*Math.sin(stride+.35)*walking+graze*2.23;
+      place(neck,i,0,.422,.186,stretch,look);
       headAt.set(0,.439,.044).applyQuaternion(part.quaternion);
-      place(head,i,headAt.x,.422+headAt.y,.186+headAt.z,flight*.085+.033*gait*walking,.055*Math.sin(stride*.5+i)*walking);
+      place(head,i,headAt.x,.422+headAt.y,.186+headAt.z,flight*.085+.033*gait*walking+graze*.62,look+.055*Math.sin(stride*.5+i)*walking);
       for(const side of [-1,1]){
         const phase=stride+(side<0?Math.PI:0);
         place(feet,2*i+(side+1)/2,side*.071,Math.max(0,Math.sin(phase))*.057*walking+flight*.103-lift,

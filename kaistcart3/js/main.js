@@ -4,7 +4,8 @@ import {W, loadWorld, updateWorld, hAt, gAt, surfAt, clamp, rng} from './world.j
 import {makeNubzuki, poseKart} from './kart.js';
 import {Vehicle,RIDE} from './vehicle-physics.js';
 import {FixedStepper} from './race-sim.js';
-import {resetFreeDrive,stepFreeDrive} from './free-drive.js';
+import {resetFreeDrive,stepFreeDrive,switchDriveAccess} from './free-drive.js';
+import {createFreeRoamAccess} from './drivable-access.js';
 import {Particles,Skids,Post} from './fx.js';
 import {Sfx} from './audio.js';
 import {createCampusMap} from './campus-map.js';
@@ -52,6 +53,8 @@ let dust,skids,atlas,mode='load',T=0,last=0,lastHud=-1,lookYaw=0,lookPitch=0,str
 const keymap={KeyW:'up',ArrowUp:'up',KeyS:'down',ArrowDown:'down',KeyA:'left',ArrowLeft:'left',KeyD:'right',ArrowRight:'right',ShiftLeft:'drift',ShiftRight:'drift'};
 const keys={},pressed=new Map();
 const viewButton=$('viewBtn');
+const freeDriveButton=$('freeDriveBtn');
+let roamAccess,roadDeparture,driveNotice='',noticeUntil=0;
 function updateKeys(){for(const k of Object.values(keymap))keys[k]=false;for(const k of pressed.values())keys[k]=true;}
 function clearInputs(){pressed.clear();updateKeys();drag=null;document.querySelectorAll('.held').forEach(b=>b.classList.remove('held'));}
 function stopMotion(){clearInputs();stepper.reset();sfx.quiet();last=0;}
@@ -71,13 +74,29 @@ function faceArrival(pose){
   arrivalLook=Number.isFinite(pose.viewHeading);
   lookYaw=arrivalLook?angDiff(pose.viewHeading,P.th):0;lookPitch=0;cam.snap=true;
 }
+function toggleFreeDrive(){
+  if(mode!=='drive')return;
+  const enabling=P.access===W.access;
+  const previousPose={x:P.x,z:P.z,th:P.th,groundHint:P.body.y-P.body.rideHeight};
+  if(enabling && !roamAccess)roamAccess=createFreeRoamAccess(W);
+  const target=enabling?roamAccess:W.access;
+  const result=switchDriveAccess(P,target,()=>atlas.nearestRoad(P.x,P.z)||roadDeparture);
+  if(result){
+    if(enabling)roadDeparture=previousPose;
+    freeDriveButton.setAttribute('aria-pressed',String(enabling));
+    $('freeDriveState').textContent=enabling?'On':'Off';
+    if(result==='relocated'){skids.clear();faceArrival(P);}
+  }
+  driveNotice=!result?'Move to a clear spot and try again.':result==='relocated'&&!enabling?'Road mode · Back on the road':'';
+  noticeUntil=T+2.5;lastHud=-1;
+}
 function openMap(){
   if(!atlas||mode==='atlas')return;
   if($('pause').open)$('pause').close();
   camera.getWorldDirection(v3);
   const viewHeading=Math.atan2(v3.x,v3.z);
   stopMotion();mode='atlas';$('atlas').showModal();atlas.show({...P,viewHeading},pose=>{
-    if(!resetFreeDrive(P,pose,W.access))return false;
+    if(!resetFreeDrive(P,pose,P.access,P.access===W.access?8:0))return false;
     skids.clear();faceArrival(pose);closeOverlays();lastHud=-1;return true;
   });$('atlasClose').focus({preventScroll:true});
 }
@@ -86,13 +105,17 @@ function pauseDrive(){if(mode!=='drive')return;stopMotion();mode='pause';$('paus
 $('mapBtn').onclick=openMap;$('openAtlas').onclick=openMap;$('atlasClose').onclick=closeOverlays;$('pauseBtn').onclick=pauseDrive;$('resume').onclick=()=>{sfx.init();closeOverlays();};
 $('mute').onclick=()=>{sfx.init();sfx.setMuted(!sfx.muted);$('mute').textContent=sfx.muted?'Sound off':'Sound on';};
 $('cameraToggle').onclick=cameraMode;
-viewButton.onclick=cameraMode;
-// A second finger can switch views while the first keeps the accelerator held.
-viewButton.addEventListener('touchend',e=>{
-  e.preventDefault();
-  const finger=e.changedTouches[0];
-  if(viewButton.contains(document.elementFromPoint(finger.clientX,finger.clientY)))cameraMode();
-},{passive:false});
+function bindDrivingButton(button,action){
+  button.onclick=action;
+  // A second finger can change settings while the first holds the accelerator.
+  button.addEventListener('touchend',e=>{
+    e.preventDefault();
+    const finger=e.changedTouches[0];
+    if(button.contains(document.elementFromPoint(finger.clientX,finger.clientY)))action();
+  },{passive:false});
+}
+bindDrivingButton(viewButton,cameraMode);
+bindDrivingButton(freeDriveButton,toggleFreeDrive);
 for(const id of ['atlas','pause'])$(id).addEventListener('cancel',e=>{e.preventDefault();closeOverlays();});
 addEventListener('keydown',e=>{
   if(mode==='load'||e.isComposing||e.ctrlKey||e.metaKey||e.altKey||e.target.matches('input,textarea,select'))return;
@@ -192,7 +215,11 @@ function tick(dt){
     });
     W.gooseFlock.update(dt,P);
     poseKart(P.mesh,P,dt,T);effects(dt);updateCamera(dt);
-    if(lastHud<0||T-lastHud>.09){lastHud=T;atlas.update(P);$('speed').textContent=String(Math.round(Math.hypot(P.vx,P.vz)*3.6));$('notice').hidden=P.flipT<=.2;if(P.flipT>.2)$('notice').textContent='Righting the kart…';}
+    if(lastHud<0||T-lastHud>.09){
+      lastHud=T;atlas.update(P);$('speed').textContent=String(Math.round(Math.hypot(P.vx,P.vz)*3.6));
+      const message=P.flipT>.2?'Righting the kart…':T<noticeUntil?driveNotice:'';
+      $('notice').hidden=!message;if(message)$('notice').textContent=message;
+    }
   }
   sun.target.position.set(P.x,gAt(P.x,P.z),P.z);sun.position.copy(sun.target.position).addScaledVector(W.sun,300);
   updateWorld(T,camera,P);

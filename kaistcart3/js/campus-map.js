@@ -261,21 +261,23 @@ export function createCampusMap(world,panoramas){
     $('selectedLabel').textContent=selected?'Selected location':'Your location';
     $('selectedName').textContent=selected?.name||here(p.x,p.z);
     $('mapMessage').textContent=selected?.place?.ref==='N11'?'Shuttle frontage · open for in-game exploration.':
-      selected?(selected.place?'Vehicle approach · '+Math.round(selected.distance)+' m from this place.':''):'Choose a drivable road, car park or building.';
+      selected?(selected.place?'Vehicle approach · '+Math.round(selected.distance)+' m from this place.':''):
+      player.access && player.access!==world.access?'Choose open ground or a road. Buildings and water are closed.':'Choose a drivable road, car park or building.';
     $('travel').disabled=!selected;links(p);draw();
   }
   function select(x,z,place,pan=false){
-    const access=world.access;
-    let found=place?vehicleApproach(place,segments,access):snapToStreet(segments,x,z,access);
+    const access=player.access||world.access;
+    let found=place?vehicleApproach(place,segments,world.access):snapToStreet(segments,x,z,world.access);
     // Map taps select the actual vehicle surface, including the open interior of
     // a car park. Named places resolve to their closest accessible approach.
     if(!place){
-      const heading=found?.th||0;
+      const heading=access!==world.access && (!found || found.distance>3)?player.th:(found?.th||0);
       const hint=found?.distance<3?found.groundHint:undefined;
       if(access.canPlace(x,z,heading,hint))found={x,z,th:heading,groundHint:hint};
       else {
         selected=null;refreshSelection();list();
-        $('mapMessage').textContent=access.isOccupied?.(x,z,hint)?'This parking bay is occupied. Select an empty bay or aisle.':'Vehicle access ends here. Select a light-coloured road or car park.';
+        $('mapMessage').textContent=access.isOccupied?.(x,z,hint)?'This parking bay is occupied. Select an empty bay or aisle.':
+          access!==world.access?'This spot is blocked. Select clear ground or a road.':'Vehicle access ends here. Select a light-coloured road or car park.';
         return;
       }
     }
@@ -301,11 +303,17 @@ export function createCampusMap(world,panoramas){
   full.onpointerdown=e=>{drag={id:e.pointerId,x:e.clientX,y:e.clientY,cx:focus.x,cz:focus.z,moved:false};full.setPointerCapture(e.pointerId);};
   full.onpointermove=e=>{if(!drag||drag.id!==e.pointerId)return;const dx=e.clientX-drag.x,dy=e.clientY-drag.y;if(Math.hypot(dx,dy)>5)drag.moved=true;if(drag.moved&&zoom>1){focus.x=clamp(drag.cx-dx/transform.scale,bounds.x0,bounds.x1);focus.z=clamp(drag.cz-dy/transform.scale,bounds.z0,bounds.z1);draw();}};
   full.onpointerup=e=>{if(!drag)return;const click=!drag.moved;drag=null;if(click){const p=point(e);select(p.x,p.z,null,false);}};full.onpointercancel=()=>{drag=null;};
-  $('placeSearch').oninput=list;$('travel').onclick=()=>{if(selected&&!onTravel(selected))$('mapMessage').textContent='This spot is obstructed. Select another road nearby.';};
+  $('placeSearch').oninput=list;$('travel').onclick=()=>{if(selected&&!onTravel(selected))$('mapMessage').textContent='This spot is obstructed. Select another spot nearby.';};
   new ResizeObserver(draw).observe(full);
-  return {update,arrived(pose){arrivalView=Number.isFinite(pose.viewHeading)?pose:null;},initialPose(destination){
+  return {update,nearestRoad(x,z){return snapToStreet(segments,x,z,world.access);},arrived(pose){arrivalView=Number.isFinite(pose.viewHeading)?pose:null;},initialPose(destination){
     const place=destination && (places.find(p=>p.ref===destination) || places.find(p=>p.name===destination));
     if(place){const arrival=vehicleApproach(place,segments,world.access);if(arrival)return arrival;}
     const s=snapToStreet(segments,159,462,world.access);if(!s)throw Error('Missing main gate road');if(Math.cos(s.th)>0)s.th+=Math.PI;return s;},
-    show(p,travel){open=true;player=p;zoom=1;setFocus();selected=null;onTravel=travel;$('placeSearch').value='';list();refreshSelection();},hide(){open=false;drag=null;}};
+    show(p,travel){
+      open=true;player=p;zoom=1;setFocus();selected=null;onTravel=travel;
+      const freeDrive=p.access && p.access!==world.access;
+      $('roadKey').textContent=freeDrive?'Road':'Drivable';
+      full.setAttribute('aria-label',freeDrive?'Campus map. Select open ground, a road or a place from the list.':'Campus map. Select a drivable road or car park, or choose a place from the list.');
+      $('placeSearch').value='';list();refreshSelection();
+    },hide(){open=false;drag=null;}};
 }
