@@ -48,6 +48,7 @@ import { buildCaptureWest, isCaptureWestManaged, westRoadStyles, westSpeedMarks,
 import { buildExploreRoads } from './explore-roads.js';
 import { buildExploreGrounds } from './explore-grounds.js';
 import { cutTerrainUnderPavement } from './terrain-pavement-cut.js';
+import { gradeParkingSeams } from './parking-seam-grades.js';
 import { buildOutdoorTheater } from './explore-theater.js';
 import { buildKaimaru } from './kaimaru.js';
 import { buildAccessEdges } from './explore-curbs.js';
@@ -1250,6 +1251,7 @@ export async function loadWorld(scene, renderer, progress) {
       return W.G.mappedLane[k] ? 3 : surfAt(x,z);
     };
     const parking=buildParking(scene,W.D,hAt,parkingSurface,TEX);
+    gradeParkingSeams(scene,W.D.bounds);
     finishEastSurveyPaving(scene,parking);
     cutTerrainUnderPavement(scene,W.D.bounds,160);
     pavement=indexPavement(W.D.bounds,scene.children);

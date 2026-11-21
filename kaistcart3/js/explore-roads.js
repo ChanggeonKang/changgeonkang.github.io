@@ -343,18 +343,27 @@ export function buildExploreRoads(scene, world, height, texture, MB, flat, refer
   // buffer, revealing disconnected triangles of darker asphalt in the aisle.
   const lots=new PavementCutouts();
   const separateFinishes=new Set([503892533,503477364,504188968,504338815,'sejong-turning-court']);
-  for(const lot of D.parking){
-    // The administration court, museum, block-paved court and photographed
-    // west garden have their own paving boundaries.
-    if(!lot.apronOnly && !separateFinishes.has(lot.id))lots.addPolygon(lot.p,lot.holes);
-  }
+  const ordinaryLots=D.parking.filter(lot=>!lot.apronOnly&&!separateFinishes.has(lot.id));
+  for(const lot of ordinaryLots)lots.addPolygon(lot.p,lot.holes);
   const plainAsphalt=[colours.street,colours.sharedLotAsphalt];
-  trimPavementMesh(scene.getObjectByName('Mapped campus streets and service lanes'),lots,(geometry,i)=>{
-    if(i>=bridgeStart || separateLevels.has(i))return false;
-    const pos=geometry.attributes.position,rgb=geometry.attributes.color;
-    if(!plainAsphalt.some(c=>Math.abs(c.r-rgb.getX(i))<1e-6 && Math.abs(c.g-rgb.getY(i))<1e-6 && Math.abs(c.b-rgb.getZ(i))<1e-6))return false;
-    return ![i,i+1,i+2].some(j=>garageCut(pos.getX(j),pos.getZ(j))>0);
-  });
+  const streets=scene.getObjectByName('Mapped campus streets and service lanes');
+  if(streets){
+    const {position:pos,color:rgb}=streets.geometry.attributes;
+    const ordinary=new Uint8Array(pos.count);
+    for(let i=0;i<bridgeStart;i+=3){
+      if(separateLevels.has(i))continue;
+      if(!plainAsphalt.some(c=>Math.abs(c.r-rgb.getX(i))<1e-6 && Math.abs(c.g-rgb.getY(i))<1e-6 && Math.abs(c.b-rgb.getZ(i))<1e-6))continue;
+      if(![i,i+1,i+2].some(j=>garageCut(pos.getX(j),pos.getZ(j))>0))ordinary.fill(1,i,i+3);
+    }
+    streets.geometry.setAttribute('parkingContact',new THREE.BufferAttribute(ordinary,1));
+    streets.userData.ordinaryLots=ordinaryLots;
+    trimPavementMesh(streets,lots,(_,i)=>{
+      if(!ordinary[i])return false;
+      // The flag is constant over a face, so subsequent clipping preserves
+      // which source faces reached a parking cutout.
+      ordinary.fill(2,i,i+3);return true;
+    });
+  }
   finish(hexDrive,'West campus block-paved motor lane',{map:texture.hexDrive},3);
   const court=D.areas.find(a=>a.id==='sejong-turning-court');
   if(court){
