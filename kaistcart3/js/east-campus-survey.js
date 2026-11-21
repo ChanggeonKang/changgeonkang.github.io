@@ -27,7 +27,8 @@ function pattern(kind) {
     const tone=['#fffcf9','#f1e8e1','#eee9e7','#f5eeed','#f6efe9'];
     for(let row=0;row<8;row++)for(let col=-1;col<9;col++){
       const x=(col+(row%2)*.5)*32,y=row*16;
-      ctx.fillStyle=tone[(13*row+3*col+25)%tone.length];ctx.fillRect(x+1,y+1,30,14);
+      const wrappedCol=(col+8)%8;
+      ctx.fillStyle=tone[(13*row+3*wrappedCol+25)%tone.length];ctx.fillRect(x+1,y+1,30,14);
     }
   }else{
     ctx.fillStyle='#f3f0ea';ctx.fillRect(1,1,w-2,h-2);

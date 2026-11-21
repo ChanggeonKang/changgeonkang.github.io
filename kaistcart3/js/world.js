@@ -47,6 +47,7 @@ import { buildCaptureEast, isCaptureEastManaged, eastRoadStyles, eastSpeedMarks,
 import { buildCaptureWest, isCaptureWestManaged, westRoadStyles, westSpeedMarks, westBumps } from './capture-extension-west.js';
 import { buildExploreRoads } from './explore-roads.js';
 import { buildExploreGrounds } from './explore-grounds.js';
+import { cutTerrainUnderPavement } from './terrain-pavement-cut.js';
 import { buildOutdoorTheater } from './explore-theater.js';
 import { buildKaimaru } from './kaimaru.js';
 import { buildAccessEdges } from './explore-curbs.js';
@@ -504,7 +505,8 @@ function buildTerrain(scene) {
     for(let j=0;j<nz;j++)for(let i=0;i<nx;i++){const a=j*(nx+1)+i,c=a+nx+1;indices.push(a,c,a+1,a+1,c,c+1);}
     const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));g.setAttribute('color',new THREE.Float32BufferAttribute(rgb,3));
     g.setAttribute('bankExposure',new THREE.Float32BufferAttribute(exposure,1));g.setIndex(indices);g.computeVertexNormals();
-    const m=new THREE.Mesh(g,mat);m.name='Campus terrain';m.receiveShadow=true;scene.add(m);
+    const m=new THREE.Mesh(g,mat);m.name='Campus terrain';m.receiveShadow=true;
+    m.userData.terrainAxes={x:xs.sample,z:zs.sample};scene.add(m);
   }
   const ex=D.terrainExtended;
   if(!ex)return;
@@ -1249,6 +1251,7 @@ export async function loadWorld(scene, renderer, progress) {
     };
     const parking=buildParking(scene,W.D,hAt,parkingSurface,TEX);
     finishEastSurveyPaving(scene,parking);
+    cutTerrainUnderPavement(scene,W.D.bounds,160);
     pavement=indexPavement(W.D.bounds,scene.children);
     W.accessScenery=buildAccessEdges(scene,W,(x,z)=>{
       const height=pavement.heightAt(x,z);

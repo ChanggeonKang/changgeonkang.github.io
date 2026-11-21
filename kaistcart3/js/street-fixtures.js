@@ -68,7 +68,7 @@ function bridgeWalkMaterial(){
   const size=256,c=document.createElement('canvas');c.width=c.height=size;
   const ctx=c.getContext('2d');ctx.fillStyle='#96928f';ctx.fillRect(0,0,size,size);
   for(let j=0;j<14;j++)for(let i=-1;i<10;i++){
-    const seed=(Math.imul(j+7,2654435761)^Math.imul(i+4,668265263))>>>0;
+    const seed=(Math.imul(j+7,2654435761)^Math.imul((i+9)%9+4,668265263))>>>0;
     const grey=[195,203,211,218,222,224][seed%6],w=size/9,h=size/14;
     ctx.fillStyle='rgb('+grey+','+(grey-2)+','+(grey-3)+')';
     ctx.fillRect(Math.floor((i+(j%2)*.5)*w)+.8,Math.floor(j*h)+.65,Math.ceil(w)-1.2,Math.ceil(h)-1.1);

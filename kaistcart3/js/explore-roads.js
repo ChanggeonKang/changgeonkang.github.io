@@ -9,11 +9,13 @@ import {addKaistRampShell,buildKaistBridge,isKaistBridgeWalk} from './kaist-brid
 import {groundPatch} from './east-campus-shapes.js';
 import {sejongPaverTexture} from './sejong-pavers.js';
 import {paintWestGwahak} from './gwahak-road-paint.js';
+import {PavementCutouts,trimPavementMesh} from './pavement-cutouts.js';
+import {garageCut} from './krafton-garage.js';
 
 const up = [0, 1, 0], uv = p => [p[0] / 4, p[2] / 4];
 const paint = new THREE.Color(0xf1ede2), yellow = new THREE.Color(0xdbb45c);
 const palette = {
-  street: 0x92928f, service: 0x8b8c89, parking: 0x858782, walk: 0xc0a893,
+  street: 0x92928f, walk: 0xc0a893,
   cycle: 0xb19686, trail: 0xa28a6a, steps: 0xaaa79b, gravel: 0xa69b87,
   redCourt: 0x9d746e, redPavers: 0xb0756c, sejongPavers: 0xe3ddd5, westBlocks:0xbcb4a7, bridgeConcrete:0xd1cabb,
   sharedLotAsphalt:0x747b80
@@ -32,7 +34,9 @@ function surfaceStyle(r) {
   if (/gravel|unpaved|ground|dirt|earth|sand/.test(r.surface || '')) return 'gravel';
   if (r.surface === 'asphalt') return 'street';
   if (r.surface === 'wood') return 'trail';
-  return r.roadClass;
+  // A change of map classification at a junction is not a change of
+  // surfacing. Its crossing strips and corner fans use the same asphalt.
+  return isMotorRoad(r) ? 'street' : r.roadClass;
 }
 
 // A separately surveyed footpath can be closer to a railing than the
@@ -144,11 +148,17 @@ export function buildExploreRoads(scene, world, height, texture, MB, flat, refer
   }
   const masks = new Map();
   const cornerStyle = new Map();
+  const separateLevels=new Set();
+  function preserveLevel(road,start){
+    if(!(road.bridge || road.tunnel || road.covered || road.layer || road.ford || roadIndex.ways.get(road)?.deck))return;
+    for(let k=start;k<asphalt.p.length;k+=9)separateLevels.add(k/3);
+  }
   // A strip crossing a shared node leaves triangles uncovered at sharp bends.
   // Fill the joint once using the incident road's actual width and material.
   for (const [road, way] of roadIndex.ways) {
     if(isKaistBridgeWalk(road.id))continue;
     if(road.sharedParkingSurface)continue;
+    const start=asphalt.p.length;
     const style = surfaceStyle(road), colour = colours[style] || colours.walk, motor = isMotorRoad(road);
     const batch = style === 'westBlocks' ? hexDrive : style === 'sejongPavers' ? sejongDrive : style === 'gravel' || style === 'trail' ? unsealed : style === 'redPavers' ? paving : motor || style === 'street' ? asphalt : paving;
     const half = road.width / 2;
@@ -202,7 +212,13 @@ export function buildExploreRoads(scene, world, height, texture, MB, flat, refer
         const strips=motor?Math.ceil(road.width/3.3):1;
         // The block-paved aisle gives way to an asphalt apron before the
         // main road, visible straight ahead in the g6FoUO6 panorama.
-        const apron=style==='westBlocks' && s.ids[1]===352963331 && (from+to)/2>s.span-6;
+        // At the west parking entrance the block lane also meets through
+        // asphalt. Keep its first panels on the junction's asphalt apron so
+        // the two materials never occupy the same part of the road crown.
+        const apron=style==='westBlocks' && (
+          (s.ids[1]===352963331 && (from+to)/2>s.span-6) ||
+          (s.ids[0]===352963317 && from<junction[0])
+        );
         const middle=(from+to)/2;
         const red=isSportsRedLane(road.id,s.a[0]+s.dx*middle,s.a[1]+s.dz*middle);
         const bedColour=red?colours.redCourt:apron?colours.street:colour;
@@ -272,8 +288,10 @@ export function buildExploreRoads(scene, world, height, texture, MB, flat, refer
         }
       }
     }
+    preserveLevel(road,start);
   }
   for (const { s, along, half, batch, colour } of masks.values()) {
+    const start=asphalt.p.length;
     const ctr = face(s, along, 0, 0), sides = Math.max(12,Math.ceil(Math.PI / Math.acos(1 - .022 / half)));
     const bands=isMotorRoad(s.road)?Math.ceil(half/3.3):1;
     let inner;
@@ -293,29 +311,50 @@ export function buildExploreRoads(scene, world, height, texture, MB, flat, refer
       }
       inner=ring;
     }
+    preserveLevel(s.road,start);
   }
   // The same civil corner radius used by the drivable polygon also gets
   // asphalt. This closes the unpaved wedge between turning cars and the kerb.
   for(const [id,ring] of world.access.outlines.corners){
     const style=cornerStyle.get(id);
     if(!style)continue;
+    const start=asphalt.p.length;
     const points=ring.map(([x,z])=>new THREE.Vector2(x,z));
     const vertices=ring.map(([x,z])=>[x,streetDatum(x,z)+roadLift(style.road),z]);
     for(const [i,j,k] of THREE.ShapeUtils.triangulateShape(points,[])){
       const a=vertices[i],b=vertices[k],c=vertices[j];
       style.batch.tri(a,b,c,up,uv(a),uv(b),uv(c),style.colour);
     }
+    preserveLevel(style.road,start);
   }
   paintMappedCrossings(roadIndex,face,quad,markings,paint);
   paintWestGwahak(roadIndex,face,quad,markings,yellow);
   paintCampusWarnings(roadIndex,face,quad,markings,paint,yellow);
   paintGateAvenue(roadIndex,face,quad,markings,paint);
+  const bridgeStart=asphalt.p.length/3;
   buildKaistBridge(scene,world,streetDatum,asphalt,bridgeStructure);
   const finish = (mb, name, mat, offset) => {
     if (!mb.p.length) return;
     flat(scene, mb, new THREE.MeshStandardMaterial({vertexColors:true, roughness:.93, ...mat}), offset).name = name;
   };
   finish(asphalt, 'Mapped campus streets and service lanes', {map:texture.asphalt}, 3);
+  // Parking aisles and the surrounding bays share a wearing course. Their
+  // independently triangulated slopes used to trade places in the depth
+  // buffer, revealing disconnected triangles of darker asphalt in the aisle.
+  const lots=new PavementCutouts();
+  const separateFinishes=new Set([503892533,503477364,504188968,504338815,'sejong-turning-court']);
+  for(const lot of D.parking){
+    // The administration court, museum, block-paved court and photographed
+    // west garden have their own paving boundaries.
+    if(!lot.apronOnly && !separateFinishes.has(lot.id))lots.addPolygon(lot.p,lot.holes);
+  }
+  const plainAsphalt=[colours.street,colours.sharedLotAsphalt];
+  trimPavementMesh(scene.getObjectByName('Mapped campus streets and service lanes'),lots,(geometry,i)=>{
+    if(i>=bridgeStart || separateLevels.has(i))return false;
+    const pos=geometry.attributes.position,rgb=geometry.attributes.color;
+    if(!plainAsphalt.some(c=>Math.abs(c.r-rgb.getX(i))<1e-6 && Math.abs(c.g-rgb.getY(i))<1e-6 && Math.abs(c.b-rgb.getZ(i))<1e-6))return false;
+    return ![i,i+1,i+2].some(j=>garageCut(pos.getX(j),pos.getZ(j))>0);
+  });
   finish(hexDrive,'West campus block-paved motor lane',{map:texture.hexDrive},3);
   const court=D.areas.find(a=>a.id==='sejong-turning-court');
   if(court){

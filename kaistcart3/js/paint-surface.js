@@ -14,7 +14,7 @@ function paintSignature(meshes,hash){
 }
 export async function loadBakedPaint(){
   try{
-    const response=await fetch(new URL('../data/road-paint.bin.gz?v=campus-survey-20261121-frontages',import.meta.url));
+    const response=await fetch(new URL('../data/road-paint.bin.gz?v=campus-survey-20261121-ground',import.meta.url));
     if(!response.ok)return null;
     const raw=await response.arrayBuffer(),bytes=new Uint8Array(raw);
     if(bytes[0]!==31 || bytes[1]!==139)return raw;
@@ -103,6 +103,7 @@ function subtract(polygon,planes){
   }
   return outside;
 }
+export {intersection as intersectPavementPolygon,subtract as subtractPavementPolygon};
 
 // A kerb or overlapping road fan can produce a real step in the pavement.
 // End a decal at each visible facet instead of stretching across that step.

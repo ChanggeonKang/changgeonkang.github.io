@@ -5,6 +5,7 @@ import * as THREE from '../lib/three.module.min.js';
 import { isCaptureWestParkingOverride } from './capture-extension-west.js';
 import { makeParkedCar, varyRoof } from './parked-car-model.js';
 import { administrationPaving } from './administration-court.js';
+import { trimParkingApproaches } from './parking-approaches.js';
 
 const WIDTH = 2.6, DEPTH = 5, AISLE = 6, CAR_CAP = 380;
 const ASPHALT_LIFT = .186, PAINT_LIFT = .214;
@@ -275,7 +276,8 @@ export function buildParking(scene, D, hAt, surfAt, TEX = {}) {
         cursor=to;
       }
       if(cursor<geometry.attributes.position.count)geometry.addGroup(cursor,geometry.attributes.position.count-cursor,0);
-      materials=[material,blocks,administrationPaving(material)];
+      materials=[material,blocks,administrationPaving(material,TEX.hexDrive)];
+      trimParkingApproaches(scene,D,inside);
     }
     const mesh=new THREE.Mesh(geometry,materials);mesh.name=name;mesh.receiveShadow=true;scene.add(mesh);models.push(mesh);
   }

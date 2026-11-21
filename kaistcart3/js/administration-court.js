@@ -2,14 +2,16 @@ import * as T from '../lib/three.module.min.js';
 import {FixtureInstances} from './survey-fixture-instances.js';
 import {foliage,plantBatch} from './gate-avenue-garden.js';
 
-// zMr6xym and MATLFU8 face along/across the grass-block parking aisles.
-// The central pedestrian crossings and vehicle spine are plain asphalt.
-export function administrationPaving(source){
+// The November zMr6xym view shows hexagonal blocks on the central drive,
+// narrow dark side strips and grass blocks between the rows of parked cars.
+export function administrationPaving(source,hexDrive){
   const c=document.createElement('canvas');c.width=c.height=256;
-  const pen=c.getContext('2d');let seed=86328;
+  const pen=c.getContext('2d');let seed;
   const random=()=>((seed=(Math.imul(seed,1664525)+1013904223)>>>0)/4294967296);
   pen.fillStyle='#888a72';pen.fillRect(0,0,256,256);
   for(let row=0;row<12;row++)for(let col=-1;col<=16;col++){
+    // Both halves of a grass block at the repeating edge share one pattern.
+    seed=86328+Math.imul(row*16+(col+16)%16,2654435761);
     const x=col*16+(row%2)*8,y=row*256/12,s=Math.round(random()*18);
     pen.fillStyle='rgb('+(146+s)+' '+(145+s)+' '+(126+s)+')';pen.fillRect(x+.8,y+.6,14.5,20.3);
     pen.fillStyle='rgb('+(100+s)+' '+(109+s)+' '+(75+s)+')';pen.fillRect(x+4.1,y+4.5,8,11.8);
@@ -21,16 +23,19 @@ export function administrationPaving(source){
   const tex=new T.CanvasTexture(c);tex.wrapS=tex.wrapT=T.RepeatWrapping;tex.anisotropy=4;tex.colorSpace=T.SRGBColorSpace;
   const m=source.clone();m.map=tex;m.color.setHex(0xc6c2aa);
   m.onBeforeCompile=s=>{
+    s.uniforms.courtBlocks={value:hexDrive};
     s.vertexShader=s.vertexShader.replace('#include <common>','#include <common>\nvarying vec2 vCourtPosition;')
       .replace('#include <project_vertex>','#include <project_vertex>\nvCourtPosition=(modelMatrix*vec4(position,1.)).xz;');
-    s.fragmentShader=s.fragmentShader.replace('#include <common>','#include <common>\nvarying vec2 vCourtPosition;')
+    s.fragmentShader=s.fragmentShader.replace('#include <common>','#include <common>\nvarying vec2 vCourtPosition; uniform sampler2D courtBlocks;')
       .replace('#include <map_fragment>',`vec2 axis=vec2(dot(vCourtPosition,vec2(.837,-.547)),dot(vCourtPosition,vec2(.547,.837)));
         vec4 turf=texture2D(map,axis*.43);
+        vec3 blocks=texture2D(courtBlocks,axis*vec2(.47,.55)).rgb;
         float band=abs(axis.x+21.65);
-        vec3 deck=mix(vec3(.133,.141,.144),vec3(.302,.305,.286)*(.92+.22*turf.r),smoothstep(3.25,3.35,band));
-        diffuseColor.rgb*=mix(deck,turf.rgb,smoothstep(6.6,6.7,band));`);
+        float sideStrip=1.-smoothstep(.48,.56,abs(band-3.75));
+        vec3 deck=blocks*mix(vec3(.37,.36,.35),vec3(.17,.175,.18),sideStrip);
+        diffuseColor.rgb=mix(deck,diffuseColor.rgb*turf.rgb,smoothstep(6.6,6.7,band));`);
   };
-  m.customProgramCacheKey=()=>'e14-grass-blocks-1';return m;
+  m.customProgramCacheKey=()=>'e14-court-blocks-2';return m;
 }
 
 const world=(px,py)=>[-106+(px-556.5)*.12021,-151+(py-350)*.12021];

@@ -24,7 +24,7 @@ function stoneTexture(){
   const cv=document.createElement('canvas');cv.width=256;cv.height=256;
   const c=cv.getContext('2d');c.fillStyle='#a58d91';c.fillRect(0,0,256,256);
   for(let row=0;row<16;row++)for(let col=-1;col<16;col++){
-    const shade=.5+.5*Math.sin(row*23.73+col*42.3);
+    const shade=.5+.5*Math.sin(row*23.73+((col+16)%16)*42.3);
     c.fillStyle=`rgb(${95+Math.round(42*shade)} ${64+Math.round(35*shade)} ${69+Math.round(36*shade)})`;
     c.fillRect(col*16+(row%2)*8,row*16,15.3,15.3);
   }
