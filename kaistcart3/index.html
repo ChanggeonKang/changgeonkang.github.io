@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#132922">
 <title>KAIST Kart 3 · Campus Drive</title>
-<link rel="stylesheet" href="campus.css">
+<link rel="stylesheet" href="campus.css?v=camera-view-1">
 <script type="importmap">
 {
   "imports": {
@@ -46,6 +46,8 @@
     "./js/galilei-entrance.js": "./js/galilei-entrance.js?v=campus-survey-20261121",
     "./js/gapcheon-bank.js": "./js/gapcheon-bank.js?v=campus-survey-20261121",
     "./js/gate-avenue-garden.js": "./js/gate-avenue-garden.js?v=campus-survey-20261121",
+    "./js/goose-flock.js": "./js/goose-flock.js?v=campus-survey-20261121-pond-geese",
+    "./js/goose-models.js": "./js/goose-models.js?v=campus-survey-20261121-pond-geese",
     "./js/gwahak-road-paint.js": "./js/gwahak-road-paint.js?v=campus-survey-20261121",
     "./js/hump-pavement.js": "./js/hump-pavement.js?v=campus-survey-20261121",
     "./js/ibs-campus.js": "./js/ibs-campus.js?v=campus-survey-20261121",
@@ -57,7 +59,7 @@
     "./js/krafton-garage.js": "./js/krafton-garage.js?v=campus-survey-20261121",
     "./js/landmarks.js": "./js/landmarks.js?v=campus-survey-20261121",
     "./js/lotte-design-centre.js": "./js/lotte-design-centre.js?v=campus-survey-20261121",
-    "./js/main.js": "./js/main.js?v=campus-survey-20261121-frontages",
+    "./js/main.js": "./js/main.js?v=campus-survey-20261121-pond-geese",
     "./js/mapped-road-boundaries.js": "./js/mapped-road-boundaries.js?v=campus-survey-20261121",
     "./js/meta-convergence-west.js": "./js/meta-convergence-west.js?v=campus-survey-20261121",
     "./js/mobile-parking-display.js": "./js/mobile-parking-display.js?v=campus-survey-20261121",
@@ -89,7 +91,7 @@
     "./js/west-solar-parking.js": "./js/west-solar-parking.js?v=campus-survey-20261121",
     "./js/west-wood-bank.js": "./js/west-wood-bank.js?v=campus-survey-20261121",
     "./js/wooded-approach.js": "./js/wooded-approach.js?v=campus-survey-20261121",
-    "./js/world.js": "./js/world.js?v=campus-survey-20261121-ground-joins"
+    "./js/world.js": "./js/world.js?v=campus-survey-20261121-pond-geese"
   }
 }
 </script>
@@ -99,8 +101,13 @@
 <section id="loading" aria-live="polite"><div class="load-box"><span class="wordmark">KAIST KART <b>3</b></span><h1>Campus Drive</h1><p id="loadMsg">Loading the Daejeon main campus…</p><progress id="loadProgress" max="100" value="3"></progress></div></section>
 <main id="drive" hidden>
   <header id="location" class="glass"><div class="wordmark">KAIST KART <b>3</b></div><div id="placeName">Main Gate</div></header>
-  <button id="mapBtn" class="glass" type="button" aria-label="Open campus map"><canvas id="mini" width="300" height="240"></canvas><span class="mini-north">N</span><span class="mini-caption">Campus map <kbd>M</kbd></span></button>
-  <button id="pauseBtn" class="glass" type="button" aria-label="Pause drive">Ⅱ</button>
+  <div class="drive-tools">
+    <button id="mapBtn" class="glass" type="button" aria-label="Open campus map"><canvas id="mini" width="300" height="240"></canvas><span class="mini-north">N</span><span class="mini-caption">Campus map <kbd>M</kbd></span></button>
+    <div class="drive-actions">
+      <button id="viewBtn" class="glass" type="button" aria-label="View from street level" aria-pressed="false" aria-keyshortcuts="C" title="Switch to street-level view (C)"><span class="camera-icon" aria-hidden="true"></span>View</button>
+      <button id="pauseBtn" class="glass" type="button" aria-label="Pause drive">Ⅱ</button>
+    </div>
+  </div>
   <div id="dash" class="glass"><strong id="speed">0</strong><span>km/h</span></div>
   <p id="controls" class="glass"><kbd>W</kbd> <kbd>S</kbd> Gas / brake <span>·</span> <kbd>A</kbd> <kbd>D</kbd> Steer <span>·</span> <kbd>Shift</kbd> Drift</p>
   <p id="notice" class="glass" role="status" hidden></p>

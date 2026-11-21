@@ -51,12 +51,22 @@ const ev={J:0,hit:0};
 let dust,skids,atlas,mode='load',T=0,last=0,lastHud=-1,lookYaw=0,lookPitch=0,streetCamera=false,drag=null;
 const keymap={KeyW:'up',ArrowUp:'up',KeyS:'down',ArrowDown:'down',KeyA:'left',ArrowLeft:'left',KeyD:'right',ArrowRight:'right',ShiftLeft:'drift',ShiftRight:'drift'};
 const keys={},pressed=new Map();
+const viewButton=$('viewBtn');
 function updateKeys(){for(const k of Object.values(keymap))keys[k]=false;for(const k of pressed.values())keys[k]=true;}
 function clearInputs(){pressed.clear();updateKeys();drag=null;document.querySelectorAll('.held').forEach(b=>b.classList.remove('held'));}
 function stopMotion(){clearInputs();stepper.reset();sfx.quiet();last=0;}
-function cameraMode(){streetCamera=!streetCamera;P.mesh.visible=!streetCamera;P.mesh.userData.ao.visible=!streetCamera;lookYaw=0;lookPitch=0;cam.snap=true;$('cameraToggle').textContent=streetCamera?'Camera · Street level':'Camera · Chase';}
+function cameraMode(){
+  streetCamera=!streetCamera;
+  P.mesh.visible=!streetCamera;
+  P.mesh.userData.ao.visible=!streetCamera;
+  lookYaw=0;lookPitch=0;cam.snap=true;
+  $('cameraToggle').textContent=streetCamera?'Camera · Street level':'Camera · Chase';
+  viewButton.setAttribute('aria-pressed',String(streetCamera));
+  viewButton.title=streetCamera?'Switch to chase view (C)':'Switch to street-level view (C)';
+}
 let arrivalLook=false;
 function faceArrival(pose){
+  W.gooseFlock.resetKartContact();
   atlas.arrived(pose);
   arrivalLook=Number.isFinite(pose.viewHeading);
   lookYaw=arrivalLook?angDiff(pose.viewHeading,P.th):0;lookPitch=0;cam.snap=true;
@@ -76,6 +86,13 @@ function pauseDrive(){if(mode!=='drive')return;stopMotion();mode='pause';$('paus
 $('mapBtn').onclick=openMap;$('openAtlas').onclick=openMap;$('atlasClose').onclick=closeOverlays;$('pauseBtn').onclick=pauseDrive;$('resume').onclick=()=>{sfx.init();closeOverlays();};
 $('mute').onclick=()=>{sfx.init();sfx.setMuted(!sfx.muted);$('mute').textContent=sfx.muted?'Sound off':'Sound on';};
 $('cameraToggle').onclick=cameraMode;
+viewButton.onclick=cameraMode;
+// A second finger can switch views while the first keeps the accelerator held.
+viewButton.addEventListener('touchend',e=>{
+  e.preventDefault();
+  const finger=e.changedTouches[0];
+  if(viewButton.contains(document.elementFromPoint(finger.clientX,finger.clientY)))cameraMode();
+},{passive:false});
 for(const id of ['atlas','pause'])$(id).addEventListener('cancel',e=>{e.preventDefault();closeOverlays();});
 addEventListener('keydown',e=>{
   if(mode==='load'||e.isComposing||e.ctrlKey||e.metaKey||e.altKey||e.target.matches('input,textarea,select'))return;
@@ -171,8 +188,9 @@ function tick(dt){
     stepper.advance(dt,step=>{
       const hit=stepFreeDrive(P,step,keys);
       ev.J=Math.max(ev.J,hit.impact);ev.hit=Math.max(ev.hit,hit.wallHit);
-      if(hit.recovered)cam.snap=true;
+      if(hit.recovered){cam.snap=true;W.gooseFlock.resetKartContact();}
     });
+    W.gooseFlock.update(dt,P);
     poseKart(P.mesh,P,dt,T);effects(dt);updateCamera(dt);
     if(lastHud<0||T-lastHud>.09){lastHud=T;atlas.update(P);$('speed').textContent=String(Math.round(Math.hypot(P.vx,P.vz)*3.6));$('notice').hidden=P.flipT<=.2;if(P.flipT>.2)$('notice').textContent='Righting the kart…';}
   }

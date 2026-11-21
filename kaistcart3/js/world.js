@@ -30,6 +30,7 @@ import { applyGalileiEntrance, buildGalileiPortico, galileiPorticoId } from './g
 import { applyNorthwestSurveyBuilding, buildNorthwestStreetviewDetails, northwestReplacedBuildings, northwestTreeSites } from './northwest-streetviews.js';
 import { buildEastSurvey, eastSurveyBuildingIds, finishEastSurveyPaving } from './east-campus-survey.js';
 import {finishDuckPondWater} from './duck-pond-landmarks.js';
+import {createGooseFlock} from './goose-flock.js';
 import { locateHumps } from './campus-humps.js';
 import { indexPavement } from './hump-pavement.js';
 import { fitRoadPaint,loadBakedPaint } from './paint-surface.js';
@@ -874,7 +875,6 @@ function buildNature(scene) {
   const D = W.D, C = W.C, b = D.bounds;
   const water = new THREE.MeshStandardMaterial({ color: 0x315c60, roughness: .18, metalness: .28, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
   const trees = [];
-  let pond = null;
   for (const a of D.areas) {
     if (a.p.length < 3) continue;
     if (a.k === 'water') {
@@ -886,7 +886,6 @@ function buildNature(scene) {
       m.position.y=W.waterLevels.get(a);m.receiveShadow=true;
       if(a.id===-20786142)finishDuckPondWater(m);
       scene.add(m);
-      if (/오리|Duck|석림/i.test([a.name,a.nameKo].join(' '))) pond = a;
     }
   }
   const clear = (x, z, r) => !isStreetscapeManaged(x, z, C) && !isCaptureLandscapeManaged(x, z, C) && !isCaptureEastManaged(x,z) && !isCaptureWestManaged(x,z) && surfAt(x, z) === 0 && surfAt(x + r, z) === 0 && surfAt(x - r, z) === 0 && surfAt(x, z + r) === 0 && surfAt(x, z - r) === 0;
@@ -984,21 +983,6 @@ function buildNature(scene) {
   lamps.forEach(([x, z, ry], i) => { m4.compose(new THREE.Vector3(x, hAt(x, z) + ROAD_LIFT + CURB_H, z), q.setFromEuler(e.set(0, ry, 0)), new THREE.Vector3(1, 1, 1)); lm.setMatrixAt(i, m4); });
   lm.castShadow = true; scene.add(lm);
 
-  // KAIST geese
-  const gw = col(0xf7f5ee), go = col(0xf08a1c), sph = new THREE.SphereGeometry(1, 12, 9);
-  const gooseG = merged([[sph, M4(0, .36, 0, .2, .19, .32), gw], [sph, M4(0, .4, -.28, .1, .09, .14), gw],
-    [new THREE.CylinderGeometry(.045, .06, .42, 8), M4(0, .64, .24, 1, 1, 1, .25), gw], [sph, M4(0, .87, .31, .075, .07, .09), gw],
-    [new THREE.ConeGeometry(.035, .13, 6), M4(0, .86, .44, 1, 1, 1, Math.PI / 2), go],
-    [new THREE.CylinderGeometry(.018, .018, .2, 5), M4(.07, .1, 0), go], [new THREE.CylinderGeometry(.018, .018, .2, 5), M4(-.07, .1, 0), go]]);
-  const geese = [];
-  if (pond) for (let i = 0; i < pond.p.length; i += 9) {
-    let cx = 0, cz = 0; for (const p of pond.p) { cx += p[0] / pond.p.length; cz += p[1] / pond.p.length; }
-    const p = pond.p[i], dx = p[0] - cx, dz = p[1] - cz, L = Math.hypot(dx, dz) || 1;
-    for (let k = 0; k < 2; k++) { const x = p[0] + dx / L * (2 + rnd() * 3) + rnd() * 2, z = p[1] + dz / L * (2 + rnd() * 3) + rnd() * 2; if (surfAt(x, z) < 2) geese.push([x, z]); }
-  }
-  const gm = new THREE.InstancedMesh(gooseG, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .8 }), geese.length);
-  geese.forEach(([x, z], i) => { const s = .9 + rnd() * .2; m4.compose(new THREE.Vector3(x, hAt(x, z) + liftAt(x, z), z), q.setFromEuler(e.set(0, rnd() * 6.28, 0)), new THREE.Vector3(s, s, s)); gm.setMatrixAt(i, m4); });
-  gm.castShadow = true; scene.add(gm);
 }
 
 function buildProps(scene) {
@@ -1296,5 +1280,6 @@ export async function loadWorld(scene, renderer, progress) {
     fitRoadPaint(scene,pavement,layerCeiling,paintCache);
     partitionCampusBatches(scene,W.treeLods || []);
     W.updateSceneDistance=trackSceneryDistance(scene);
+    W.gooseFlock=createGooseFlock(scene,W,gAt);
   });
 }
